@@ -1,63 +1,185 @@
 /**
  * Meta Muse — Pipeline B Tool: Edit Planner
- * Creative director that designs cuts, punch-ins, kinetic typography, and visual assets.
+ * Creative director that designs cuts, punch-ins, kinetic typography, and visual assets
+ * using Candidate Cut Generation + Wonder Muse AI Editorial Decision Engine.
  */
 
-import type { EditCut, EditPlan, KeepSegment, TranscriptSegment, VisualOverlayItem } from "../types.ts";
+import type {
+  CandidateCut,
+  EditCut,
+  EditPlan,
+  KeepSegment,
+  PacingConfig,
+  PacingProfile,
+  ProtectedRange,
+  TranscriptSegment,
+  TranscriptWord,
+  VisualOverlayItem,
+} from "../types.ts";
 import { getPipelineBTemplate } from "../templates/registry.ts";
 
-export function planTalkingHeadEdit(params: {
+export const PACING_CONFIGS: Record<PacingProfile, PacingConfig> = {
+  natural: {
+    profile: "natural",
+    minSilenceDuration: 0.75, // Preserve natural breathing and pauses under 0.75s
+    preservedSilenceMargin: 0.25, // Leave 0.25s breathing room around words
+    minSpeechMargin: 0.06, // Never clip speech boundaries
+  },
+  snappy: {
+    profile: "snappy",
+    minSilenceDuration: 0.45,
+    preservedSilenceMargin: 0.12,
+    minSpeechMargin: 0.05,
+  },
+  relaxed: {
+    profile: "relaxed",
+    minSilenceDuration: 1.20,
+    preservedSilenceMargin: 0.35,
+    minSpeechMargin: 0.08,
+  },
+};
+
+const INTENTIONAL_EMPHASIS_WORDS = new Set([
+  "very",
+  "really",
+  "never",
+  "more",
+  "again",
+  "so",
+  "many",
+  "much",
+  "big",
+  "great",
+  "now",
+  "far",
+  "fast",
+  "deep",
+  "long",
+  "true",
+]);
+
+const FILLER_SOUND_REGEX = /^(ah+|um+|uh+|er+|hmm+|erm+|umm+|ahh+|ooh+|aah+)$/i;
+const ISOLATED_FILLERS = new Set(["um", "uh", "er", "hmm", "erm", "ahh", "umm", "ooh"]);
+
+export interface PlanTalkingHeadEditParams {
   transcript: TranscriptSegment[];
   silences?: { start: number; end: number; duration: number }[];
   totalDuration: number;
   templateId?: string;
   userScript?: string;
-}): EditPlan {
-  const { transcript, silences, totalDuration, templateId, userScript } = params;
-  const template = getPipelineBTemplate(templateId);
+  pacingProfile?: PacingProfile;
+  brandSettings?: {
+    primaryColor?: string;
+    highlightColor?: string;
+    fontFamily?: string;
+  };
+}
 
-  const allWords = transcript.flatMap((s) => s.words);
-  const fullText = allWords.map((w) => w.word).join(" ");
+/**
+ * Maps a source-video timestamp to its corresponding edited-video timestamp
+ * based on the retained keepSegments.
+ * Exact piecewise linear mapping derived from retained source intervals.
+ */
+export function mapSourceTimeToEditedTime(sourceTime: number, keepSegments: KeepSegment[]): number {
+  if (!keepSegments || keepSegments.length === 0) return Math.max(0, +sourceTime.toFixed(2));
 
-  const rawCuts: EditCut[] = [];
+  let editedTime = 0;
+  for (const seg of keepSegments) {
+    if (sourceTime < seg.start) {
+      // The source time falls before this segment (in a cut preceding it)
+      return +editedTime.toFixed(2);
+    }
+    if (sourceTime >= seg.start && sourceTime <= seg.end) {
+      // Inside this retained segment
+      return +(editedTime + (sourceTime - seg.start)).toFixed(2);
+    }
+    editedTime += seg.duration;
+  }
+  return +editedTime.toFixed(2);
+}
 
-  // 1. Acoustic Dead-Air Silences (from ffmpeg silencedetect)
-  if (silences && silences.length > 0) {
-    for (let i = 0; i < silences.length; i++) {
-      const s = silences[i];
-      // Keep a small 0.04s margin so words are never clipped
-      const sStart = Math.min(totalDuration, +(s.start + 0.04).toFixed(2));
-      const sEnd = Math.max(0, +(s.end - 0.04).toFixed(2));
-      if (sEnd > sStart && (sEnd - sStart) >= 0.25) {
-        rawCuts.push({
-          id: `cut-silence-${i + 1}`,
-          start: sStart,
-          end: sEnd,
+/**
+ * Phase 1: Candidate Cut Detection Engine
+ * Scans audio silences and transcribed speech to identify candidate cuts,
+ * classifying intentional emphasis vs accidental stutters.
+ */
+export function generateCandidateCuts(params: {
+  allWords: TranscriptWord[];
+  transcript: TranscriptSegment[];
+  silences: { start: number; end: number; duration: number }[];
+  totalDuration: number;
+  pacing: PacingConfig;
+  userScript?: string;
+}): CandidateCut[] {
+  const { allWords, transcript, silences, totalDuration, pacing } = params;
+  const candidates: CandidateCut[] = [];
+
+  // 1. Acoustic Silences from silence detection
+  for (let i = 0; i < silences.length; i++) {
+    const s = silences[i];
+    if (s.duration >= pacing.minSilenceDuration) {
+      const isStartOfVideo = s.start <= 0.05;
+      const isEndOfVideo = s.end >= totalDuration - 0.05;
+      const cStart = isStartOfVideo
+        ? 0
+        : Math.max(0, +(s.start + pacing.preservedSilenceMargin).toFixed(2));
+      const cEnd = isEndOfVideo
+        ? totalDuration
+        : Math.min(totalDuration, +(s.end - pacing.preservedSilenceMargin).toFixed(2));
+      if (cEnd > cStart && (cEnd - cStart) >= 0.15) {
+        candidates.push({
+          id: `cand-silence-${i + 1}`,
+          start: cStart,
+          end: cEnd,
           type: "silence",
-          reason: `Trim dead pause (${s.duration.toFixed(2)}s) for dynamic retention`,
+          classification: "dead_air",
+          confidence: 0.95,
+          affectedText: `[Pause ${s.duration.toFixed(2)}s]`,
+          reason: `Trim dead air (${s.duration.toFixed(2)}s)${isStartOfVideo || isEndOfVideo ? "" : ` leaving ${pacing.preservedSilenceMargin}s natural breathing room`}`,
         });
       }
+    } else if (s.duration >= 0.35) {
+      candidates.push({
+        id: `cand-pause-${i + 1}`,
+        start: s.start,
+        end: s.end,
+        type: "silence",
+        classification: "natural_pause",
+        confidence: 0.85,
+        affectedText: `[Natural Pause ${s.duration.toFixed(2)}s]`,
+        reason: `Preserve natural breathing and dramatic pause (${s.duration.toFixed(2)}s)`,
+      });
     }
-  } else {
-    for (let i = 0; i < allWords.length - 1; i++) {
-      const gap = allWords[i + 1].start - allWords[i].end;
-      if (gap > 0.45) {
-        rawCuts.push({
-          id: `cut-silence-${i + 1}`,
-          start: +allWords[i].end.toFixed(2),
-          end: +allWords[i + 1].start.toFixed(2),
-          type: "silence",
-          reason: `Trim dead air (${gap.toFixed(2)}s pause) for high retention`,
+  }
+
+  // 2. Inter-sentence gaps in transcript
+  for (let s = 0; s < transcript.length - 1; s++) {
+    const segCurrent = transcript[s];
+    const segNext = transcript[s + 1];
+    const pauseDur = segNext.start - segCurrent.end;
+
+    if (pauseDur >= pacing.minSilenceDuration) {
+      const pStart = +(segCurrent.end + pacing.preservedSilenceMargin).toFixed(2);
+      const pEnd = +(segNext.start - pacing.minSpeechMargin).toFixed(2);
+      if (pEnd > pStart && (pEnd - pStart) >= 0.20) {
+        candidates.push({
+          id: `cand-sent-pause-${s + 1}`,
+          start: pStart,
+          end: pEnd,
+          type: "sentence_pause",
+          classification: "dead_air",
+          confidence: 0.90,
+          affectedText: `[Sentence Gap ${pauseDur.toFixed(2)}s]`,
+          reason: `Tighten inter-sentence gap (${pauseDur.toFixed(2)}s) while preserving speech boundary`,
         });
       }
     }
   }
 
-  // 2. Repeated Words, Runs & Multi-Word Phrase Retakes
-  let cutRepetitionsCount = 0;
+  // 3. Repeated Words, Runs & Multi-Word Phrase Retakes
   const normalizedWords = allWords.map((w) => w.word.toLowerCase().replace(/[^\w]/g, ""));
 
-  // 2a. Detect consecutive identical word runs (e.g. "poop poop poop poop...")
+  // 3a. Identical word runs (runLength >= 2)
   let rStart = 0;
   while (rStart < normalizedWords.length) {
     let rEnd = rStart + 1;
@@ -65,19 +187,64 @@ export function planTalkingHeadEdit(params: {
       rEnd++;
     }
     const runLength = rEnd - rStart;
-    if (runLength >= 2 && normalizedWords[rStart].length > 0) {
-      // If repeated 3+ times, cut all duplicate instances leaving only 1
-      const cutFrom = runLength >= 3 ? allWords[rStart + 1].start : allWords[rStart].start;
-      const cutTo = allWords[rEnd - 1].end;
-      if (cutTo > cutFrom && (cutTo - cutFrom) >= 0.15) {
-        rawCuts.push({
-          id: `cut-run-${rStart + 1}`,
-          start: Math.max(0, +(cutFrom - 0.02).toFixed(2)),
-          end: Math.min(totalDuration, +(cutTo + 0.02).toFixed(2)),
-          type: "retake",
-          reason: `Trim repeated word run of '${allWords[rStart].word}' (${runLength}x)`,
+    const wordClean = normalizedWords[rStart];
+
+    if (runLength === 2 && wordClean.length > 0) {
+      // Exactly two repetitions: e.g. "This, this software" vs "Very, very important"
+      const w1 = allWords[rStart];
+      const w2 = allWords[rStart + 1];
+
+      if (INTENTIONAL_EMPHASIS_WORDS.has(wordClean)) {
+        // Intentional rhetorical emphasis: protect it!
+        candidates.push({
+          id: `cand-emphasis-${rStart + 1}`,
+          start: w1.start,
+          end: w2.end,
+          type: "repetition",
+          classification: "intentional_emphasis",
+          confidence: 0.92,
+          affectedText: `${w1.word} ${w2.word}`,
+          reason: `Intentional emphasis on '${w1.word}' — preserve for speaker delivery`,
         });
-        cutRepetitionsCount += runLength - 1;
+      } else {
+        // Accidental duplicate word stutter: ONLY CUT THE FIRST INSTANCE!
+        // Cut from w1.start up to w2.start, so w2 is completely retained!
+        const cStart = Math.max(0, +w1.start.toFixed(2));
+        const cEnd = Math.min(totalDuration, +(w2.start - 0.02).toFixed(2));
+        if (cEnd > cStart && (cEnd - cStart) >= 0.10) {
+          candidates.push({
+            id: `cand-stutter-${rStart + 1}`,
+            start: cStart,
+            end: cEnd,
+            type: "repetition",
+            classification: "accidental_stutter",
+            confidence: 0.90,
+            affectedText: w1.word,
+            reason: `Trim accidental repeated duplicate of '${w1.word}', keeping second clean instance`,
+          });
+        }
+      }
+      rStart = rEnd;
+    } else if (runLength >= 3 && wordClean.length > 0) {
+      // 3 or more repetitions (e.g. "poop poop poop poop"):
+      // Keep word 1 (allWords[rStart]), cut all subsequent duplicate instances!
+      const wFirst = allWords[rStart];
+      const wSecond = allWords[rStart + 1];
+      const wLast = allWords[rEnd - 1];
+
+      const cStart = Math.max(0, +(wSecond.start - 0.02).toFixed(2));
+      const cEnd = Math.min(totalDuration, +(wLast.end + pacing.minSpeechMargin).toFixed(2));
+      if (cEnd > cStart) {
+        candidates.push({
+          id: `cand-run-${rStart + 1}`,
+          start: cStart,
+          end: cEnd,
+          type: "repetition",
+          classification: "accidental_stutter",
+          confidence: 0.96,
+          affectedText: allWords.slice(rStart + 1, rEnd).map((w) => w.word).join(" "),
+          reason: `Trim ${runLength - 1} duplicate repetitions of '${wFirst.word}', keeping initial utterance`,
+        });
       }
       rStart = rEnd;
     } else {
@@ -85,87 +252,276 @@ export function planTalkingHeadEdit(params: {
     }
   }
 
-  // 2b. Detect multi-word phrase repetitions (length 2 to 5 words, e.g. "only in five clicks, only in five clicks", "it auto stench, it auto stench")
+  // 3b. Multi-word phrase retakes (length 2 to 5 words)
   for (let L = 5; L >= 2; L--) {
     for (let i = 0; i <= normalizedWords.length - 2 * L; i++) {
       const p1 = normalizedWords.slice(i, i + L).join(" ");
       const p2 = normalizedWords.slice(i + L, i + 2 * L).join(" ");
 
       if (p1.length > 3 && p1 === p2) {
-        const cStart = Math.max(0, +(allWords[i].start - 0.02).toFixed(2));
+        const cStart = Math.max(0, +allWords[i].start.toFixed(2));
         const cEnd = Math.min(totalDuration, +(allWords[i + L].start - 0.02).toFixed(2));
         if (cEnd > cStart && (cEnd - cStart) >= 0.20) {
-          rawCuts.push({
-            id: `cut-phrase-repeat-${i + 1}`,
+          candidates.push({
+            id: `cand-phrase-retake-${i + 1}`,
             start: cStart,
             end: cEnd,
-            type: "retake",
-            reason: `Trim repeated phrase retake: '${allWords.slice(i, i + L).map((w) => w.word).join(" ")}'`,
+            type: "phrase_retake",
+            classification: "accidental_stutter",
+            confidence: 0.94,
+            affectedText: allWords.slice(i, i + L).map((w) => w.word).join(" "),
+            reason: `Trim first take of repeated phrase: '${allWords.slice(i, i + L).map((w) => w.word).join(" ")}'`,
           });
-          cutRepetitionsCount++;
-          i += 2 * L - 1; // Skip over matched block
+          i += 2 * L - 1;
         }
       }
     }
   }
 
-  // 3. Filler Sounds Removal ("ah", "um", "uh", "oh", "er", "hmm", "umm", "ahh")
-  const FILLER_REGEX = /^(ah+|um+|uh+|oh+|er+|hmm+|erm+|umm+|ahh+|ooh+|aah+)$/i;
-  const COMMON_FILLERS = new Set(["ah", "um", "uh", "oh", "er", "hmm", "erm", "ahh", "umm", "ooh"]);
-  let cutFillersCount = 0;
-
+  // 4. Vocal Fillers
   for (let i = 0; i < allWords.length; i++) {
     const w = allWords[i];
-    const clean = w.word.toLowerCase().replace(/[^\w]/g, "");
-    if (COMMON_FILLERS.has(clean) || FILLER_REGEX.test(clean)) {
-      const cStart = Math.max(0, +(w.start - 0.03).toFixed(2));
-      const cEnd = Math.min(totalDuration, +(w.end + 0.03).toFixed(2));
+    const clean = normalizedWords[i];
+    if (ISOLATED_FILLERS.has(clean) || FILLER_SOUND_REGEX.test(clean)) {
+      const cStart = Math.max(0, +w.start.toFixed(2));
+      const cEnd = Math.min(totalDuration, +w.end.toFixed(2));
       if (cEnd > cStart) {
-        rawCuts.push({
-          id: `cut-filler-${i + 1}`,
+        candidates.push({
+          id: `cand-filler-${i + 1}`,
           start: cStart,
           end: cEnd,
           type: "filler",
-          reason: `Trim vocal filler hesitation: '${w.word}'`,
-        });
-        cutFillersCount++;
-      }
-    }
-  }
-
-  // 4. Sentence-by-Sentence Analysis: Trim inter-sentence hesitation pauses > 0.40s
-  for (let s = 0; s < transcript.length - 1; s++) {
-    const segCurrent = transcript[s];
-    const segNext = transcript[s + 1];
-    const interSentencePause = segNext.start - segCurrent.end;
-
-    if (interSentencePause > 0.40) {
-      // Leave a tiny 0.10s natural breath, trim the rest
-      const pStart = +(segCurrent.end + 0.08).toFixed(2);
-      const pEnd = +(segNext.start - 0.04).toFixed(2);
-      if (pEnd > pStart && (pEnd - pStart) >= 0.20) {
-        rawCuts.push({
-          id: `cut-sentence-pause-${s + 1}`,
-          start: pStart,
-          end: pEnd,
-          type: "silence",
-          reason: `Tighten inter-sentence gap (${interSentencePause.toFixed(2)}s) for crisp delivery`,
+          classification: "filler_pause",
+          confidence: 0.92,
+          affectedText: w.word,
+          reason: `Trim vocal filler hesitation sound: '${w.word}'`,
         });
       }
     }
   }
 
-  // 5. Merge overlapping and contiguous cuts cleanly
-  const cuts = mergeOverlappingCuts(rawCuts, totalDuration);
+  return candidates;
+}
 
-  // 6. Calculate keep segments from merged cuts
+/**
+ * Phase 2: Wonder Muse AI Editorial Decision Engine
+ * Approves valid cuts, protects meaning/intentional emphasis,
+ * and designs narrative-driven visual plans without false claims.
+ */
+export function wonderMuseEditorialDirector(params: {
+  candidates: CandidateCut[];
+  transcript: TranscriptSegment[];
+  allWords: TranscriptWord[];
+  totalDuration: number;
+  userScript?: string;
+  templateId?: string;
+  pacing: PacingConfig;
+}): {
+  approvedCuts: EditCut[];
+  protectedRanges: ProtectedRange[];
+  visualPlan: VisualOverlayItem[];
+  hookLine: string;
+  notes: string;
+} {
+  const { candidates, transcript, allWords, totalDuration, userScript, templateId } = params;
+  const template = getPipelineBTemplate(templateId);
+
+  const approvedCuts: EditCut[] = [];
+  const protectedRanges: ProtectedRange[] = [];
+
+  // 1. Establish Protected Ranges
+  for (const cand of candidates) {
+    if (cand.classification === "intentional_emphasis" || cand.classification === "natural_pause") {
+      protectedRanges.push({
+        start: cand.start,
+        end: cand.end,
+        reason: cand.reason,
+      });
+    }
+  }
+
+  // 2. Filter & Approve Candidate Cuts
+  for (const cand of candidates) {
+    // Never approve intentional emphasis cuts or natural dramatic pauses
+    if (cand.classification === "intentional_emphasis" || cand.classification === "natural_pause") {
+      continue;
+    }
+
+    // Check if cut overlaps with any protected range
+    const isProtected = protectedRanges.some(
+      (pr) => Math.max(cand.start, pr.start) < Math.min(cand.end, pr.end)
+    );
+    if (isProtected) {
+      continue;
+    }
+
+    // Approve accidental stutters, dead air, and phrase retakes
+    let cutType: EditCut["type"] = "silence";
+    if (cand.type === "filler") cutType = "filler";
+    else if (cand.type === "repetition" || cand.type === "phrase_retake") cutType = "retake";
+
+    approvedCuts.push({
+      id: `cut-${approvedCuts.length + 1}`,
+      start: cand.start,
+      end: cand.end,
+      type: cutType,
+      reason: cand.reason,
+    });
+  }
+
+  // 3. Narrative Hook Line (extracted strictly from speaker's actual first 6 words)
+  const hookWords = allWords.slice(0, 6).map((w) => w.word).join(" ");
+  const hookLine = hookWords ? `"${hookWords}..."` : "Talking Head Master Reel";
+
+  // 4. Story-Driven Visual Plan (Derived strictly from spoken content, no false claims)
+  const visualPlan: VisualOverlayItem[] = [];
+
+  // Top progress bar if enabled
+  if (template.enableProgressBar) {
+    visualPlan.push({
+      id: "overlay-progress-bar",
+      type: "progress_bar",
+      timestamp: 0,
+      duration: totalDuration,
+      content: "Progress Bar",
+      style: { color: template.highlightColor },
+    });
+  }
+
+  // Contextual Visual Badges derived from actual transcript words
+  // Only plan overlays for concepts the user actually said
+  const contextualTerms: { match: RegExp; label: string; anim: "bounce" | "pop" | "slide_up" }[] = [
+    { match: /\b(?:app|software|tool)\b/i, label: "SMART APP", anim: "bounce" },
+    { match: /\b(?:click|clicks|instant)\b/i, label: "FAST WORKFLOW", anim: "pop" },
+    { match: /\b(?:video|videos|reel|clip)\b/i, label: "VIDEO CREATOR", anim: "slide_up" },
+    { match: /\b(?:edit|trim|cut)\b/i, label: "AUTO CUT", anim: "pop" },
+    { match: /\b(?:ready|done|complete)\b/i, label: "READY TO POST", anim: "bounce" },
+    { match: /\b(?:simple|easy|clean)\b/i, label: "PURE SIMPLICITY", anim: "pop" },
+  ];
+
+  const addedLabels = new Set<string>();
+
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const word = allWords[wi];
+    for (const term of contextualTerms) {
+      if (term.match.test(word.word)) {
+        let label = term.label;
+        if (term.label === "FAST WORKFLOW" && wi > 0) {
+          const prev = allWords[wi - 1].word.toLowerCase();
+          if (prev === "five" || prev === "5") {
+            label = "5 CLICKS";
+          }
+        }
+        if (!addedLabels.has(label)) {
+          addedLabels.add(label);
+          visualPlan.push({
+            id: `overlay-visual-${visualPlan.length + 1}`,
+            type: "image_overlay",
+            timestamp: word.start, // in source time; will be mapped to edited time
+            duration: 2.0,
+            content: label,
+            animation: term.anim,
+            style: {
+              bg: template.cardBg,
+              textColor: template.highlightColor,
+              border: template.primaryColor,
+            },
+            soundName: template.enableSfx ? "pop.mp3" : undefined,
+          });
+        }
+      }
+    }
+  }
+
+  // Keyword kinetic emphasis badges for key verbs/nouns (every 4-6 seconds)
+  const significantWords = allWords.filter(
+    (w) =>
+      w.word.length >= 6 &&
+      !["because", "without", "through", "people", "really", "welcome", "getting"].includes(
+        w.word.toLowerCase()
+      )
+  );
+
+  significantWords.slice(0, 3).forEach((kw) => {
+    visualPlan.push({
+      id: `overlay-badge-${visualPlan.length + 1}`,
+      type: "icon_badge",
+      timestamp: kw.start, // in source time; will be mapped to edited time
+      duration: 1.8,
+      content: kw.word.toUpperCase(),
+      animation: "pop",
+      style: {
+        bg: template.cardBg,
+        textColor: template.highlightColor,
+        border: template.primaryColor,
+      },
+      soundName: template.enableSfx ? "pop.mp3" : undefined,
+    });
+  });
+
+  const notes = `Wonder Muse approved ${approvedCuts.length} cuts, protected ${protectedRanges.length} intentional ranges, and planned ${visualPlan.length} narrative visual elements.`;
+
+  return {
+    approvedCuts,
+    protectedRanges,
+    visualPlan,
+    hookLine,
+    notes,
+  };
+}
+
+/**
+ * Phase 3: Master Edit Planner Function
+ * Integrates Candidate Detection + Wonder Muse Decision Engine + Exact Timeline Mapping.
+ */
+export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan {
+  const {
+    transcript,
+    silences = [],
+    totalDuration,
+    templateId,
+    userScript,
+    pacingProfile = "natural",
+  } = params;
+
+  const template = getPipelineBTemplate(templateId);
+  const pacing = PACING_CONFIGS[pacingProfile] || PACING_CONFIGS.natural;
+
+  const allWords = transcript.flatMap((s) => s.words);
+  const fullText = allWords.map((w) => w.word).join(" ");
+
+  // 1. Generate Candidate Cuts
+  const candidateCuts = generateCandidateCuts({
+    allWords,
+    transcript,
+    silences,
+    totalDuration,
+    pacing,
+    userScript,
+  });
+
+  // 2. Wonder Muse AI Editorial Decisions
+  const editorial = wonderMuseEditorialDirector({
+    candidates: candidateCuts,
+    transcript,
+    allWords,
+    totalDuration,
+    userScript,
+    templateId,
+    pacing,
+  });
+
+  // 3. Validate and Merge Overlapping Cuts cleanly without gap deletion
+  const cuts = mergeOverlappingCuts(editorial.approvedCuts, totalDuration);
+
+  // 4. Calculate Keep Segments (Preserve short speech intervals, never discard speech)
   const keepSegments: KeepSegment[] = [];
   let currentStart = 0;
 
   for (const cut of cuts) {
     if (cut.start > currentStart) {
       const dur = +(cut.start - currentStart).toFixed(2);
-      if (dur >= 0.25) {
+      if (dur > 0.05) {
         keepSegments.push({
           start: +currentStart.toFixed(2),
           end: +cut.start.toFixed(2),
@@ -179,7 +535,7 @@ export function planTalkingHeadEdit(params: {
 
   if (currentStart < totalDuration) {
     const finalDur = +(totalDuration - currentStart).toFixed(2);
-    if (finalDur >= 0.25) {
+    if (finalDur > 0.05) {
       keepSegments.push({
         start: +currentStart.toFixed(2),
         end: +totalDuration.toFixed(2),
@@ -189,124 +545,92 @@ export function planTalkingHeadEdit(params: {
     }
   }
 
-  // If no cuts were needed, keep the entire clip
-  if (keepSegments.length === 0) {
+  let cleanDuration = +keepSegments.reduce((acc, s) => acc + s.duration, 0).toFixed(2);
+
+  // Safety Fallback: If cuts erroneously consumed everything or left negligible fragments (< 0.5s from a >= 1.0s video),
+  // keep the original source video to prevent emitting an empty or corrupt reel.
+  if (keepSegments.length === 0 || (totalDuration >= 1.0 && cleanDuration < 0.5)) {
+    keepSegments.length = 0;
     keepSegments.push({
       start: 0,
       end: totalDuration,
       duration: totalDuration,
       zoomScale: 1.0,
     });
+    cleanDuration = totalDuration;
   }
 
-  const cleanDuration = +keepSegments.reduce((acc, s) => acc + s.duration, 0).toFixed(2);
   const cutDuration = +(totalDuration - cleanDuration).toFixed(2);
-  const cutSilenceDuration = +cuts.reduce((acc, c) => acc + (c.end - c.start), 0).toFixed(2);
-  const cutSilenceSegmentsCount = cuts.length;
 
-  // Design Hook & Title
-  const hookWords = allWords.slice(0, 6).map((w) => w.word).join(" ");
-  const hookLine = hookWords ? `"${hookWords}..."` : "Talking Head Master Reel";
+  // 5. Separate Metric Calculations
+  let cutSilenceDuration = 0;
+  let cutFillerDuration = 0;
+  let cutRepetitionDuration = 0;
+  let cutSilenceSegmentsCount = 0;
+  let cutFillersCount = 0;
+  let cutRepetitionsCount = 0;
 
-  // Visual Enhancement Plan: Kinetic keywords, animated image stickers/b-roll, icon badges
-  const visualPlan: VisualOverlayItem[] = [];
-
-  // Always add top progress bar
-  if (template.enableProgressBar) {
-    visualPlan.push({
-      id: "overlay-progress-bar",
-      type: "progress_bar",
-      timestamp: 0,
-      duration: cleanDuration,
-      content: "Progress Bar",
-      style: { color: template.highlightColor },
-    });
-  }
-
-  // Visual Image Sticker & Animation Topics (mapped to keywords in transcript)
-  const visualKeywordMap: Record<string, { label: string; animation: "bounce" | "pop" | "slide_up" }> = {
-    app: { label: "📱 SMART APP", animation: "bounce" },
-    software: { label: "💻 PRO SOFTWARE", animation: "slide_up" },
-    click: { label: "⚡ 5 CLICKS", animation: "pop" },
-    clicks: { label: "⚡ 5 CLICKS", animation: "pop" },
-    video: { label: "🎬 4K REEL", animation: "slide_up" },
-    videos: { label: "🎬 4K REEL", animation: "slide_up" },
-    edit: { label: "✂️ AUTO CUT", animation: "pop" },
-    ready: { label: "🚀 READY TO POST", animation: "bounce" },
-    simple: { label: "✨ ULTRA SIMPLE", animation: "pop" },
-    time: { label: "⏱️ ZERO DELAY", animation: "slide_up" },
-    auto: { label: "🤖 AI AUTO EDIT", animation: "bounce" },
-  };
-
-  const addedKeywords = new Set<string>();
-
-  for (const word of allWords) {
-    const clean = word.word.toLowerCase().replace(/[^\w]/g, "");
-    if (visualKeywordMap[clean] && !addedKeywords.has(clean)) {
-      addedKeywords.add(clean);
-      const meta = visualKeywordMap[clean];
-      const relTime = Math.min(cleanDuration - 1.8, Math.max(0.6, word.start * (cleanDuration / totalDuration)));
-      visualPlan.push({
-        id: `overlay-anim-${visualPlan.length + 1}`,
-        type: "image_overlay",
-        timestamp: +relTime.toFixed(2),
-        duration: 2.0,
-        content: meta.label,
-        animation: meta.animation,
-        style: {
-          bg: template.cardBg,
-          textColor: template.highlightColor,
-          border: template.primaryColor,
-        },
-        soundName: template.enableSfx ? "pop.mp3" : undefined,
-      });
+  for (const cut of cuts) {
+    const dur = +(cut.end - cut.start).toFixed(2);
+    if (cut.type === "silence") {
+      cutSilenceDuration += dur;
+    } else if (cut.type === "filler") {
+      cutFillerDuration += dur;
+    } else if (cut.type === "retake") {
+      cutRepetitionDuration += dur;
     }
   }
 
-  // Key phrase emphasis badges (every 3-5 seconds)
-  const emphasisKeywords = allWords.filter(
-    (w) => w.word.length > 5 && !["because", "without", "through", "people"].includes(w.word.toLowerCase())
-  );
+  cutSilenceSegmentsCount = editorial.approvedCuts.filter((c) => c.type === "silence").length;
+  cutFillersCount = editorial.approvedCuts.filter((c) => c.type === "filler").length;
+  cutRepetitionsCount = editorial.approvedCuts.filter((c) => c.type === "retake").length;
 
-  emphasisKeywords.slice(0, 3).forEach((kw, idx) => {
-    visualPlan.push({
-      id: `overlay-badge-${idx + 1}`,
-      type: "icon_badge",
-      timestamp: Math.min(cleanDuration - 1.5, Math.max(0.5, kw.start * (cleanDuration / totalDuration))),
-      duration: 1.8,
-      content: kw.word.toUpperCase(),
-      animation: "pop",
-      style: {
-        bg: template.cardBg,
-        textColor: template.highlightColor,
-        border: template.primaryColor,
-      },
-      soundName: template.enableSfx ? "pop.mp3" : undefined,
-    });
+  cutSilenceDuration = +cutSilenceDuration.toFixed(2);
+  cutFillerDuration = +cutFillerDuration.toFixed(2);
+  cutRepetitionDuration = +cutRepetitionDuration.toFixed(2);
+
+  // 6. Map Visual Overlay Timestamps to Exact Edited Timeline
+  const mappedVisualPlan: VisualOverlayItem[] = editorial.visualPlan.map((item) => {
+    if (item.type === "progress_bar") {
+      return { ...item, duration: cleanDuration };
+    }
+    const editedStart = mapSourceTimeToEditedTime(item.timestamp, keepSegments);
+    return {
+      ...item,
+      timestamp: editedStart,
+    };
   });
 
   return {
     title: fullText.slice(0, 40) || "AI Edited Talking-Head Reel",
-    hookLine,
+    hookLine: editorial.hookLine,
     cuts,
     keepSegments,
     cleanDuration,
     cutDuration,
     cutSilenceDuration,
+    cutFillerDuration,
+    cutRepetitionDuration,
     cutSilenceSegmentsCount,
     cutRepetitionsCount,
     cutFillersCount,
-    visualPlan,
+    candidateCuts,
+    protectedRanges: editorial.protectedRanges,
+    pacingProfile,
+    visualPlan: mappedVisualPlan,
     templateId: template.id,
-    notes: `Planned ${cuts.length} cuts (${cutRepetitionsCount} repetitions, ${cutFillersCount} fillers) saving ${cutSilenceDuration}s. Alternating punch-in zooms with ${template.name} visual typography.`,
+    notes: editorial.notes,
   };
 }
 
-function mergeOverlappingCuts(cuts: EditCut[], totalDuration: number): EditCut[] {
+/**
+ * Validates and merges overlapping cuts strictly without destroying speech between them.
+ */
+export function mergeOverlappingCuts(cuts: EditCut[], totalDuration: number): EditCut[] {
   if (cuts.length === 0) return [];
 
-  // Filter valid cuts
-  const valid = cuts.filter((c) => c.end > c.start && (c.end - c.start) >= 0.12);
+  // Filter valid positive-duration cuts
+  const valid = cuts.filter((c) => c.end > c.start && c.start >= 0 && c.end <= totalDuration);
   valid.sort((a, b) => a.start - b.start);
   if (valid.length === 0) return [];
 
@@ -315,8 +639,8 @@ function mergeOverlappingCuts(cuts: EditCut[], totalDuration: number): EditCut[]
 
   for (let i = 1; i < valid.length; i++) {
     const next = valid[i];
-    // If overlapping or separated by less than 0.08s, merge them
-    if (next.start <= current.end + 0.08) {
+    // Only merge if strictly overlapping
+    if (next.start <= current.end) {
       current.end = Math.max(current.end, next.end);
       current.reason = `${current.reason}; ${next.reason}`;
       if (next.type !== "silence") {

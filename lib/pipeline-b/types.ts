@@ -47,6 +47,32 @@ export interface TranscriptSegment {
   words: TranscriptWord[];
 }
 
+export type PacingProfile = "snappy" | "natural" | "relaxed";
+
+export interface PacingConfig {
+  profile: PacingProfile;
+  minSilenceDuration: number;
+  preservedSilenceMargin: number;
+  minSpeechMargin: number;
+}
+
+export interface CandidateCut {
+  id: string;
+  start: number;
+  end: number;
+  type: "silence" | "filler" | "repetition" | "phrase_retake" | "sentence_pause";
+  classification: "accidental_stutter" | "intentional_emphasis" | "filler_pause" | "natural_pause" | "dead_air";
+  confidence: number;
+  affectedText: string;
+  reason: string;
+}
+
+export interface ProtectedRange {
+  start: number;
+  end: number;
+  reason: string;
+}
+
 export interface EditCut {
   id: string;
   start: number; // in seconds
@@ -81,9 +107,14 @@ export interface EditPlan {
   cleanDuration: number;
   cutDuration: number;
   cutSilenceDuration?: number;
+  cutFillerDuration?: number;
+  cutRepetitionDuration?: number;
   cutSilenceSegmentsCount?: number;
   cutRepetitionsCount?: number;
   cutFillersCount?: number;
+  candidateCuts?: CandidateCut[];
+  protectedRanges?: ProtectedRange[];
+  pacingProfile?: PacingProfile;
   visualPlan: VisualOverlayItem[];
   templateId: string;
   notes: string;
