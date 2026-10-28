@@ -22,7 +22,11 @@ import {
   assembleFinalEditPlan,
   PACING_CONFIGS,
 } from "./tools/edit-planner.ts";
-import { callWonderEditorialDirector } from "./tools/wonder-director.ts";
+import {
+  callWonderEditorialCleanup,
+  callWonderCreativeDirector,
+  buildEditedTranscript,
+} from "./tools/wonder-director.ts";
 import { validateCuts } from "./tools/cuts-validator.ts";
 import { buildCleanVideo } from "./tools/clean-video-builder.ts";
 import { generateTalkingHeadMotionCode } from "./tools/motion-generator.ts";
@@ -30,6 +34,7 @@ import { exportFinalVideo } from "./tools/export-service.ts";
 
 export interface OrchestratorRunOptions {
   stopAtStage?: PipelineBStage;
+  fetchImpl?: typeof fetch;
 }
 
 export async function executePipelineB(
@@ -123,9 +128,9 @@ export async function executePipelineB(
         userScript: state.userScript,
       });
 
-      // Step 4b: Wonder Muse AI Director approves cuts, protects emphasis, and designs story-specific visuals
+      // Step 4b: Wonder Muse AI Stage A — Editorial Cleanup (Cut approval & rhetorical protection)
       // Fail-safe behavior: If Wonder fails or is unconfigured, throws an explicit error and preserves original video.
-      const editorialDecision = await callWonderEditorialDirector({
+      const cleanupDecision = await callWonderEditorialCleanup({
         transcript: state.transcript || [],
         candidateCuts,
         totalDuration: state.metadata?.duration || 15,
@@ -135,12 +140,20 @@ export async function executePipelineB(
         runId,
         mode: state.mode || "wonder-ai",
         onLogEvent: logEvent,
+        fetchImpl: options?.fetchImpl,
       });
 
-      // Step 4c: Assemble Final Validated Edit Decision List
+      // Step 4c: Assemble Edit Decision List from validated cuts
       const editPlan = assembleFinalEditPlan({
         candidateCuts,
-        editorial: editorialDecision,
+        editorial: {
+          approvedCuts: cleanupDecision.approvedCuts,
+          protectedRanges: cleanupDecision.protectedRanges,
+          visualPlan: [],
+          hookLine: (state.transcript?.[0]?.words || []).slice(0, 6).map((w) => w.word).join(" ") || "Talking Head Reel",
+          editorialNotes: cleanupDecision.editorialNotes,
+          uncertainDecisions: cleanupDecision.uncertainDecisions,
+        },
         totalDuration: state.metadata?.duration || 15,
         templateId: state.templateId,
         pacingProfile: "natural",
@@ -149,14 +162,15 @@ export async function executePipelineB(
 
       state.editPlan = editPlan;
       recordStageSuccess(state, "EDIT_PLANNED", {
-        planId: editorialDecision.planId,
+        planId: cleanupDecision.planId,
         cutsCount: editPlan.cuts.length,
         cleanDuration: editPlan.cleanDuration,
         cutSilenceDuration: editPlan.cutSilenceDuration,
         cutSilenceSegmentsCount: editPlan.cutSilenceSegmentsCount,
         cutRepetitionsCount: editPlan.cutRepetitionsCount || 0,
         cutFillersCount: editPlan.cutFillersCount || 0,
-        visualOverlaysCount: editPlan.visualPlan.length,
+        protectedRangesCount: cleanupDecision.protectedRanges.length,
+        uncertainDecisionsCount: cleanupDecision.uncertainDecisions?.length || 0,
       });
     }
     if (options?.stopAtStage === "EDIT_PLANNED") return state;
@@ -205,16 +219,52 @@ export async function executePipelineB(
         cleanVideoPath,
       });
 
+      // Compute edited transcript and timestamp mapping on clean video timeline
+      const editedTranscript = buildEditedTranscript(
+        state.transcript || [],
+        state.editPlan!.keepSegments
+      );
+      state.editedTranscript = editedTranscript;
+      state.editPlan!.editedTranscript = editedTranscript;
+
       state.cleanVideoPath = cleanVideoPath;
-      recordStageSuccess(state, "CLEAN_VIDEO_CREATED", { cleanVideoPath, durationMs: fElapsed });
+      recordStageSuccess(state, "CLEAN_VIDEO_CREATED", {
+        cleanVideoPath,
+        durationMs: fElapsed,
+        editedSegmentsCount: editedTranscript.length,
+      });
     }
     if (options?.stopAtStage === "CLEAN_VIDEO_CREATED") return state;
 
-    // 7. VISUAL_PLAN_CREATED
+    // 7. VISUAL_PLAN_CREATED (Stage B — Creative Direction)
     if (shouldRunStage(state, "VISUAL_PLAN_CREATED")) {
       recordStageStart(state, "VISUAL_PLAN_CREATED");
-      const overlays = state.editPlan?.visualPlan || [];
-      recordStageSuccess(state, "VISUAL_PLAN_CREATED", { overlaysCount: overlays.length });
+
+      // Stage B — Creative Direction: Analyze final clean narrative & design complete visual edit
+      const creativePlan = await callWonderCreativeDirector({
+        editedTranscript: state.editedTranscript || [],
+        cleanDuration: state.editPlan!.cleanDuration,
+        templateId: state.templateId,
+        userScript: state.userScript,
+        runId,
+        mode: state.mode || "wonder-ai",
+        onLogEvent: logEvent,
+        fetchImpl: options?.fetchImpl,
+      });
+
+      state.editPlan!.title = creativePlan.title;
+      state.editPlan!.hookLine = creativePlan.hookLine;
+      state.editPlan!.visualSegments = creativePlan.visualSegments;
+      state.editPlan!.visualPlan = creativePlan.visualPlan;
+      state.editPlan!.notes = `${state.editPlan!.notes} | ${creativePlan.editorialNotes}`;
+
+      recordStageSuccess(state, "VISUAL_PLAN_CREATED", {
+        planId: creativePlan.planId,
+        segmentsCount: creativePlan.visualSegments.length,
+        overlaysCount: creativePlan.visualPlan.length,
+        title: creativePlan.title,
+        hookLine: creativePlan.hookLine,
+      });
     }
     if (options?.stopAtStage === "VISUAL_PLAN_CREATED") return state;
 

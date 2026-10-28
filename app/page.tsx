@@ -1470,34 +1470,34 @@ export default function ProperMobileResponsiveChat() {
         const fillerCount = state?.editPlan?.cutFillersCount || 0;
 
         const visualPlan = state?.editPlan?.visualPlan || [];
-        const animCount = visualPlan.filter((v: any) => v.type === "image_overlay" || v.type === "icon_badge").length;
+        const visualSegments = state?.editPlan?.visualSegments || [];
+        const animCount = visualSegments.length > 0 ? visualSegments.length : visualPlan.filter((v: any) => v.type === "image_overlay" || v.type === "icon_badge").length;
 
         // Map segments to Storyboard beats so the timeline is interactive
-        const beats: Beat[] = keepSegments.map((seg: any, idx: number) => {
+        const beats: Beat[] = (visualSegments.length > 0 ? visualSegments : keepSegments).map((seg: any, idx: number) => {
           const segStart = typeof seg?.start === "number" ? seg.start : Number(seg?.inSec ?? 0);
           const segEnd = typeof seg?.end === "number" ? seg.end : Number(seg?.outSec ?? segStart + 1);
-          const segDur = typeof seg?.duration === "number" ? seg.duration : Math.max(0.1, segEnd - segStart);
-          const zoom = typeof seg?.zoomScale === "number" ? seg.zoomScale : Number(seg?.zoomFactor ?? 1.0);
+          const segDur = Math.max(0.1, +(segEnd - segStart).toFixed(2));
+          const zoom = typeof seg?.cameraZoom === "number" ? seg.cameraZoom : (typeof seg?.zoomScale === "number" ? seg.zoomScale : 1.0);
 
-          // Find matching animated visual overlay active in this segment
-          const matchingOverlay = visualPlan.find(
-            (v: any) => v.type !== "progress_bar" && v.timestamp >= segStart && v.timestamp < segEnd
-          );
+          const techniqueLabel = seg?.technique ? String(seg.technique).replace(/_/g, " ").toUpperCase() : "";
+          const layoutLabel = seg?.layoutType ? String(seg.layoutType).replace(/_/g, " ") : "";
 
           return {
             id: idx + 1,
-            label: `Scene ${idx + 1}`,
+            label: `Scene ${idx + 1}${techniqueLabel ? ` • ${techniqueLabel}` : ""}`,
             duration: `${segDur.toFixed(1)}s`,
             durNum: segDur,
             start: +segStart.toFixed(2),
             end: +segEnd.toFixed(2),
-            script: matchingOverlay
-              ? `Scene ${idx + 1} • Animation: [${matchingOverlay.content}]`
-              : `Scene ${idx + 1} (${zoom > 1 ? `${zoom.toFixed(2)}x Punch-in` : "Wide Shot"})`,
-            headline: matchingOverlay ? matchingOverlay.content : (zoom > 1 ? `Punch-in ${zoom.toFixed(2)}x` : "Wide Shot"),
-            visualDesc: matchingOverlay
-              ? `Animated Sticker [${matchingOverlay.content}] popping onto footage (${matchingOverlay.animation || "bounce"} entrance)`
+            script: seg?.spokenReference || `Scene ${idx + 1} (${zoom > 1 ? `${zoom.toFixed(2)}x Punch-in` : "Wide Shot"})`,
+            headline: seg?.headlineText || (techniqueLabel || (zoom > 1 ? `Punch-in ${zoom.toFixed(2)}x` : "Wide Shot")),
+            visualDesc: seg?.motionIntent
+              ? `${techniqueLabel} (${layoutLabel}) — ${seg.motionIntent}`
               : `Retained speech segment from ${segStart.toFixed(1)}s to ${segEnd.toFixed(1)}s`,
+            motion: seg?.motionIntent || "Synchronized animated sticker & kinetic punch",
+            camera: zoom > 1 ? `Dynamic ${zoom.toFixed(2)}x Zoom Punch-in` : "Static Wide Angle",
+            transition: seg?.transitionDirection ? `${String(seg.transitionDirection).replace(/_/g, " ")} entrance` : "Cut",
           };
         });
 

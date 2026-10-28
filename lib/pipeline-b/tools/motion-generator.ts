@@ -18,8 +18,17 @@ export function generateTalkingHeadMotionCode(params: {
   const durationSec = editPlan.cleanDuration;
   const totalFrames = Math.round(durationSec * 30);
 
-  // Collect all words with adjusted timestamps relative to clean duration
-  const words = transcript.flatMap((s) => s.words);
+  // Collect words relative to clean video duration
+  const words = editPlan.editedTranscript && editPlan.editedTranscript.length > 0
+    ? editPlan.editedTranscript.flatMap((s) => s.words.map((w) => ({
+        word: w.word,
+        start: w.editedStart,
+        end: w.editedEnd,
+      })))
+    : transcript.flatMap((s) => s.words);
+
+  const visualSegments = editPlan.visualSegments || [];
+  const visualOverlays = editPlan.visualPlan || [];
 
   return `import React from "react";
 import { AbsoluteFill, Video, useCurrentFrame, useVideoConfig, interpolate, spring } from "remotion";
@@ -30,7 +39,14 @@ export const TalkingHeadReel: React.FC = () => {
   const currentTime = frame / fps;
 
   const words = ${JSON.stringify(words, null, 2)};
-  const visualOverlays = ${JSON.stringify(editPlan.visualPlan, null, 2)};
+  const visualOverlays = ${JSON.stringify(visualOverlays, null, 2)};
+  const visualSegments = ${JSON.stringify(visualSegments, null, 2)};
+
+  // Active visual segment detection for camera framing & layout
+  const activeSegment = visualSegments.find(
+    (seg: any) => currentTime >= seg.start && currentTime <= seg.end
+  );
+  const currentCameraZoom = activeSegment?.cameraZoom || 1.0;
 
   // Active word detection
   const activeWordIndex = words.findIndex(
@@ -47,13 +63,15 @@ export const TalkingHeadReel: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000", fontFamily: "${template.fontFamily}" }}>
-      {/* 1. Cleaned Talking Head Video Base */}
+      {/* 1. Cleaned Talking Head Video Base with Camera Punch-in Reframing */}
       <Video
         src="${cleanVideoUrl}"
         style={{
           width: "100%",
           height: "100%",
           objectFit: "cover",
+          transform: \`scale(\${currentCameraZoom})\`,
+          transition: "transform 0.25s ease-out",
         }}
       />
 

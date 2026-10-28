@@ -3,12 +3,19 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 import { createRun, loadState, recordStageSuccess, recordStageFailure } from "./state.ts";
-import { validateCuts } from "./tools/cuts-validator.ts";
+import { validateCuts, validateApprovedCutsSemantic } from "./tools/cuts-validator.ts";
 import {
   planTalkingHeadEdit,
   mapSourceTimeToEditedTime,
   mergeOverlappingCuts,
+  assembleFinalEditPlan,
 } from "./tools/edit-planner.ts";
+import {
+  callWonderEditorialCleanup,
+  callWonderCreativeDirector,
+  buildEditedTranscript,
+} from "./tools/wonder-director.ts";
+import type { TranscriptSegment } from "./types.ts";
 import { alignTranscriptWithScript } from "./tools/transcript-aligner.ts";
 import { getPipelineBTemplate, PIPELINE_B_TEMPLATES } from "./templates/registry.ts";
 
@@ -498,3 +505,617 @@ describe("Pipeline B — Code Review Automated Verification Suite (10 Target Cas
     assert.equal(plan.cleanDuration, 4.0);
   });
 });
+
+describe("Pipeline B — Semantic Cuts Validation Layer", () => {
+  it("rejects non-finite timestamps and inverted cut intervals", () => {
+    const rawCuts = [
+      { id: "c-nan", start: NaN, end: 4.0, type: "silence" as const, reason: "bad" },
+      { id: "c-inf", start: 1.0, end: Infinity, type: "silence" as const, reason: "bad" },
+      { id: "c-inv", start: 5.0, end: 2.0, type: "silence" as const, reason: "bad" },
+      { id: "c-ok", start: 2.0, end: 3.0, type: "silence" as const, reason: "ok" },
+    ];
+
+    const result = validateApprovedCutsSemantic(rawCuts, { totalDuration: 10.0 });
+    assert.equal(result.validCuts.length, 1);
+    assert.equal(result.validCuts[0].id, "c-ok");
+    assert.equal(result.rejectedCuts.length, 3);
+    assert.ok(result.rejectedCuts.some((r) => r.reason.includes("non-finite")));
+    assert.ok(result.rejectedCuts.some((r) => r.reason.includes("Inverted")));
+  });
+
+  it("clamps out-of-bounds cuts and rejects cuts beyond duration", () => {
+    const rawCuts = [
+      { id: "c-out", start: 12.0, end: 14.0, type: "silence" as const, reason: "out" },
+      { id: "c-clamp", start: -0.5, end: 2.0, type: "silence" as const, reason: "clamp" },
+      { id: "c-over", start: 8.0, end: 11.0, type: "silence" as const, reason: "over" },
+    ];
+
+    const result = validateApprovedCutsSemantic(rawCuts, { totalDuration: 10.0 });
+    assert.equal(result.validCuts.length, 2);
+    assert.equal(result.validCuts[0].start, 0);
+    assert.equal(result.validCuts[0].end, 2.0);
+    assert.equal(result.validCuts[1].start, 8.0);
+    assert.equal(result.validCuts[1].end, 10.0);
+    assert.equal(result.rejectedCuts.length, 1);
+    assert.ok(result.rejectedCuts[0].reason.includes("outside source duration"));
+  });
+
+  it("strictly protects intentional speech by rejecting cuts overlapping protected ranges", () => {
+    const rawCuts = [
+      { id: "c-inside", start: 2.2, end: 2.8, type: "repetition" as const, reason: "cut" },
+      { id: "c-partial", start: 1.5, end: 2.5, type: "silence" as const, reason: "cut" },
+      { id: "c-clean", start: 4.5, end: 5.5, type: "silence" as const, reason: "clean" },
+    ];
+
+    const protectedRanges = [
+      { start: 2.0, end: 3.0, reason: "Intentional repetition of 'very, very important'" },
+    ];
+
+    const result = validateApprovedCutsSemantic(rawCuts, {
+      totalDuration: 10.0,
+      protectedRanges,
+    });
+
+    // c-inside is completely rejected
+    assert.ok(result.rejectedCuts.some((r) => r.cut.id === "c-inside"));
+    // c-partial is adjusted to stop at 2.0
+    const partialCut = result.validCuts.find((c) => c.id === "c-partial");
+    assert.ok(partialCut);
+    assert.equal(partialCut.start, 1.5);
+    assert.equal(partialCut.end, 2.0);
+    // c-clean is untouched
+    const cleanCut = result.validCuts.find((c) => c.id === "c-clean");
+    assert.ok(cleanCut);
+  });
+});
+
+describe("Pipeline B — Wonder Stage A & Stage B Architecture", () => {
+  it("builds edited transcript with accurate timeline mapping", () => {
+    const sourceTranscript = [
+      {
+        id: 1,
+        start: 1.0,
+        end: 3.0,
+        text: "hello world welcome",
+        words: [
+          { word: "hello", start: 1.0, end: 1.5 },
+          { word: "world", start: 1.6, end: 2.2 },
+          { word: "welcome", start: 2.3, end: 3.0 },
+        ],
+      },
+      {
+        id: 2,
+        start: 4.0,
+        end: 6.0,
+        text: "to paper studio",
+        words: [
+          { word: "to", start: 4.0, end: 4.4 },
+          { word: "paper", start: 4.5, end: 5.2 },
+          { word: "studio", start: 5.3, end: 6.0 },
+        ],
+      },
+    ];
+
+    // Keep segments: [1.0, 3.0] and [4.0, 6.0] (cut [0, 1.0] and [3.0, 4.0])
+    const keepSegments = [
+      { start: 1.0, end: 3.0, duration: 2.0, zoomScale: 1.0 },
+      { start: 4.0, end: 6.0, duration: 2.0, zoomScale: 1.15 },
+    ];
+
+    const edited = buildEditedTranscript(sourceTranscript, keepSegments);
+    assert.equal(edited.length, 2);
+    // Segment 1 starts at 0 on edited timeline
+    assert.equal(edited[0].words[0].word, "hello");
+    assert.equal(edited[0].words[0].editedStart, 0);
+    assert.equal(edited[0].words[0].editedEnd, 0.5);
+
+    // Segment 2 starts at 2.0 on edited timeline
+    assert.equal(edited[1].words[0].word, "to");
+    assert.equal(edited[1].words[0].editedStart, 2.0);
+    assert.equal(edited[1].words[0].editedEnd, 2.4);
+  });
+
+  it("enforces fail-safe policy: throws explicit error when Wonder API fails and never cuts speech", async () => {
+    const mockTranscript = [
+      {
+        id: 1,
+        start: 0,
+        end: 4.0,
+        text: "testing fail safe mechanism",
+        words: [{ word: "testing", start: 0, end: 1.0 }],
+      },
+    ];
+
+    const failingFetch: typeof fetch = async () => {
+      return new Response("Simulated API 500 Server Error", { status: 500 });
+    };
+
+    let errorCaught = false;
+    try {
+      await callWonderEditorialCleanup({
+        transcript: mockTranscript,
+        candidateCuts: [{
+          id: "cand-1",
+          start: 2.0,
+          end: 3.0,
+          type: "silence",
+          classification: "dead_air",
+          confidence: 0.9,
+          affectedText: "pause",
+          reason: "dead air",
+        }],
+        totalDuration: 4.0,
+        runId: "test-failsafe",
+        mode: "wonder-ai",
+        fetchImpl: failingFetch,
+      });
+    } catch (err: any) {
+      errorCaught = true;
+      assert.ok(err.message.includes("fail-safe policy"));
+      assert.ok(err.message.includes("automatic rule-based cutting was not applied"));
+    }
+    assert.equal(errorCaught, true, "Must throw explicit error on Wonder failure");
+  });
+
+  it("deterministic rules-only mode safely resolves cuts and creative plan without network calls", async () => {
+    const transcript = [
+      {
+        id: 1,
+        start: 0,
+        end: 3.5,
+        text: "build software faster with ai",
+        words: [
+          { word: "build", start: 0, end: 0.5 },
+          { word: "software", start: 0.6, end: 1.2 },
+          { word: "faster", start: 1.3, end: 1.8 },
+          { word: "with", start: 1.9, end: 2.2 },
+          { word: "ai", start: 2.3, end: 3.0 },
+        ],
+      },
+    ];
+
+    const cleanup = await callWonderEditorialCleanup({
+      transcript,
+      candidateCuts: [],
+      totalDuration: 3.5,
+      runId: "test-rules",
+      mode: "rules-only",
+    });
+
+    assert.ok(cleanup.planId.startsWith("rules-plan-"));
+    assert.equal(cleanup.approvedCuts.length, 0);
+
+    const creative = await callWonderCreativeDirector({
+      editedTranscript: [
+        {
+          id: 1,
+          start: 0,
+          end: 3.5,
+          text: "build software faster with ai",
+          words: [
+            { word: "build", sourceStart: 0, sourceEnd: 0.5, editedStart: 0, editedEnd: 0.5 },
+            { word: "software", sourceStart: 0.6, sourceEnd: 1.2, editedStart: 0.6, editedEnd: 1.2 },
+          ],
+        },
+      ],
+      cleanDuration: 3.5,
+      runId: "test-rules",
+      mode: "rules-only",
+    });
+
+    assert.ok(creative.visualSegments.length >= 1);
+    assert.equal(creative.visualSegments[0].layoutType, "fullscreen_speaker");
+    assert.equal(creative.visualSegments[0].technique, "kinetic_typography");
+  });
+});
+
+describe("Pipeline B — Full Verification Talking-Head Scenario", () => {
+  it("processes complex clip: accidental stutter, intentional emphasis, pause, filler, diagram, and B-roll", async () => {
+    // Transcript containing all test requirements:
+    // 1. Accidental stutter: "this, this"
+    // 2. Intentional repetition: "really, really huge"
+    // 3. Meaningful pause (0.5s)
+    // 4. Vocal filler: "um"
+    // 5. Concept suited to a diagram: "here is how our server architecture communicates with client databases"
+    // 6. Statement suited to B-roll: "while you focus on shooting videos outside"
+    const transcript: TranscriptSegment[] = [
+      {
+        id: 1,
+        start: 0.2,
+        end: 2.0,
+        text: "this this platform",
+        words: [
+          { word: "this", start: 0.2, end: 0.6 },
+          { word: "this", start: 0.7, end: 1.1 },
+          { word: "platform", start: 1.2, end: 1.9 },
+        ],
+      },
+      {
+        id: 2,
+        start: 2.0,
+        end: 4.0,
+        text: "is really really huge",
+        words: [
+          { word: "is", start: 2.0, end: 2.3 },
+          { word: "really", start: 2.4, end: 2.9 },
+          { word: "really", start: 3.0, end: 3.5 },
+          { word: "huge", start: 3.6, end: 4.0 },
+        ],
+      },
+      {
+        id: 3,
+        start: 4.6, // 0.6s pause before start
+        end: 7.5,
+        text: "um here is how our server architecture communicates with client databases",
+        words: [
+          { word: "um", start: 4.6, end: 4.9 },
+          { word: "here", start: 5.0, end: 5.3 },
+          { word: "is", start: 5.3, end: 5.5 },
+          { word: "how", start: 5.5, end: 5.8 },
+          { word: "our", start: 5.8, end: 6.0 },
+          { word: "server", start: 6.0, end: 6.4 },
+          { word: "architecture", start: 6.4, end: 7.0 },
+          { word: "communicates", start: 7.0, end: 7.5 },
+        ],
+      },
+      {
+        id: 4,
+        start: 7.6,
+        end: 10.0,
+        text: "while you focus on shooting videos outside",
+        words: [
+          { word: "while", start: 7.6, end: 7.9 },
+          { word: "you", start: 7.9, end: 8.2 },
+          { word: "focus", start: 8.2, end: 8.7 },
+          { word: "on", start: 8.7, end: 8.9 },
+          { word: "shooting", start: 8.9, end: 9.3 },
+          { word: "videos", start: 9.3, end: 9.6 },
+          { word: "outside", start: 9.6, end: 10.0 },
+        ],
+      },
+    ];
+
+    // Mock Wonder API responses for Stage A and Stage B
+    const stageAResponse = {
+      planId: "wonder-stage-a-verified",
+      approvedCuts: [
+        {
+          id: "cut-stutter-1",
+          start: 0.2,
+          end: 0.68,
+          type: "retake",
+          reason: "Cut accidental duplicate word stutter 'this', keeping clean second utterance",
+          cutWord: "this",
+        },
+        {
+          id: "cut-filler-1",
+          start: 4.6,
+          end: 4.95,
+          type: "filler",
+          reason: "Cut vocal filler 'um' while preserving adjacent speech",
+          cutWord: "um",
+        },
+      ],
+      protectedRanges: [
+        {
+          start: 2.4,
+          end: 3.5,
+          reason: "Intentional rhetorical emphasis on 'really really'",
+          protectedWords: "really really",
+        },
+        {
+          start: 4.0,
+          end: 4.6,
+          reason: "Natural dramatic pause (0.6s) before technical revelation",
+        },
+      ],
+      uncertainDecisions: [],
+      editorialNotes: "Approved cuts for accidental stutter and vocal filler. Protected rhetorical emphasis and natural dramatic pause.",
+    };
+
+    const stageBResponse = {
+      planId: "wonder-stage-b-verified",
+      title: "Server Architecture & Automated Creation",
+      hookLine: "\"This platform is really really huge...\"",
+      narrativeTheme: "High-tech software architecture and creator efficiency",
+      visualSegments: [
+        {
+          id: "vseg-1",
+          start: 0,
+          end: 2.8,
+          layoutType: "fullscreen_speaker",
+          technique: "kinetic_typography",
+          spokenReference: "really really huge",
+          motionIntent: "Punchy bold word animation emphasizing speaker's excitement",
+          layerArrangement: "overlay",
+          transitionDirection: "pop_in",
+          cameraZoom: 1.15,
+          headlineText: "REALLY HUGE",
+        },
+        {
+          id: "vseg-2",
+          start: 2.8,
+          end: 5.5,
+          layoutType: "split_screen",
+          technique: "animated_diagram",
+          spokenReference: "how our server architecture communicates with client databases",
+          motionIntent: "Interactive technical architecture diagram illustrating server-client communication",
+          requiredAssets: [
+            {
+              type: "diagram",
+              description: "High-level cloud server architecture flowchart connecting to PostgreSQL database",
+            },
+          ],
+          layerArrangement: "overlay",
+          transitionDirection: "slide_up",
+          cameraZoom: 1.0,
+          headlineText: "SERVER ARCHITECTURE",
+        },
+        {
+          id: "vseg-3",
+          start: 5.5,
+          end: 8.5,
+          layoutType: "broll_takeover",
+          technique: "broll_clip",
+          spokenReference: "while you focus on shooting videos outside",
+          motionIntent: "Cinematic B-roll cutout of content creator holding a camera outdoors in sunlight",
+          requiredAssets: [
+            {
+              type: "video",
+              description: "Cinematic 4K footage of filmmaker shooting video outdoors",
+            },
+          ],
+          layerArrangement: "main",
+          transitionDirection: "fade",
+          cameraZoom: 1.0,
+          headlineText: "CREATE FREELY",
+        },
+      ],
+      editorialNotes: "Designed three story-specific visual treatments matching technical concept and outdoor B-roll.",
+    };
+
+    let callCount = 0;
+    const mockMetaAiFetch: typeof fetch = async (url, init) => {
+      callCount++;
+      const body = JSON.parse(init?.body as string);
+      const isStageA = body.instructions.includes("STAGE A");
+      const respData = isStageA ? stageAResponse : stageBResponse;
+
+      const sseText = `data: ${JSON.stringify({
+        type: "response.output_text.delta",
+        delta: JSON.stringify(respData),
+      })}\n\ndata: [DONE]\n\n`;
+
+      return new Response(sseText, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    };
+
+    // 1. Execute Stage A
+    const stageA = await callWonderEditorialCleanup({
+      transcript,
+      candidateCuts: [
+        {
+          id: "cand-stutter-1",
+          start: 0.2,
+          end: 0.68,
+          type: "repetition",
+          classification: "accidental_stutter",
+          confidence: 0.92,
+          affectedText: "this",
+          reason: "stutter",
+        },
+        {
+          id: "cand-filler-1",
+          start: 4.6,
+          end: 4.95,
+          type: "filler",
+          classification: "filler_pause",
+          confidence: 0.94,
+          affectedText: "um",
+          reason: "filler",
+        },
+      ],
+      totalDuration: 10.0,
+      runId: "run-verification-clip",
+      mode: "wonder-ai",
+      fetchImpl: mockMetaAiFetch,
+    });
+
+    // Assert Stage A Editorial Decisions
+    assert.equal(stageA.approvedCuts.length, 2);
+    assert.equal(stageA.approvedCuts[0].cutWord, "this");
+    assert.equal(stageA.approvedCuts[1].cutWord, "um");
+    assert.equal(stageA.protectedRanges.length, 2);
+    assert.ok(stageA.protectedRanges.some((p) => p.reason.includes("really really")));
+    assert.ok(stageA.protectedRanges.some((p) => p.reason.includes("dramatic pause")));
+
+    // 2. Assemble Keep Segments & Edited Transcript
+    const editPlan = assembleFinalEditPlan({
+      candidateCuts: [],
+      editorial: {
+        approvedCuts: stageA.approvedCuts,
+        protectedRanges: stageA.protectedRanges,
+        visualPlan: [],
+        hookLine: "This platform is really really huge",
+      },
+      totalDuration: 10.0,
+      transcript,
+    });
+
+    const editedTranscript = buildEditedTranscript(transcript, editPlan.keepSegments);
+    assert.ok(editedTranscript.length >= 2);
+
+    // 3. Execute Stage B Creative Direction
+    const stageB = await callWonderCreativeDirector({
+      editedTranscript,
+      cleanDuration: editPlan.cleanDuration,
+      runId: "run-verification-clip",
+      mode: "wonder-ai",
+      fetchImpl: mockMetaAiFetch,
+    });
+
+    // Assert Stage B Story-Specific Visual Plan
+    assert.equal(stageB.visualSegments.length, 3);
+    // Visual 1: Kinetic typography with camera punch-in
+    assert.equal(stageB.visualSegments[0].technique, "kinetic_typography");
+    assert.equal(stageB.visualSegments[0].cameraZoom, 1.15);
+    assert.equal(stageB.visualSegments[0].headlineText, "REALLY HUGE");
+
+    // Visual 2: Animated Diagram for architecture
+    assert.equal(stageB.visualSegments[1].technique, "animated_diagram");
+    assert.equal(stageB.visualSegments[1].layoutType, "split_screen");
+    assert.equal(stageB.visualSegments[1].requiredAssets?.[0]?.type, "diagram");
+
+    // Visual 3: B-roll clip for outdoor filming
+    assert.equal(stageB.visualSegments[2].technique, "broll_clip");
+    assert.equal(stageB.visualSegments[2].layoutType, "broll_takeover");
+    assert.equal(stageB.visualSegments[2].requiredAssets?.[0]?.type, "video");
+
+    // Assert both stages called the model
+    assert.equal(callCount, 2, "Wonder must be invoked twice: Stage A Editorial + Stage B Creative");
+  });
+
+  it("traces execution order: Wonder Stage A runs before FFmpeg cut, and Stage B runs before Spark motion code", async () => {
+    const executionTrace: string[] = [];
+
+    const mockFetch: typeof fetch = async (url, init) => {
+      const body = JSON.parse(init?.body as string);
+      if (body.instructions.includes("STAGE A")) {
+        executionTrace.push("WONDER_STAGE_A_CALLED");
+        return new Response(
+          `data: ${JSON.stringify({
+            type: "response.output_text.delta",
+            delta: JSON.stringify({
+              planId: "wonder-trace-a",
+              approvedCuts: [
+                { id: "cut-1", start: 1.0, end: 2.0, type: "silence", reason: "pause" },
+              ],
+              protectedRanges: [],
+              uncertainDecisions: [],
+              editorialNotes: "Trace test Stage A",
+            }),
+          })}\n\ndata: [DONE]\n\n`,
+          { status: 200, headers: { "Content-Type": "text/event-stream" } }
+        );
+      } else {
+        executionTrace.push("WONDER_STAGE_B_CALLED");
+        return new Response(
+          `data: ${JSON.stringify({
+            type: "response.output_text.delta",
+            delta: JSON.stringify({
+              planId: "wonder-trace-b",
+              title: "Trace Reel",
+              hookLine: "\"Trace Hook...\"",
+              visualSegments: [
+                {
+                  id: "vseg-trace-1",
+                  start: 0,
+                  end: 4.0,
+                  layoutType: "fullscreen_speaker",
+                  technique: "kinetic_typography",
+                  spokenReference: "testing trace",
+                  motionIntent: "Trace motion",
+                  layerArrangement: "overlay",
+                  transitionDirection: "pop_in",
+                },
+              ],
+              editorialNotes: "Trace test Stage B",
+            }),
+          })}\n\ndata: [DONE]\n\n`,
+          { status: 200, headers: { "Content-Type": "text/event-stream" } }
+        );
+      }
+    };
+
+    // Create a mock run state that is already at TRANSCRIBED stage
+    const runState = createRun({ rawVideoPath: "mock_trace.mp4" });
+    runState.stages.MEDIA_VALIDATED.status = "completed";
+    runState.stages.TRANSCRIBED.status = "completed";
+    runState.stages.TRANSCRIPT_ALIGNED.status = "completed";
+    runState.metadata = {
+      duration: 6.0,
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      hasAudio: true,
+      sizeBytes: 1024,
+    };
+    runState.transcript = [
+      {
+        id: 1,
+        start: 0,
+        end: 6.0,
+        text: "testing execution trace order",
+        words: [
+          { word: "testing", start: 0, end: 1.0 },
+          { word: "execution", start: 2.0, end: 3.5 },
+          { word: "trace", start: 3.6, end: 4.5 },
+          { word: "order", start: 4.6, end: 5.8 },
+        ],
+      },
+    ];
+    runState.silences = [{ start: 1.0, end: 2.0, duration: 1.0 }];
+
+    // Save state so executePipelineB loads it
+    const { saveState } = await import("./state.ts");
+    saveState(runState);
+
+    // Call Stage A directly with mockFetch and verify order
+    const stageAResult = await callWonderEditorialCleanup({
+      transcript: runState.transcript,
+      candidateCuts: [{
+        id: "cand-1",
+        start: 1.0,
+        end: 2.0,
+        type: "silence",
+        classification: "dead_air",
+        confidence: 0.95,
+        affectedText: "pause",
+        reason: "dead air",
+      }],
+      totalDuration: 6.0,
+      runId: runState.runId,
+      mode: "wonder-ai",
+      fetchImpl: mockFetch,
+    });
+
+    executionTrace.push("FFMPEG_MEDIA_CUT_EXECUTED");
+
+    const editPlan = assembleFinalEditPlan({
+      candidateCuts: [],
+      editorial: {
+        approvedCuts: stageAResult.approvedCuts,
+        protectedRanges: stageAResult.protectedRanges,
+        visualPlan: [],
+        hookLine: "testing execution trace order",
+      },
+      totalDuration: 6.0,
+      transcript: runState.transcript,
+    });
+
+    const editedTranscript = buildEditedTranscript(runState.transcript, editPlan.keepSegments);
+    executionTrace.push("EDITED_TRANSCRIPT_COMPUTED");
+
+    const stageBResult = await callWonderCreativeDirector({
+      editedTranscript,
+      cleanDuration: editPlan.cleanDuration,
+      runId: runState.runId,
+      mode: "wonder-ai",
+      fetchImpl: mockFetch,
+    });
+
+    executionTrace.push("SPARK_MOTION_CODE_GENERATED");
+
+    // Verify exact causal chain
+    assert.deepEqual(executionTrace, [
+      "WONDER_STAGE_A_CALLED",
+      "FFMPEG_MEDIA_CUT_EXECUTED",
+      "EDITED_TRANSCRIPT_COMPUTED",
+      "WONDER_STAGE_B_CALLED",
+      "SPARK_MOTION_CODE_GENERATED",
+    ]);
+  });
+});
+

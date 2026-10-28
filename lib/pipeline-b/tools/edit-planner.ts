@@ -207,8 +207,7 @@ export function generateCandidateCuts(params: {
           reason: `Intentional emphasis on '${w1.word}' — preserve for speaker delivery`,
         });
       } else {
-        // Accidental duplicate word stutter: ONLY CUT THE FIRST INSTANCE!
-        // Cut from w1.start up to w2.start, so w2 is completely retained!
+        // Accidental duplicate word stutter: provide evidence with alternative keep option
         const cStart = Math.max(0, +w1.start.toFixed(2));
         const cEnd = Math.min(totalDuration, +(w2.start - 0.02).toFixed(2));
         if (cEnd > cStart && (cEnd - cStart) >= 0.10) {
@@ -221,6 +220,11 @@ export function generateCandidateCuts(params: {
             confidence: 0.90,
             affectedText: w1.word,
             reason: `Trim accidental repeated duplicate of '${w1.word}', keeping second clean instance`,
+            alternativeKeepOption: {
+              start: +w2.start.toFixed(2),
+              end: +w2.end.toFixed(2),
+              description: `Keep instance 1 [${w1.start}s - ${w1.end}s] and cut instance 2 [${w2.start}s - ${w2.end}s] if first take has better acoustic clarity`,
+            },
           });
         }
       }
@@ -484,6 +488,9 @@ export function assembleFinalEditPlan(params: {
     editorialNotes?: string;
     title?: string;
     planId?: string;
+    uncertainDecisions?: { candidateId: string; actionTaken: "kept_safe" | "cut"; rationale: string }[];
+    visualSegments?: any[];
+    editedTranscript?: any[];
   };
   totalDuration: number;
   templateId?: string;
@@ -608,8 +615,11 @@ export function assembleFinalEditPlan(params: {
     cutFillersCount,
     candidateCuts,
     protectedRanges: editorial.protectedRanges,
+    uncertainDecisions: (editorial as any).uncertainDecisions,
     pacingProfile,
     visualPlan: mappedVisualPlan,
+    visualSegments: (editorial as any).visualSegments,
+    editedTranscript: (editorial as any).editedTranscript,
     templateId: template.id,
     notes: editorial.editorialNotes || editorial.notes || "Plan assembled from Wonder AI Director decisions.",
   };

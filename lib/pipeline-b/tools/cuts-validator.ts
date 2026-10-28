@@ -4,21 +4,208 @@
  * Independently validates cut intervals before media processing.
  */
 
-import type { EditPlan } from "../types.ts";
+import type { EditCut, EditPlan, ProtectedRange, TranscriptSegment } from "../types.ts";
 
 export interface CutsValidationResult {
   passed: boolean;
   needsReview: boolean;
   reviewReason?: string;
   errors: string[];
+  warnings?: string[];
+}
+
+export interface SemanticValidationOptions {
+  totalDuration: number;
+  protectedRanges?: ProtectedRange[];
+  transcript?: TranscriptSegment[];
+}
+
+export interface SemanticCutsValidationResult {
+  validCuts: EditCut[];
+  rejectedCuts: { cut: EditCut; reason: string }[];
+  adjustedCuts: { original: EditCut; adjusted: EditCut; reason: string }[];
+  warnings: string[];
+}
+
+/**
+ * Validates and sanitizes approved cuts against semantic rules:
+ * - Reject non-finite timestamps
+ * - Clamp/reject cuts falling outside source duration
+ * - Reject cuts that overlap protected speech
+ * - Resolve conflicting/overlapping cuts
+ * - Preserve important spoken content aligned with transcript
+ */
+export function validateApprovedCutsSemantic(
+  cuts: EditCut[],
+  options: SemanticValidationOptions
+): SemanticCutsValidationResult {
+  const { totalDuration, protectedRanges = [], transcript = [] } = options;
+  const validCuts: EditCut[] = [];
+  const rejectedCuts: { cut: EditCut; reason: string }[] = [];
+  const adjustedCuts: { original: EditCut; adjusted: EditCut; reason: string }[] = [];
+  const warnings: string[] = [];
+
+  const allWords = transcript.flatMap((s) => s.words);
+
+  for (const rawCut of cuts) {
+    // 1. Non-finite or invalid number check
+    if (
+      typeof rawCut.start !== "number" ||
+      typeof rawCut.end !== "number" ||
+      !Number.isFinite(rawCut.start) ||
+      !Number.isFinite(rawCut.end)
+    ) {
+      rejectedCuts.push({
+        cut: rawCut,
+        reason: `Invalid or non-finite timestamp: [${rawCut.start}, ${rawCut.end}]`,
+      });
+      continue;
+    }
+
+    // 2. Inverted interval check
+    if (rawCut.start >= rawCut.end) {
+      rejectedCuts.push({
+        cut: rawCut,
+        reason: `Inverted or zero-duration cut interval: [${rawCut.start}, ${rawCut.end}]`,
+      });
+      continue;
+    }
+
+    // 3. Source duration boundary check
+    if (rawCut.start >= totalDuration || rawCut.end <= 0) {
+      rejectedCuts.push({
+        cut: rawCut,
+        reason: `Cut [${rawCut.start}, ${rawCut.end}] falls completely outside source duration (${totalDuration}s)`,
+      });
+      continue;
+    }
+
+    let start = Math.max(0, +rawCut.start.toFixed(2));
+    let end = Math.min(totalDuration, +rawCut.end.toFixed(2));
+
+    if (start !== rawCut.start || end !== rawCut.end) {
+      adjustedCuts.push({
+        original: rawCut,
+        adjusted: { ...rawCut, start, end },
+        reason: `Clamped cut boundaries to [0, ${totalDuration}]`,
+      });
+    }
+
+    // 4. Protected speech overlap check
+    let overlapsProtected = false;
+    for (const pr of protectedRanges) {
+      const overlapStart = Math.max(start, pr.start);
+      const overlapEnd = Math.min(end, pr.end);
+      if (overlapEnd - overlapStart > 0.05) {
+        // Cut collides with protected speech
+        if (start >= pr.start && end <= pr.end) {
+          // Entire cut falls inside protected speech: reject completely!
+          rejectedCuts.push({
+            cut: rawCut,
+            reason: `Cut falls entirely inside protected speech range [${pr.start}, ${pr.end}] (${pr.reason})`,
+          });
+          overlapsProtected = true;
+          break;
+        } else if (start < pr.start && end <= pr.end) {
+          // Adjust cut end to stop before protected range
+          const adjEnd = +pr.start.toFixed(2);
+          if (adjEnd - start >= 0.1) {
+            adjustedCuts.push({
+              original: rawCut,
+              adjusted: { ...rawCut, start, end: adjEnd },
+              reason: `Adjusted cut end from ${end} to ${adjEnd} to avoid protected speech`,
+            });
+            end = adjEnd;
+          } else {
+            rejectedCuts.push({
+              cut: rawCut,
+              reason: `Residual cut duration too small after avoiding protected speech`,
+            });
+            overlapsProtected = true;
+            break;
+          }
+        } else if (start >= pr.start && end > pr.end) {
+          // Adjust cut start to begin after protected range
+          const adjStart = +pr.end.toFixed(2);
+          if (end - adjStart >= 0.1) {
+            adjustedCuts.push({
+              original: rawCut,
+              adjusted: { ...rawCut, start: adjStart, end },
+              reason: `Adjusted cut start from ${start} to ${adjStart} to avoid protected speech`,
+            });
+            start = adjStart;
+          } else {
+            rejectedCuts.push({
+              cut: rawCut,
+              reason: `Residual cut duration too small after avoiding protected speech`,
+            });
+            overlapsProtected = true;
+            break;
+          }
+        }
+      }
+    }
+    if (overlapsProtected) continue;
+
+    // 5. Check if silence cut erroneously deletes spoken words in transcript
+    if (rawCut.type === "silence" && allWords.length > 0) {
+      const spokenOverlap = allWords.filter(
+        (w) => Math.max(start, w.start) < Math.min(end, w.end) - 0.05
+      );
+      if (spokenOverlap.length > 0) {
+        warnings.push(
+          `Cut [${start}, ${end}] marked as silence overlaps spoken words: "${spokenOverlap.map((w) => w.word).join(" ")}"`
+        );
+      }
+    }
+
+    validCuts.push({
+      id: rawCut.id || `cut-valid-${validCuts.length + 1}`,
+      start,
+      end,
+      type: rawCut.type,
+      reason: rawCut.reason || "Approved AI cut",
+      cutWord: rawCut.cutWord,
+    });
+  }
+
+  // 6. Resolve overlapping cuts by sorting and merging
+  validCuts.sort((a, b) => a.start - b.start);
+  const nonOverlappingCuts: EditCut[] = [];
+  for (const c of validCuts) {
+    if (nonOverlappingCuts.length === 0) {
+      nonOverlappingCuts.push(c);
+      continue;
+    }
+    const prev = nonOverlappingCuts[nonOverlappingCuts.length - 1];
+    if (c.start <= prev.end) {
+      // Overlap detected: merge the two cuts cleanly
+      prev.end = Math.max(prev.end, c.end);
+      prev.reason = `${prev.reason}; merged with ${c.id}: ${c.reason}`;
+    } else {
+      nonOverlappingCuts.push(c);
+    }
+  }
+
+  return {
+    validCuts: nonOverlappingCuts,
+    rejectedCuts,
+    adjustedCuts,
+    warnings,
+  };
 }
 
 export function validateCuts(editPlan: EditPlan, totalDuration: number): CutsValidationResult {
   const errors: string[] = [];
-  const { cuts, keepSegments, cleanDuration, cutDuration } = editPlan;
+  const warnings: string[] = [];
+  const { cuts, keepSegments, cleanDuration, cutDuration, protectedRanges = [] } = editPlan;
 
-  // 1. Validate each cut is within [0, totalDuration]
+  // 1. Validate each cut is within [0, totalDuration] and finite
   for (const cut of cuts) {
+    if (!Number.isFinite(cut.start) || !Number.isFinite(cut.end)) {
+      errors.push(`Cut [${cut.id}] contains non-finite timestamps: [${cut.start}, ${cut.end}].`);
+      continue;
+    }
     if (cut.start < 0) {
       errors.push(`Cut [${cut.id}] has negative start timestamp: ${cut.start}s.`);
     }
@@ -31,6 +218,15 @@ export function validateCuts(editPlan: EditPlan, totalDuration: number): CutsVal
       errors.push(
         `Cut [${cut.id}] has inverted or zero interval: start (${cut.start}s) >= end (${cut.end}s).`
       );
+    }
+
+    // Check overlap with protected ranges
+    for (const pr of protectedRanges) {
+      if (Math.max(cut.start, pr.start) < Math.min(cut.end, pr.end) - 0.05) {
+        errors.push(
+          `Cut [${cut.id}] overlaps protected speech range [${pr.start}s - ${pr.end}s] (${pr.reason}).`
+        );
+      }
     }
   }
 
@@ -60,7 +256,6 @@ export function validateCuts(editPlan: EditPlan, totalDuration: number): CutsVal
   }
 
   // 5. Escalation / Human Review Check:
-  // If more than 50% of the video is cut, flag for review rather than failing hard
   let needsReview = false;
   let reviewReason: string | undefined;
 
@@ -74,5 +269,7 @@ export function validateCuts(editPlan: EditPlan, totalDuration: number): CutsVal
     needsReview,
     reviewReason,
     errors,
+    warnings,
   };
 }
+
