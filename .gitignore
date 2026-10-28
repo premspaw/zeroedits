@@ -1,0 +1,29 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# env files (protect credentials)
+.env
+.env*.local
+
+# temporary / virtual environments
+.venv/
+.render-temp/
+scratch/
+public/voiceover/
+public/renders/
+
+# typescript
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
