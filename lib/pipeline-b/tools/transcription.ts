@@ -38,7 +38,8 @@ async function getAudioFloat32(wavPath: string): Promise<Float32Array> {
 
 async function runWhisperTranscription(wavPath: string): Promise<TranscriptWord[] | null> {
   try {
-    const { pipeline } = await import("@xenova/transformers");
+    const dynamicImport = new Function("specifier", "return import(specifier)");
+    const { pipeline } = await dynamicImport("@xenova/transformers");
     if (!cachedWhisperPipeline) {
       cachedWhisperPipeline = await pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en");
     }
