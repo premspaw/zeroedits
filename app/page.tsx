@@ -117,6 +117,10 @@ interface ChatMessageItem {
   generationStatus?: "storyboarding" | "rendering" | "ready" | "error";
   generationError?: string;
   topic?: string;
+  pipeline?: "pipeline-a" | "pipeline-b";
+  pipelineBRunId?: string;
+  videoUrl?: string;
+  finalDownloadUrl?: string;
 }
 
 const TEMPLATES: Record<string, ThemeConfig> = {
@@ -376,6 +380,8 @@ function PreviewCard({
   sparkCode = "",
   storyboard,
   topic = "",
+  videoUrl,
+  finalDownloadUrl,
   onRetry,
   errorMessage,
   onReady,
@@ -397,6 +403,8 @@ function PreviewCard({
   sparkCode?: string;
   storyboard?: any;
   topic?: string;
+  videoUrl?: string;
+  finalDownloadUrl?: string;
   onRetry?: () => void;
   errorMessage?: string | null;
   onReady?: () => void;
@@ -520,6 +528,51 @@ function PreviewCard({
   }, [sparkCode, beats.length, stopVoice]);
 
   useEffect(() => () => stopVoice(), [stopVoice]);
+
+  if (videoUrl) {
+    return (
+      <div
+        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-black flex flex-col items-center justify-center ${compact ? "scale-[0.98]" : ""}`}
+      >
+        <video
+          key={videoUrl}
+          src={videoUrl}
+          controls
+          autoPlay
+          loop
+          playsInline
+          className="w-full h-full object-contain"
+        />
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-bold text-white border border-white/20 pointer-events-none">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          Pipeline B • Clean Video
+        </div>
+        {onExportMP4 && (
+          <button
+            onClick={onExportMP4}
+            className="absolute bottom-4 right-4 px-3.5 py-1.5 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition active:scale-95"
+          >
+            <Download size={13} />
+            <span>Export Reel</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (isGenerating && !sparkCode && !storyboard) {
+    return (
+      <div
+        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-[#141414] text-white flex flex-col items-center justify-center p-6 text-center ${compact ? "scale-[0.98]" : ""}`}
+      >
+        <div className="w-12 h-12 rounded-full border-4 border-[#E4491B] border-t-transparent animate-spin mb-4" />
+        <h3 className="mono text-sm font-bold uppercase tracking-wider mb-2 text-[#E4491B]">Pipeline B Processing</h3>
+        <p className="text-xs text-[#ECEAE3]/80 leading-relaxed max-w-[220px]">
+          {generatingStep || "Trimming silences, synchronizing audio & building clean cut..."}
+        </p>
+      </div>
+    );
+  }
 
   if (sparkCode || errorMessage || storyboard) {
     return (
@@ -1297,10 +1350,10 @@ export default function ProperMobileResponsiveChat() {
     }
   };
 
-  // Pipeline B staging: keep the raw file client-side until the edit engine lands.
+  // Pipeline B staging: keep the raw file client-side.
   const handleEditVideoFile = (file: File | undefined) => {
     if (!file) return;
-    if (!file.type.startsWith("video/")) return;
+    if (!file.type.startsWith("video/") && !/\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(file.name)) return;
     editVideoFileRef.current = file;
     setEditVideoName(
       file.name.length > 28 ? `${file.name.slice(0, 25)}...` : file.name
@@ -1320,36 +1373,115 @@ export default function ProperMobileResponsiveChat() {
   };
 
   const handleSend = async () => {
-    // Auto-edit mode: stage the job for Pipeline B (engine lands next).
+    // Auto-edit mode: activate Pipeline B (upload -> transcribe -> silence cut -> clean video -> overlays)
     if (studioMode === "autoEdit") {
       if (isGenerating || isGeneratingCode) return;
-      const note = input.trim();
-      const scriptLines = editScript.split("\n").map((l) => l.trim()).filter(Boolean);
-      if (!editVideoFileRef.current && !editScript.trim() && !note) return;
-      const parts = [
-        "🎬 Auto-edit job staged",
-        editVideoName
-          ? `video: ${editVideoName}${editVideoDuration ? ` (${Math.round(editVideoDuration)}s)` : ""}`
-          : "video: not attached yet",
-        editScript.trim()
-          ? `script: ${scriptLines.length} lines`
-          : "script: none (will transcribe speech)",
-        note ? `note: ${note}` : "",
-      ].filter(Boolean);
+      const videoFile = editVideoFileRef.current;
+      if (!videoFile) {
+        editFileInputRef.current?.click();
+        return;
+      }
+
+      setIsGenerating(true);
+      setGeneratingStep("Validating media & uploading to Pipeline B...");
+
+      const userNote = input.trim();
+      const userScriptContent = editScript.trim();
+      const userMsgId = Date.now().toString();
+      const botMsgId = (Date.now() + 1).toString();
+
       const stagedUser: ChatMessageItem = {
-        id: Date.now().toString(),
+        id: userMsgId,
         role: "user",
-        text: parts.join(" • "),
+        text: `🎬 Auto-Edit: ${videoFile.name} (${Math.round(editVideoDuration || 0)}s)${userScriptContent ? " • Script provided" : ""}${userNote ? ` • Note: ${userNote}` : ""}`,
       };
+
       const stagedReply: ChatMessageItem = {
-        id: (Date.now() + 1).toString(),
+        id: botMsgId,
         role: "assistant",
-        text: "Locked in. The auto-edit engine (transcribe → AI edit plan → typography, images, overlays → final MP4) lands next — your video and script are staged and nothing from Create mode was touched.",
-        generationStatus: "ready",
+        text: "Pipeline B initiated: Running bounded specialist tools (media inspection → audio extraction → speech transcription → cut planning → ffmpeg media cutting → motion overlays)...",
+        generationStatus: "rendering",
+        pipeline: "pipeline-b",
       };
+
       setMessages((prev) => [...prev, stagedUser, stagedReply]);
-      setSelectedMessageId(stagedReply.id);
+      setSelectedMessageId(botMsgId);
       setInput("");
+
+      try {
+        const formData = new FormData();
+        formData.append("video", videoFile);
+        if (userScriptContent) {
+          formData.append("userScript", userScriptContent);
+        } else if (userNote) {
+          formData.append("userScript", userNote);
+        }
+        formData.append("templateId", "hormoziPunch");
+
+        setGeneratingStep("Analyzing audio & trimming dead silences with ffmpeg...");
+
+        const response = await fetch("/api/pipeline-b/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          const errMsg = data.error || "Failed to process video in Pipeline B";
+          updateMessage(botMsgId, {
+            generationStatus: "error",
+            generationError: errMsg,
+            text: `❌ Pipeline B error: ${errMsg}`,
+          });
+          return;
+        }
+
+        const runId = data.runId;
+        const state = data.state;
+        const keepSegments = state?.editPlan?.keepSegments || [];
+        const cutDuration = (state?.editPlan?.cutSilenceDuration || 0).toFixed(1);
+        const cutCount = state?.editPlan?.cutSilenceSegmentsCount || 0;
+
+        // Map segments to Storyboard beats so the timeline is interactive
+        const beats: Beat[] = keepSegments.map((seg: any, idx: number) => ({
+          id: idx + 1,
+          label: `Scene ${idx + 1}`,
+          duration: `${(seg.outSec - seg.inSec).toFixed(1)}s`,
+          durNum: seg.outSec - seg.inSec,
+          start: seg.inSec,
+          end: seg.outSec,
+          script:
+            seg.words?.map((w: any) => w.word).join(" ") ||
+            `Scene ${idx + 1} (${seg.zoomFactor > 1 ? `${seg.zoomFactor}x Punch-in` : "Wide"})`,
+          headline: seg.zoomFactor > 1 ? `Punch-in ${seg.zoomFactor}x` : "Wide Shot",
+          visualDesc: `Retained speech segment from ${seg.inSec.toFixed(1)}s to ${seg.outSec.toFixed(1)}s`,
+        }));
+
+        const cleanVideoUrl = `/api/pipeline-b/media/${runId}/clean`;
+        const finalVideoUrl = `/api/pipeline-b/media/${runId}/final`;
+
+        updateMessage(botMsgId, {
+          generationStatus: "ready",
+          generationError: undefined,
+          pipeline: "pipeline-b",
+          pipelineBRunId: runId,
+          videoUrl: cleanVideoUrl,
+          finalDownloadUrl: finalVideoUrl,
+          beats: beats.length > 0 ? beats : undefined,
+          storyboard: beats.length > 0 ? { beats, duration: beats.reduce((acc, b) => acc + (b.durNum || 0), 0) } : undefined,
+          text: `✨ Pipeline B complete! Trimmed ${cutDuration}s of dead silence across ${cutCount} pause(s). Produced clean video with ${beats.length} synchronized speech scenes and dynamic punch-ins.`,
+        });
+      } catch (err: any) {
+        updateMessage(botMsgId, {
+          generationStatus: "error",
+          generationError: err.message || "Network error running Pipeline B",
+          text: `❌ Failed to run Pipeline B: ${err.message || "Unknown error"}`,
+        });
+      } finally {
+        setIsGenerating(false);
+        setGeneratingStep("");
+      }
       return;
     }
 
@@ -2746,7 +2878,13 @@ export default function ProperMobileResponsiveChat() {
                     <button
                       type="button"
                       onClick={handleSend}
-                      disabled={!input.trim() || isGenerating || isGeneratingCode}
+                      disabled={
+                        isGenerating ||
+                        isGeneratingCode ||
+                        (studioMode === "autoEdit"
+                          ? !editVideoFileRef.current && !editVideoName && !input.trim()
+                          : !input.trim())
+                      }
                       aria-label="Generate Reel"
                       className="h-8.5 sm:h-9 px-4 sm:px-5 rounded-full border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] text-white font-bold text-[13px] flex items-center gap-1.5 shadow-[2px_2px_0px_#141414] disabled:opacity-40 disabled:shadow-none hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] transition shrink-0 ml-auto"
                     >
@@ -2816,6 +2954,8 @@ export default function ProperMobileResponsiveChat() {
             </div>
 
             <PreviewCard
+              videoUrl={activeMessage?.videoUrl}
+              finalDownloadUrl={activeMessage?.finalDownloadUrl}
               format={activeMessage?.format || format}
               beats={currentBeats}
               activeBeat={activeBeat}
@@ -2884,6 +3024,8 @@ export default function ProperMobileResponsiveChat() {
               <div className="flex justify-center">
                 <div className="w-[66vw] max-w-[280px]">
                   <PreviewCard
+                    videoUrl={activeMessage?.videoUrl}
+                    finalDownloadUrl={activeMessage?.finalDownloadUrl}
                     format={activeMessage?.format || format}
                     beats={currentBeats}
                     activeBeat={activeBeat}
@@ -3328,6 +3470,7 @@ export default function ProperMobileResponsiveChat() {
       <VideoExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
+        pipelineBRunId={activeMessage?.pipelineBRunId}
         beats={currentBeats.length > 0 ? currentBeats : (activeMessage?.storyboard?.beats || [])}
         duration={Number((activeMessage?.timing || timing).replace("s", "")) || 15}
         timing={activeMessage?.timing || timing}

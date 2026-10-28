@@ -47,6 +47,7 @@ interface VideoExportModalProps {
   storyboard?: any;
   sparkCode?: string;
   voiceTracks?: VoiceTrackInfo[];
+  pipelineBRunId?: string;
 }
 
 export default function VideoExportModal({
@@ -61,6 +62,7 @@ export default function VideoExportModal({
   storyboard,
   sparkCode = "",
   voiceTracks = [],
+  pipelineBRunId,
 }: VideoExportModalProps) {
   // Locally composed code (when the reel arrived without animation code).
   // Effective code drives PATH A; the canvas fallback only runs if composing fails.
@@ -705,6 +707,41 @@ export default function VideoExportModal({
     setCurrentFrame(0);
     setExportError(null);
     setExportComplete(false);
+
+    // ── PATH Pipeline B: Native Auto-Edit Video Export ──
+    if (pipelineBRunId) {
+      setProgress(15);
+      setPhase("rendering");
+      try {
+        const resp = await fetch("/api/pipeline-b/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: pipelineBRunId }),
+        });
+        setProgress(75);
+        const result = await resp.json();
+        if (!resp.ok || !result.success) {
+          throw new Error(result.error || "Failed to render Pipeline B final reel.");
+        }
+        setProgress(100);
+        const finalUrl = `/api/pipeline-b/media/${pipelineBRunId}/final`;
+        setDownloadUrl(finalUrl);
+        setExportComplete(true);
+        const cleanName = topic.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30).replace(/_+/g, "_").replace(/^_|_$/g, "");
+        const a = document.createElement("a");
+        a.href = finalUrl;
+        a.download = `${cleanName || "PipelineB"}_Edited.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (err: any) {
+        console.error("Pipeline B export failed:", err);
+        setExportError(err.message || "Failed to export Pipeline B video.");
+      } finally {
+        setIsExporting(false);
+      }
+      return;
+    }
 
     // ── Compose the real animation first when the reel has no code yet ────
     // so the download renders the same animation as the preview.
