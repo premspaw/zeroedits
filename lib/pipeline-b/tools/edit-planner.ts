@@ -471,50 +471,42 @@ export function wonderMuseEditorialDirector(params: {
 }
 
 /**
- * Phase 3: Master Edit Planner Function
- * Integrates Candidate Detection + Wonder Muse Decision Engine + Exact Timeline Mapping.
+ * Assembles the final EditPlan from candidate cuts, Wonder AI editorial decisions, and keep segments.
  */
-export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan {
+export function assembleFinalEditPlan(params: {
+  candidateCuts: CandidateCut[];
+  editorial: {
+    approvedCuts: EditCut[];
+    protectedRanges: ProtectedRange[];
+    visualPlan: VisualOverlayItem[];
+    hookLine: string;
+    notes?: string;
+    editorialNotes?: string;
+    title?: string;
+    planId?: string;
+  };
+  totalDuration: number;
+  templateId?: string;
+  pacingProfile?: PacingProfile;
+  transcript: TranscriptSegment[];
+}): EditPlan {
   const {
-    transcript,
-    silences = [],
+    candidateCuts,
+    editorial,
     totalDuration,
-    templateId,
-    userScript,
+    templateId = "hormoziPunch",
     pacingProfile = "natural",
+    transcript,
   } = params;
 
   const template = getPipelineBTemplate(templateId);
-  const pacing = PACING_CONFIGS[pacingProfile] || PACING_CONFIGS.natural;
-
   const allWords = transcript.flatMap((s) => s.words);
   const fullText = allWords.map((w) => w.word).join(" ");
 
-  // 1. Generate Candidate Cuts
-  const candidateCuts = generateCandidateCuts({
-    allWords,
-    transcript,
-    silences,
-    totalDuration,
-    pacing,
-    userScript,
-  });
-
-  // 2. Wonder Muse AI Editorial Decisions
-  const editorial = wonderMuseEditorialDirector({
-    candidates: candidateCuts,
-    transcript,
-    allWords,
-    totalDuration,
-    userScript,
-    templateId,
-    pacing,
-  });
-
-  // 3. Validate and Merge Overlapping Cuts cleanly without gap deletion
+  // 1. Validate and Merge Overlapping Cuts cleanly without gap deletion
   const cuts = mergeOverlappingCuts(editorial.approvedCuts, totalDuration);
 
-  // 4. Calculate Keep Segments (Preserve short speech intervals, never discard speech)
+  // 2. Calculate Keep Segments (Preserve short speech intervals, never discard speech)
   const keepSegments: KeepSegment[] = [];
   let currentStart = 0;
 
@@ -562,7 +554,7 @@ export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan
 
   const cutDuration = +(totalDuration - cleanDuration).toFixed(2);
 
-  // 5. Separate Metric Calculations
+  // 3. Separate Metric Calculations
   let cutSilenceDuration = 0;
   let cutFillerDuration = 0;
   let cutRepetitionDuration = 0;
@@ -589,7 +581,7 @@ export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan
   cutFillerDuration = +cutFillerDuration.toFixed(2);
   cutRepetitionDuration = +cutRepetitionDuration.toFixed(2);
 
-  // 6. Map Visual Overlay Timestamps to Exact Edited Timeline
+  // 4. Map Visual Overlay Timestamps to Exact Edited Timeline
   const mappedVisualPlan: VisualOverlayItem[] = editorial.visualPlan.map((item) => {
     if (item.type === "progress_bar") {
       return { ...item, duration: cleanDuration };
@@ -602,7 +594,7 @@ export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan
   });
 
   return {
-    title: fullText.slice(0, 40) || "AI Edited Talking-Head Reel",
+    title: editorial.title || fullText.slice(0, 40) || "AI Edited Talking-Head Reel",
     hookLine: editorial.hookLine,
     cuts,
     keepSegments,
@@ -619,8 +611,57 @@ export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan
     pacingProfile,
     visualPlan: mappedVisualPlan,
     templateId: template.id,
-    notes: editorial.notes,
+    notes: editorial.editorialNotes || editorial.notes || "Plan assembled from Wonder AI Director decisions.",
   };
+}
+
+/**
+ * Phase 3: Master Edit Planner Function
+ * Integrates Candidate Detection + Wonder Muse Decision Engine + Exact Timeline Mapping.
+ */
+export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan {
+  const {
+    transcript,
+    silences = [],
+    totalDuration,
+    templateId,
+    userScript,
+    pacingProfile = "natural",
+  } = params;
+
+  const pacing = PACING_CONFIGS[pacingProfile] || PACING_CONFIGS.natural;
+  const allWords = transcript.flatMap((s) => s.words);
+
+  // 1. Generate Candidate Cuts
+  const candidateCuts = generateCandidateCuts({
+    allWords,
+    transcript,
+    silences,
+    totalDuration,
+    pacing,
+    userScript,
+  });
+
+  // 2. Wonder Muse Editorial Decisions (local reference implementation for tests / offline)
+  const editorial = wonderMuseEditorialDirector({
+    candidates: candidateCuts,
+    transcript,
+    allWords,
+    totalDuration,
+    userScript,
+    templateId,
+    pacing,
+  });
+
+  // 3. Assemble and return final plan
+  return assembleFinalEditPlan({
+    candidateCuts,
+    editorial,
+    totalDuration,
+    templateId,
+    pacingProfile,
+    transcript,
+  });
 }
 
 /**

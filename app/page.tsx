@@ -1509,11 +1509,28 @@ export default function ProperMobileResponsiveChat() {
           generationError: undefined,
           pipeline: "pipeline-b",
           pipelineBRunId: runId,
-          videoUrl: cleanVideoUrl,
+          videoUrl: finalVideoUrl,
           finalDownloadUrl: finalVideoUrl,
           beats: beats.length > 0 ? beats : undefined,
-          storyboard: beats.length > 0 ? { beats, duration: beats.reduce((acc, b) => acc + (b.durNum || 0), 0) } : undefined,
-          text: `✨ Pipeline B complete! Trimmed ${cutDuration}s across ${cutCount} pause(s)${repCount > 0 ? `, ${repCount} repetition retake(s)` : ""}${fillerCount > 0 ? `, ${fillerCount} vocal filler(s)` : ""}. Added ${animCount} animated graphic stickers and burned synchronized kinetic subtitles.`,
+          storyboard: beats.length > 0 ? {
+            globalDirection: {
+              concept: state?.editPlan?.title || "Talking-Head Reel",
+              visualStyle: state?.templateId || "hormoziPunch",
+            },
+            beats: beats.map((b) => ({
+              id: b.id,
+              role: b.label,
+              start: b.start,
+              end: b.end,
+              duration: b.durNum,
+              text: b.script,
+              script: b.script,
+              visualDesc: b.visualDesc,
+              motion: "Synchronized animated sticker & kinetic punch",
+            })),
+            duration: beats.reduce((acc, b) => acc + (b.durNum || 0), 0),
+          } : undefined,
+          text: `✨ Wonder AI Director & Pipeline B complete! Trimmed ${cutDuration}s across ${cutCount} pause(s)${repCount > 0 ? `, ${repCount} repetition retake(s)` : ""}${fillerCount > 0 ? `, ${fillerCount} vocal filler(s)` : ""}. Added ${animCount} Wonder-directed animated graphic stickers and burned synchronized kinetic subtitles.`,
         });
       } catch (err: any) {
         updateMessage(botMsgId, {

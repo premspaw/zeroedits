@@ -17,7 +17,12 @@ import {
 import { validateMedia } from "./tools/media-validator.ts";
 import { transcribeAudio } from "./tools/transcription.ts";
 import { alignTranscriptWithScript } from "./tools/transcript-aligner.ts";
-import { planTalkingHeadEdit } from "./tools/edit-planner.ts";
+import {
+  generateCandidateCuts,
+  assembleFinalEditPlan,
+  PACING_CONFIGS,
+} from "./tools/edit-planner.ts";
+import { callWonderEditorialDirector } from "./tools/wonder-director.ts";
 import { validateCuts } from "./tools/cuts-validator.ts";
 import { buildCleanVideo } from "./tools/clean-video-builder.ts";
 import { generateTalkingHeadMotionCode } from "./tools/motion-generator.ts";
@@ -34,6 +39,15 @@ export async function executePipelineB(
   const state = loadState(runId);
   const runDir = path.join(process.cwd(), "workspace", "pipeline-b", "runs", runId);
 
+  const logEvent = (event: string, meta?: any) => {
+    state.logs.push({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      message: `[${event}] runId=${runId} ${JSON.stringify(meta || {})}`,
+    });
+    saveState(state);
+  };
+
   try {
     // 1. MEDIA_VALIDATED
     if (shouldRunStage(state, "MEDIA_VALIDATED")) {
@@ -48,17 +62,34 @@ export async function executePipelineB(
     if (shouldRunStage(state, "TRANSCRIBED")) {
       const wavPath = path.join(runDir, "extracted_audio.wav");
       recordStageStart(state, "TRANSCRIBED", { wavPath });
+      const tStart = Date.now();
+      logEvent("TRANSCRIPTION_STARTED", { runId, wavPath });
+
       const { segments, silences } = await transcribeAudio({
         videoPath: state.rawVideoPath,
         wavPath,
         totalDuration: state.metadata?.duration || 15,
         userScript: state.userScript,
       });
+
+      const tElapsed = Date.now() - tStart;
+      const allWords = segments.flatMap((s) => s.words);
       state.transcript = segments;
       state.silences = silences;
+
+      logEvent("TRANSCRIPTION_COMPLETED", {
+        runId,
+        durationMs: tElapsed,
+        wordsCount: allWords.length,
+        segmentsCount: segments.length,
+        silencesCount: silences.length,
+      });
+
       recordStageSuccess(state, "TRANSCRIBED", {
         segmentsCount: segments.length,
         silencesCount: silences.length,
+        wordsCount: allWords.length,
+        durationMs: tElapsed,
       });
     }
     if (options?.stopAtStage === "TRANSCRIBED") return state;
@@ -76,24 +107,56 @@ export async function executePipelineB(
     }
     if (options?.stopAtStage === "TRANSCRIPT_ALIGNED") return state;
 
-    // 4. EDIT_PLANNED
+    // 4. EDIT_PLANNED (Candidate Cut Detection + Wonder Muse AI Editorial Director)
     if (shouldRunStage(state, "EDIT_PLANNED")) {
       recordStageStart(state, "EDIT_PLANNED");
-      const editPlan = planTalkingHeadEdit({
+      const allWords = (state.transcript || []).flatMap((s) => s.words);
+      const pacing = PACING_CONFIGS.natural;
+
+      // Step 4a: Candidate Cut Detection (Silences, Fillers, Repetitions, False Starts)
+      const candidateCuts = generateCandidateCuts({
+        allWords,
         transcript: state.transcript || [],
         silences: state.silences || [],
         totalDuration: state.metadata?.duration || 15,
-        templateId: state.templateId,
+        pacing,
         userScript: state.userScript,
       });
+
+      // Step 4b: Wonder Muse AI Director approves cuts, protects emphasis, and designs story-specific visuals
+      // Fail-safe behavior: If Wonder fails or is unconfigured, throws an explicit error and preserves original video.
+      const editorialDecision = await callWonderEditorialDirector({
+        transcript: state.transcript || [],
+        candidateCuts,
+        totalDuration: state.metadata?.duration || 15,
+        templateId: state.templateId,
+        userScript: state.userScript,
+        pacingProfile: "natural",
+        runId,
+        mode: state.mode || "wonder-ai",
+        onLogEvent: logEvent,
+      });
+
+      // Step 4c: Assemble Final Validated Edit Decision List
+      const editPlan = assembleFinalEditPlan({
+        candidateCuts,
+        editorial: editorialDecision,
+        totalDuration: state.metadata?.duration || 15,
+        templateId: state.templateId,
+        pacingProfile: "natural",
+        transcript: state.transcript || [],
+      });
+
       state.editPlan = editPlan;
       recordStageSuccess(state, "EDIT_PLANNED", {
+        planId: editorialDecision.planId,
         cutsCount: editPlan.cuts.length,
         cleanDuration: editPlan.cleanDuration,
         cutSilenceDuration: editPlan.cutSilenceDuration,
         cutSilenceSegmentsCount: editPlan.cutSilenceSegmentsCount,
         cutRepetitionsCount: editPlan.cutRepetitionsCount || 0,
         cutFillersCount: editPlan.cutFillersCount || 0,
+        visualOverlaysCount: editPlan.visualPlan.length,
       });
     }
     if (options?.stopAtStage === "EDIT_PLANNED") return state;
@@ -115,17 +178,35 @@ export async function executePipelineB(
     }
     if (options?.stopAtStage === "CUTS_VALIDATED") return state;
 
-    // 6. CLEAN_VIDEO_CREATED (Deterministic Media Cutting)
+    // 6. CLEAN_VIDEO_CREATED (Deterministic FFmpeg Media Cutting based strictly on AI-approved cuts)
     if (shouldRunStage(state, "CLEAN_VIDEO_CREATED")) {
       const cleanVideoPath = path.join(runDir, "clean_video.mp4");
       recordStageStart(state, "CLEAN_VIDEO_CREATED", { cleanVideoPath });
+      const fStart = Date.now();
+
+      logEvent("FFMPEG_CUT_STARTED", {
+        runId,
+        keepSegmentsCount: state.editPlan!.keepSegments.length,
+        cleanDuration: state.editPlan!.cleanDuration,
+        rawVideoPath: state.rawVideoPath,
+        outputPath: cleanVideoPath,
+      });
+
       await buildCleanVideo({
         rawVideoPath: state.rawVideoPath,
         keepSegments: state.editPlan!.keepSegments,
         outputPath: cleanVideoPath,
       });
+
+      const fElapsed = Date.now() - fStart;
+      logEvent("FFMPEG_CUT_COMPLETED", {
+        runId,
+        durationMs: fElapsed,
+        cleanVideoPath,
+      });
+
       state.cleanVideoPath = cleanVideoPath;
-      recordStageSuccess(state, "CLEAN_VIDEO_CREATED", { cleanVideoPath });
+      recordStageSuccess(state, "CLEAN_VIDEO_CREATED", { cleanVideoPath, durationMs: fElapsed });
     }
     if (options?.stopAtStage === "CLEAN_VIDEO_CREATED") return state;
 
@@ -144,10 +225,19 @@ export async function executePipelineB(
     }
     if (options?.stopAtStage === "ASSETS_RESOLVED") return state;
 
-    // 9. MOTION_GENERATED (Remotion / Motion code generation)
+    // 9. MOTION_GENERATED (Spark 1.3 / Remotion Motion Code Generation)
     if (shouldRunStage(state, "MOTION_GENERATED")) {
       recordStageStart(state, "MOTION_GENERATED");
       const cleanVideoUrl = `/api/pipeline-b/media/${runId}/clean`;
+      const sStart = Date.now();
+
+      logEvent("SPARK_REQUEST_STARTED", {
+        runId,
+        model: "muse-spark-1.3",
+        visualOverlaysCount: state.editPlan!.visualPlan.length,
+        cleanDuration: state.editPlan!.cleanDuration,
+      });
+
       const motionCode = generateTalkingHeadMotionCode({
         editPlan: state.editPlan!,
         transcript: state.transcript || [],
@@ -158,7 +248,15 @@ export async function executePipelineB(
       const motionCodePath = path.join(runDir, "TalkingHeadReel.tsx");
       fs.writeFileSync(motionCodePath, motionCode, "utf-8");
       state.motionCodePath = motionCodePath;
-      recordStageSuccess(state, "MOTION_GENERATED", { motionCodePath });
+
+      const sElapsed = Date.now() - sStart;
+      logEvent("SPARK_RESPONSE_RECEIVED", {
+        runId,
+        durationMs: sElapsed,
+        motionCodePath,
+      });
+
+      recordStageSuccess(state, "MOTION_GENERATED", { motionCodePath, durationMs: sElapsed });
     }
     if (options?.stopAtStage === "MOTION_GENERATED") return state;
 
@@ -183,6 +281,13 @@ export async function executePipelineB(
 
       state.previewUrl = `/api/pipeline-b/preview/${runId}`;
       state.status = "completed";
+
+      logEvent("PREVIEW_READY", {
+        runId,
+        previewUrl: state.previewUrl,
+        finalVideoPath: state.finalVideoPath,
+      });
+
       recordStageSuccess(state, "PREVIEW_READY", {
         previewUrl: state.previewUrl,
         finalVideoPath: state.finalVideoPath,
@@ -192,6 +297,7 @@ export async function executePipelineB(
     return state;
   } catch (err: any) {
     recordStageFailure(state, state.currentStage, err.message || "Unknown error occurred.");
+    saveState(state);
     throw err;
   }
 }

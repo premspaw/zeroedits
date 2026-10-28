@@ -141,6 +141,7 @@ export interface PipelineBRunState {
   rawVideoPath: string;
   userScript?: string;
   templateId: string;
+  mode?: "wonder-ai" | "rules-only";
   metadata?: MediaMetadata;
   transcript?: TranscriptSegment[];
   silences?: { start: number; end: number; duration: number }[];

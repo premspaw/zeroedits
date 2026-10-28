@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
     const videoFile = formData.get("video") as File | null;
     const userScript = (formData.get("userScript") as string) || "";
     const templateId = (formData.get("templateId") as string) || "hormoziPunch";
+    const mode = (formData.get("mode") as "wonder-ai" | "rules-only") || "wonder-ai";
 
     if (!videoFile) {
       return NextResponse.json(
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
       rawVideoPath,
       userScript,
       templateId,
+      mode,
     });
 
     // Run the orchestrator pipeline up to PREVIEW_READY

@@ -39,6 +39,7 @@ export function createRun(params: {
   rawVideoPath: string;
   userScript?: string;
   templateId?: string;
+  mode?: "wonder-ai" | "rules-only";
 }): PipelineBRunState {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const runId = params.runId || `run-b-${timestamp}-${Math.random().toString(36).substring(2, 7)}`;
@@ -77,6 +78,7 @@ export function createRun(params: {
     rawVideoPath: params.rawVideoPath,
     userScript: params.userScript || "",
     templateId: params.templateId || "hormoziPunch",
+    mode: params.mode || "wonder-ai",
     stages: stagesMap as Record<PipelineBStage, StageRecord>,
     logs: [
       {
