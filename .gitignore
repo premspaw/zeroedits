@@ -17,6 +17,7 @@
 # temporary / virtual environments
 .venv/
 .render-temp/
+workspace/
 scratch/
 public/voiceover/
 public/renders/
