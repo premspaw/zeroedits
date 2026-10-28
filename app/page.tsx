@@ -417,6 +417,7 @@ function PreviewCard({
   );
   const durationNum = beatsDuration > 0 ? beatsDuration : Number(timing.replace("s", "")) || 10;
   const effectiveTheme = theme || (format !== "auto" && TEMPLATES[format] ? TEMPLATES[format] : null);
+  const [showCleanCut, setShowCleanCut] = useState(false);
 
   // Beat-level voiceover playback, driven by the animation clock.
   const beatAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -529,33 +530,56 @@ function PreviewCard({
 
   useEffect(() => () => stopVoice(), [stopVoice]);
 
-  if (videoUrl) {
+  const activeVideoUrl = showCleanCut ? (videoUrl || finalDownloadUrl) : (finalDownloadUrl || videoUrl);
+
+  useEffect(() => {
+    if (activeVideoUrl) {
+      stopVoice();
+    }
+  }, [activeVideoUrl, stopVoice]);
+
+  if (activeVideoUrl) {
     return (
       <div
         className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-black flex flex-col items-center justify-center ${compact ? "scale-[0.98]" : ""}`}
       >
         <video
-          key={videoUrl}
-          src={videoUrl}
+          key={activeVideoUrl}
+          src={activeVideoUrl}
           controls
-          autoPlay
-          loop
           playsInline
           className="w-full h-full object-contain"
         />
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-bold text-white border border-white/20 pointer-events-none">
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-bold text-white border border-white/20 pointer-events-none z-10">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          Pipeline B • Clean Video
+          {showCleanCut ? "✂️ Clean Cuts" : "✨ Edited Reel (Cuts + Subtitles + Badges)"}
         </div>
-        {onExportMP4 && (
-          <button
-            onClick={onExportMP4}
-            className="absolute bottom-4 right-4 px-3.5 py-1.5 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition active:scale-95"
-          >
-            <Download size={13} />
-            <span>Export Reel</span>
-          </button>
+
+        {finalDownloadUrl && videoUrl && finalDownloadUrl !== videoUrl && (
+          <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/80 backdrop-blur-md rounded-full p-0.5 border border-white/20 z-10 text-[10px]">
+            <button
+              onClick={() => setShowCleanCut(false)}
+              className={`px-2 py-0.5 rounded-full font-bold transition ${!showCleanCut ? "bg-[#E4491B] text-white" : "text-white/70 hover:text-white"}`}
+            >
+              Full Reel
+            </button>
+            <button
+              onClick={() => setShowCleanCut(true)}
+              className={`px-2 py-0.5 rounded-full font-bold transition ${showCleanCut ? "bg-[#E4491B] text-white" : "text-white/70 hover:text-white"}`}
+            >
+              Cuts Only
+            </button>
+          </div>
         )}
+
+        <a
+          href={finalDownloadUrl ? `${finalDownloadUrl}?download=1` : activeVideoUrl}
+          download="pipeline-b-edited-reel.mp4"
+          className="absolute bottom-4 right-4 px-3.5 py-1.5 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition active:scale-95 z-10"
+        >
+          <Download size={13} />
+          <span>Download Reel</span>
+        </a>
       </div>
     );
   }
@@ -1442,6 +1466,11 @@ export default function ProperMobileResponsiveChat() {
         const keepSegments = state?.editPlan?.keepSegments || [];
         const cutDuration = Number(state?.editPlan?.cutSilenceDuration ?? 0).toFixed(1);
         const cutCount = state?.editPlan?.cutSilenceSegmentsCount || 0;
+        const repCount = state?.editPlan?.cutRepetitionsCount || 0;
+        const fillerCount = state?.editPlan?.cutFillersCount || 0;
+
+        const visualPlan = state?.editPlan?.visualPlan || [];
+        const animCount = visualPlan.filter((v: any) => v.type === "image_overlay" || v.type === "icon_badge").length;
 
         // Map segments to Storyboard beats so the timeline is interactive
         const beats: Beat[] = keepSegments.map((seg: any, idx: number) => {
@@ -1449,6 +1478,12 @@ export default function ProperMobileResponsiveChat() {
           const segEnd = typeof seg?.end === "number" ? seg.end : Number(seg?.outSec ?? segStart + 1);
           const segDur = typeof seg?.duration === "number" ? seg.duration : Math.max(0.1, segEnd - segStart);
           const zoom = typeof seg?.zoomScale === "number" ? seg.zoomScale : Number(seg?.zoomFactor ?? 1.0);
+
+          // Find matching animated visual overlay active in this segment
+          const matchingOverlay = visualPlan.find(
+            (v: any) => v.type !== "progress_bar" && v.timestamp >= segStart && v.timestamp < segEnd
+          );
+
           return {
             id: idx + 1,
             label: `Scene ${idx + 1}`,
@@ -1456,9 +1491,13 @@ export default function ProperMobileResponsiveChat() {
             durNum: segDur,
             start: +segStart.toFixed(2),
             end: +segEnd.toFixed(2),
-            script: `Scene ${idx + 1} (${zoom > 1 ? `${zoom.toFixed(2)}x Punch-in` : "Wide Shot"})`,
-            headline: zoom > 1 ? `Punch-in ${zoom.toFixed(2)}x` : "Wide Shot",
-            visualDesc: `Retained speech segment from ${segStart.toFixed(1)}s to ${segEnd.toFixed(1)}s`,
+            script: matchingOverlay
+              ? `Scene ${idx + 1} • Animation: [${matchingOverlay.content}]`
+              : `Scene ${idx + 1} (${zoom > 1 ? `${zoom.toFixed(2)}x Punch-in` : "Wide Shot"})`,
+            headline: matchingOverlay ? matchingOverlay.content : (zoom > 1 ? `Punch-in ${zoom.toFixed(2)}x` : "Wide Shot"),
+            visualDesc: matchingOverlay
+              ? `Animated Sticker [${matchingOverlay.content}] popping onto footage (${matchingOverlay.animation || "bounce"} entrance)`
+              : `Retained speech segment from ${segStart.toFixed(1)}s to ${segEnd.toFixed(1)}s`,
           };
         });
 
@@ -1474,7 +1513,7 @@ export default function ProperMobileResponsiveChat() {
           finalDownloadUrl: finalVideoUrl,
           beats: beats.length > 0 ? beats : undefined,
           storyboard: beats.length > 0 ? { beats, duration: beats.reduce((acc, b) => acc + (b.durNum || 0), 0) } : undefined,
-          text: `✨ Pipeline B complete! Trimmed ${cutDuration}s of dead silence across ${cutCount} pause(s). Produced clean video with ${beats.length} synchronized speech scenes and dynamic punch-ins.`,
+          text: `✨ Pipeline B complete! Trimmed ${cutDuration}s across ${cutCount} pause(s)${repCount > 0 ? `, ${repCount} repetition retake(s)` : ""}${fillerCount > 0 ? `, ${fillerCount} vocal filler(s)` : ""}. Added ${animCount} animated graphic stickers and burned synchronized kinetic subtitles.`,
         });
       } catch (err: any) {
         updateMessage(botMsgId, {
@@ -2618,10 +2657,10 @@ export default function ProperMobileResponsiveChat() {
                       <span>Auto-edit</span>
                     </button>
                   </div>
-                  <span className="mono text-[10px] text-[#6B6A64]">
+                  <span className="mono text-[10px] font-semibold text-[#6B6A64]">
                     {studioMode === "create"
-                      ? "Animation pipeline"
-                      : "Upload a video, AI edits it"}
+                      ? "Pipeline A • Wonder & Spark 1.3 Code Animation"
+                      : "Pipeline B • Talking-Head Auto Video Editor"}
                   </span>
                 </div>
 
@@ -2632,12 +2671,12 @@ export default function ProperMobileResponsiveChat() {
                     <div className="px-3.5 pt-2.5">
                       <div className="rounded-[14px] border-2 border-dashed border-[#141414]/30 bg-[#F6F4EE] p-2.5">
                         <div className="mono text-[10px] uppercase tracking-widest text-[#6B6A64] font-semibold px-1 pb-1.5">
-                          Running script — AI matches your speech to this
+                          Pipeline B Script — AI matches speech to this
                         </div>
                         <textarea
                           value={editScript}
                           onChange={(e) => setEditScript(e.target.value)}
-                          placeholder="Paste the script you spoke (optional). The AI cuts deviations, keeps what matches."
+                          placeholder="Paste the script you spoke (optional). Pipeline B cuts pauses & filler words, keeping matching speech."
                           rows={3}
                           className="w-full resize-y bg-transparent outline-none border-none text-[13px] leading-[1.5] text-[#141414] placeholder:text-[#6B6A64]/60 min-h-[64px] max-h-[160px]"
                         />
@@ -2680,8 +2719,8 @@ export default function ProperMobileResponsiveChat() {
                       }}
                       placeholder={
                         studioMode === "autoEdit"
-                          ? "Add a note for the editor (optional) — e.g. 'keep the pricing part, cut the intro ramble'"
-                          : "Ask anything... e.g., 'Now Edit Reels with AI' or 'Quantum computing in 5s'"
+                          ? "Pipeline B: Add an editor instruction (optional) — e.g. 'cut pauses, punch in on key points'"
+                          : "Pipeline A: Ask anything... e.g., 'Explain quantum computing in 5s' or 'Why paper cards convert better'"
                       }
                       rows={1}
                       className="w-full resize-none bg-transparent outline-none border-none text-[14px] sm:text-[15px] leading-[1.4] text-[#141414] placeholder:text-[#6B6A64]/60 min-h-[36px] max-h-[104px] py-1"
@@ -3027,30 +3066,32 @@ export default function ProperMobileResponsiveChat() {
 
               <div className="flex justify-center">
                 <div className="w-[66vw] max-w-[280px]">
-                  <PreviewCard
-                    videoUrl={activeMessage?.videoUrl}
-                    finalDownloadUrl={activeMessage?.finalDownloadUrl}
-                    format={activeMessage?.format || format}
-                    beats={currentBeats}
-                    activeBeat={activeBeat}
-                    isPlaying={isPlaying}
-                    voice={voice}
-                    timing={activeMessage?.timing || timing}
-                    voiceTracks={activeMessage?.voiceTracks}
-                    voiceEnabled={activeMessage?.voiceEnabled}
-                    theme={currentTheme}
-                    compact={true}
-                    isGenerating={isGenerating || isGeneratingCode}
-                    generatingStep={generatingStep}
-                    sparkCode={currentSparkCode || activeMessage?.sparkCode}
-                    storyboard={currentStoryboard || activeMessage?.storyboard}
-                    topic={activeMessage?.text || input}
-                    onRetry={handleRetrySpark}
-                    errorMessage={sparkError}
-                    onReady={handlePreviewReady}
-                    onError={handlePreviewError}
-                    onExportMP4={() => setIsExportModalOpen(true)}
-                  />
+                  {isMobilePreviewOpen && (
+                    <PreviewCard
+                      videoUrl={activeMessage?.videoUrl}
+                      finalDownloadUrl={activeMessage?.finalDownloadUrl}
+                      format={activeMessage?.format || format}
+                      beats={currentBeats}
+                      activeBeat={activeBeat}
+                      isPlaying={isPlaying}
+                      voice={voice}
+                      timing={activeMessage?.timing || timing}
+                      voiceTracks={activeMessage?.voiceTracks}
+                      voiceEnabled={activeMessage?.voiceEnabled}
+                      theme={currentTheme}
+                      compact={true}
+                      isGenerating={isGenerating || isGeneratingCode}
+                      generatingStep={generatingStep}
+                      sparkCode={currentSparkCode || activeMessage?.sparkCode}
+                      storyboard={currentStoryboard || activeMessage?.storyboard}
+                      topic={activeMessage?.text || input}
+                      onRetry={handleRetrySpark}
+                      errorMessage={sparkError}
+                      onReady={handlePreviewReady}
+                      onError={handlePreviewError}
+                      onExportMP4={() => setIsExportModalOpen(true)}
+                    />
+                  )}
                 </div>
               </div>
 

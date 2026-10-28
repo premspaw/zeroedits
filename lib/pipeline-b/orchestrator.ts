@@ -48,14 +48,18 @@ export async function executePipelineB(
     if (shouldRunStage(state, "TRANSCRIBED")) {
       const wavPath = path.join(runDir, "extracted_audio.wav");
       recordStageStart(state, "TRANSCRIBED", { wavPath });
-      const transcript = await transcribeAudio({
+      const { segments, silences } = await transcribeAudio({
         videoPath: state.rawVideoPath,
         wavPath,
         totalDuration: state.metadata?.duration || 15,
         userScript: state.userScript,
       });
-      state.transcript = transcript;
-      recordStageSuccess(state, "TRANSCRIBED", { segmentsCount: transcript.length });
+      state.transcript = segments;
+      state.silences = silences;
+      recordStageSuccess(state, "TRANSCRIBED", {
+        segmentsCount: segments.length,
+        silencesCount: silences.length,
+      });
     }
     if (options?.stopAtStage === "TRANSCRIBED") return state;
 
@@ -77,6 +81,7 @@ export async function executePipelineB(
       recordStageStart(state, "EDIT_PLANNED");
       const editPlan = planTalkingHeadEdit({
         transcript: state.transcript || [],
+        silences: state.silences || [],
         totalDuration: state.metadata?.duration || 15,
         templateId: state.templateId,
         userScript: state.userScript,
@@ -85,6 +90,10 @@ export async function executePipelineB(
       recordStageSuccess(state, "EDIT_PLANNED", {
         cutsCount: editPlan.cuts.length,
         cleanDuration: editPlan.cleanDuration,
+        cutSilenceDuration: editPlan.cutSilenceDuration,
+        cutSilenceSegmentsCount: editPlan.cutSilenceSegmentsCount,
+        cutRepetitionsCount: editPlan.cutRepetitionsCount || 0,
+        cutFillersCount: editPlan.cutFillersCount || 0,
       });
     }
     if (options?.stopAtStage === "EDIT_PLANNED") return state;
@@ -156,9 +165,28 @@ export async function executePipelineB(
     // 10. PREVIEW_READY
     if (shouldRunStage(state, "PREVIEW_READY")) {
       recordStageStart(state, "PREVIEW_READY");
+
+      // Auto-export the final reel with cuts, punch-ins, burned subtitles, and hook badge
+      try {
+        const finalOutputPath = path.join(runDir, "final_edited_reel.mp4");
+        await exportFinalVideo({
+          cleanVideoPath: state.cleanVideoPath || state.rawVideoPath,
+          editPlan: state.editPlan!,
+          transcript: state.transcript || [],
+          outputPath: finalOutputPath,
+          templateId: state.templateId,
+        });
+        state.finalVideoPath = finalOutputPath;
+      } catch (exportErr) {
+        console.warn("[Pipeline B Orchestrator] Auto final export warning:", exportErr);
+      }
+
       state.previewUrl = `/api/pipeline-b/preview/${runId}`;
       state.status = "completed";
-      recordStageSuccess(state, "PREVIEW_READY", { previewUrl: state.previewUrl });
+      recordStageSuccess(state, "PREVIEW_READY", {
+        previewUrl: state.previewUrl,
+        finalVideoPath: state.finalVideoPath,
+      });
     }
 
     return state;

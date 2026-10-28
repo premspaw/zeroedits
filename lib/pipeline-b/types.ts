@@ -36,7 +36,7 @@ export interface TranscriptWord {
   word: string;
   start: number; // in seconds
   end: number;   // in seconds
-  confidence: number;
+  confidence?: number;
 }
 
 export interface TranscriptSegment {
@@ -64,10 +64,11 @@ export interface KeepSegment {
 
 export interface VisualOverlayItem {
   id: string;
-  type: "kinetic_word" | "icon_badge" | "progress_bar" | "lower_third" | "sound_effect";
+  type: "kinetic_word" | "icon_badge" | "image_overlay" | "progress_bar" | "lower_third" | "sound_effect";
   timestamp: number; // in seconds relative to clean video
   duration: number;
   content: string;
+  animation?: "pop" | "bounce" | "slide_up" | "fade";
   style?: Record<string, any>;
   soundName?: string;
 }
@@ -79,6 +80,10 @@ export interface EditPlan {
   keepSegments: KeepSegment[];
   cleanDuration: number;
   cutDuration: number;
+  cutSilenceDuration?: number;
+  cutSilenceSegmentsCount?: number;
+  cutRepetitionsCount?: number;
+  cutFillersCount?: number;
   visualPlan: VisualOverlayItem[];
   templateId: string;
   notes: string;
@@ -107,6 +112,7 @@ export interface PipelineBRunState {
   templateId: string;
   metadata?: MediaMetadata;
   transcript?: TranscriptSegment[];
+  silences?: { start: number; end: number; duration: number }[];
   alignedScript?: {
     matchedWords: number;
     deviationScore: number;

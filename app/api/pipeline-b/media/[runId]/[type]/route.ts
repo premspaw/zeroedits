@@ -52,13 +52,14 @@ export async function GET(
         },
       });
     } else {
+      const isDownload = req.nextUrl.searchParams.get("download") === "1";
       const fileStream = fs.createReadStream(filePath);
       // @ts-ignore
       return new NextResponse(fileStream, {
         headers: {
           "Content-Length": String(fileSize),
           "Content-Type": "video/mp4",
-          ...(type === "final" ? { "Content-Disposition": 'attachment; filename="edited_reel.mp4"' } : {}),
+          ...(isDownload ? { "Content-Disposition": 'attachment; filename="pipeline-b-edited-reel.mp4"' } : {}),
         },
       });
     }

@@ -59,11 +59,10 @@ export async function buildCleanVideo(params: {
       const seg = keepSegments[i];
       const segPath = path.join(outputDir, `seg_${i}.mp4`);
 
-      // Apply punch-in zoom if requested (scale up and crop center)
-      const videoFilter =
-        seg.zoomScale > 1.05
-          ? "scale=1.15*iw:-1,crop=iw/1.15:ih/1.15"
-          : "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
+      // Standardize all segments to portrait 1080x1920 (9:16) with alternating punch-in zoom
+      const baseFilter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
+      const punchFilter = "scale=1242:2208:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
+      const videoFilter = seg.zoomScale > 1.05 ? punchFilter : baseFilter;
 
       await execFileAsync("ffmpeg", [
         "-y",
@@ -75,12 +74,20 @@ export async function buildCleanVideo(params: {
         rawVideoPath,
         "-vf",
         videoFilter,
+        "-r",
+        "30",
+        "-pix_fmt",
+        "yuv420p",
         "-c:v",
         "libx264",
         "-preset",
         "ultrafast",
         "-c:a",
         "aac",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
         "-b:a",
         "192k",
         segPath,
@@ -91,22 +98,41 @@ export async function buildCleanVideo(params: {
 
     // Write concat file
     const concatListPath = path.join(outputDir, "concat_list.txt");
-    const fileEntries = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n");
+    const fileEntries = segmentFiles.map((f) => `file '${f.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n");
     fs.writeFileSync(concatListPath, fileEntries, "utf-8");
 
-    // Concat all segments
-    await execFileAsync("ffmpeg", [
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      concatListPath,
-      "-c",
-      "copy",
-      outputPath,
-    ]);
+    // Concat all segments with copy or re-encode fallback
+    try {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concatListPath,
+        "-c",
+        "copy",
+        outputPath,
+      ]);
+    } catch {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concatListPath,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-c:a",
+        "aac",
+        outputPath,
+      ]);
+    }
 
     // Clean up temporary segment files
     for (const segFile of segmentFiles) {
@@ -124,7 +150,7 @@ export async function buildCleanVideo(params: {
 
     return outputPath;
   } catch (err) {
-    console.warn("ffmpeg clean video concatenation error, applying direct trim fallback:", err);
+    console.warn("ffmpeg clean video concatenation error:", err);
     // If complex concat fails, copy raw to output so pipeline continues reliably
     if (fs.existsSync(rawVideoPath)) {
       fs.copyFileSync(rawVideoPath, outputPath);

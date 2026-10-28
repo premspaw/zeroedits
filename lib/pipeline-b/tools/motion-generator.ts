@@ -85,11 +85,14 @@ export const TalkingHeadReel: React.FC = () => {
           : ""
       }
 
-      {/* 3. Pop-up Graphic Badges / Callouts */}
+      {/* 3. Pop-up Graphic Badges & Animated Image Overlays */}
       {visualOverlays.map((item: any) => {
-        if (item.type !== "icon_badge") return null;
+        if (item.type !== "icon_badge" && item.type !== "image_overlay") return null;
         const isVisible = currentTime >= item.timestamp && currentTime <= item.timestamp + item.duration;
         if (!isVisible) return null;
+
+        const timeIn = currentTime - item.timestamp;
+        const scale = Math.min(1.0, Math.max(0.1, timeIn * 5));
 
         return (
           <div
@@ -98,10 +101,10 @@ export const TalkingHeadReel: React.FC = () => {
               position: "absolute",
               top: 140,
               left: "50%",
-              transform: "translateX(-50%)",
+              transform: \`translateX(-50%) scale(\${scale})\`,
               backgroundColor: "${template.cardBg}",
               border: "3px solid ${template.primaryColor}",
-              boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+              boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
               borderRadius: 20,
               padding: "10px 24px",
               display: "flex",
@@ -110,7 +113,7 @@ export const TalkingHeadReel: React.FC = () => {
               zIndex: 50,
             }}
           >
-            <span style={{ fontSize: 24 }}>⚡</span>
+            <span style={{ fontSize: 24 }}>{item.type === "image_overlay" ? "✨" : "⚡"}</span>
             <span
               style={{
                 fontSize: 22,

@@ -153,4 +153,75 @@ describe("Pipeline B — Transcript Alignment & Edit Planner", () => {
     assert.equal(result.matchedWords, 6);
     assert.equal(result.deviationScore, 0);
   });
+
+  it("identifies and trims repeated words (stutters) and vocal fillers (ah, um, oh)", () => {
+    const transcript = [
+      {
+        id: 1,
+        start: 0.0,
+        end: 4.0,
+        text: "um welcome welcome to this ah video",
+        words: [
+          { word: "um", start: 0.1, end: 0.4, confidence: 0.9 },
+          { word: "welcome", start: 0.5, end: 1.0, confidence: 0.9 },
+          { word: "welcome", start: 1.1, end: 1.6, confidence: 0.9 },
+          { word: "to", start: 1.7, end: 1.9, confidence: 0.9 },
+          { word: "this", start: 2.0, end: 2.3, confidence: 0.9 },
+          { word: "ah", start: 2.4, end: 2.7, confidence: 0.9 },
+          { word: "video", start: 2.8, end: 3.4, confidence: 0.9 },
+        ],
+      },
+    ];
+
+    const plan = planTalkingHeadEdit({
+      transcript,
+      totalDuration: 4.0,
+      templateId: "hormoziPunch",
+    });
+
+    assert.ok(plan.cutRepetitionsCount! >= 1, "Should cut repeated 'welcome'");
+    assert.ok(plan.cutFillersCount! >= 2, "Should cut 'um' and 'ah'");
+    assert.ok(plan.cuts.some((c) => c.reason.includes("repeated")), "Cut list must contain repetition reason");
+    assert.ok(plan.cuts.some((c) => c.reason.includes("filler")), "Cut list must contain filler reason");
+    assert.ok(plan.keepSegments.length >= 1, "Should generate valid keep segments");
+  });
+
+  it("cuts multi-word phrase retakes, word runs, and plans animated image stickers", () => {
+    const transcript = [
+      {
+        id: 1,
+        start: 0.0,
+        end: 7.0,
+        text: "in five clicks in five clicks edit video poop poop poop poop ready to post",
+        words: [
+          { word: "in", start: 0.5, end: 0.7, confidence: 0.9 },
+          { word: "five", start: 0.7, end: 1.0, confidence: 0.9 },
+          { word: "clicks", start: 1.0, end: 1.4, confidence: 0.9 },
+          { word: "in", start: 1.5, end: 1.7, confidence: 0.9 },
+          { word: "five", start: 1.7, end: 2.0, confidence: 0.9 },
+          { word: "clicks", start: 2.0, end: 2.4, confidence: 0.9 },
+          { word: "edit", start: 2.5, end: 2.8, confidence: 0.9 },
+          { word: "video", start: 2.8, end: 3.2, confidence: 0.9 },
+          { word: "poop", start: 3.3, end: 3.6, confidence: 0.9 },
+          { word: "poop", start: 3.6, end: 3.9, confidence: 0.9 },
+          { word: "poop", start: 3.9, end: 4.2, confidence: 0.9 },
+          { word: "poop", start: 4.2, end: 4.5, confidence: 0.9 },
+          { word: "ready", start: 4.6, end: 5.0, confidence: 0.9 },
+          { word: "to", start: 5.0, end: 5.2, confidence: 0.9 },
+          { word: "post", start: 5.2, end: 5.6, confidence: 0.9 },
+        ],
+      },
+    ];
+
+    const plan = planTalkingHeadEdit({
+      transcript,
+      totalDuration: 7.0,
+      templateId: "hormoziPunch",
+    });
+
+    assert.ok(plan.cutRepetitionsCount! >= 2, "Should cut both phrase repeat and word run");
+    assert.ok(plan.visualPlan.some((v) => v.type === "image_overlay"), "Should plan animated image stickers");
+    assert.ok(plan.visualPlan.some((v) => v.content.includes("5 CLICKS")), "Should plan 5 CLICKS sticker");
+    assert.ok(plan.cleanDuration < 7.0, "Clean duration must be reduced");
+  });
 });
