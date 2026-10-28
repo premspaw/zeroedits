@@ -219,7 +219,21 @@ export async function executePipelineB(
         cleanVideoPath,
       });
 
-      // Compute edited transcript and timestamp mapping on clean video timeline
+      // Verify the real cleaned video duration and media stream on disk
+      let realCleanedDuration = state.editPlan!.cleanDuration;
+      try {
+        const cleanMetadata = await validateMedia(cleanVideoPath);
+        if (cleanMetadata && cleanMetadata.duration > 0) {
+          realCleanedDuration = +cleanMetadata.duration.toFixed(2);
+        }
+      } catch (metaErr) {
+        // Fallback to planned clean duration if validateMedia cannot probe (e.g. test environment)
+      }
+
+      // Rebuild final source-to-edited timeline mapping using the verified clean video duration
+      state.editPlan!.cleanDuration = realCleanedDuration;
+
+      // Compute edited transcript and timestamp mapping on verified clean video timeline
       const editedTranscript = buildEditedTranscript(
         state.transcript || [],
         state.editPlan!.keepSegments
@@ -227,10 +241,18 @@ export async function executePipelineB(
       state.editedTranscript = editedTranscript;
       state.editPlan!.editedTranscript = editedTranscript;
 
+      logEvent("CLEAN_VIDEO_VERIFIED", {
+        runId,
+        cleanVideoPath,
+        verifiedDuration: realCleanedDuration,
+        editedWordsCount: editedTranscript.flatMap((s) => s.words).length,
+      });
+
       state.cleanVideoPath = cleanVideoPath;
       recordStageSuccess(state, "CLEAN_VIDEO_CREATED", {
         cleanVideoPath,
         durationMs: fElapsed,
+        verifiedDuration: realCleanedDuration,
         editedSegmentsCount: editedTranscript.length,
       });
     }

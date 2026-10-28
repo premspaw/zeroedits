@@ -24,12 +24,24 @@ import { getPipelineBTemplate } from "../templates/registry.ts";
 import { mapSourceTimeToEditedTime } from "./edit-planner.ts";
 import { validateApprovedCutsSemantic } from "./cuts-validator.ts";
 
-export const WONDER_MODEL_ID =
-  process.env.MODEL_ID || process.env.WONDER_MODEL_ID || "muse-wonder-1.0";
-export const WONDER_REASONING_EFFORT =
-  process.env.WONDER_REASONING_EFFORT || "xhigh";
-export const WONDER_MAX_OUTPUT_TOKENS =
-  Number(process.env.WONDER_MAX_OUTPUT_TOKENS) || 161187;
+export const WONDER_STAGE_A_MODEL_ID =
+  process.env.WONDER_STAGE_A_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || "muse-wonder-1.0";
+export const WONDER_STAGE_A_REASONING_EFFORT =
+  process.env.WONDER_STAGE_A_REASONING_EFFORT || "xhigh";
+export const WONDER_STAGE_A_MAX_OUTPUT_TOKENS =
+  Number(process.env.WONDER_STAGE_A_MAX_OUTPUT_TOKENS) || 32768;
+
+export const WONDER_STAGE_B_MODEL_ID =
+  process.env.WONDER_STAGE_B_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || "muse-wonder-1.0";
+export const WONDER_STAGE_B_REASONING_EFFORT =
+  process.env.WONDER_STAGE_B_REASONING_EFFORT || "xhigh";
+export const WONDER_STAGE_B_MAX_OUTPUT_TOKENS =
+  Number(process.env.WONDER_STAGE_B_MAX_OUTPUT_TOKENS) || 161187;
+
+// Legacy general aliases
+export const WONDER_MODEL_ID = WONDER_STAGE_A_MODEL_ID;
+export const WONDER_REASONING_EFFORT = WONDER_STAGE_A_REASONING_EFFORT;
+export const WONDER_MAX_OUTPUT_TOKENS = WONDER_STAGE_B_MAX_OUTPUT_TOKENS;
 
 // ============================================================================
 // STAGE A: EDITORIAL CLEANUP SYSTEM PROMPT & SCHEMA
@@ -69,12 +81,14 @@ Your mission is to review candidate cuts from a raw talking-head video, evaluate
 
 export const WONDER_EDITORIAL_CLEANUP_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     planId: { type: "string" },
     approvedCuts: {
       type: "array",
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           id: { type: "string" },
           start: { type: "number" },
@@ -83,26 +97,28 @@ export const WONDER_EDITORIAL_CLEANUP_SCHEMA = {
           reason: { type: "string" },
           cutWord: { type: "string" },
         },
-        required: ["id", "start", "end", "type", "reason"],
+        required: ["id", "start", "end", "type", "reason", "cutWord"],
       },
     },
     protectedRanges: {
       type: "array",
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           start: { type: "number" },
           end: { type: "number" },
           reason: { type: "string" },
           protectedWords: { type: "string" },
         },
-        required: ["start", "end", "reason"],
+        required: ["start", "end", "reason", "protectedWords"],
       },
     },
     uncertainDecisions: {
       type: "array",
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           candidateId: { type: "string" },
           actionTaken: { type: "string", enum: ["kept_safe", "cut"] },
@@ -113,7 +129,7 @@ export const WONDER_EDITORIAL_CLEANUP_SCHEMA = {
     },
     editorialNotes: { type: "string" },
   },
-  required: ["planId", "approvedCuts", "protectedRanges", "editorialNotes"],
+  required: ["planId", "approvedCuts", "protectedRanges", "uncertainDecisions", "editorialNotes"],
 };
 
 // Legacy aliases
@@ -172,6 +188,7 @@ Your objective is to analyze the FINAL CLEAN NARRATIVE (after editorial cuts) an
 
 export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     planId: { type: "string" },
     title: { type: "string" },
@@ -181,6 +198,7 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
       type: "array",
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           id: { type: "string" },
           start: { type: "number" },
@@ -217,12 +235,13 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
             type: "array",
             items: {
               type: "object",
+              additionalProperties: false,
               properties: {
                 type: { type: "string", enum: ["image", "video", "icon", "diagram", "ui_mockup"] },
                 description: { type: "string" },
                 prompt: { type: "string" },
               },
-              required: ["type", "description"],
+              required: ["type", "description", "prompt"],
             },
           },
           layerArrangement: {
@@ -244,14 +263,17 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
           "technique",
           "spokenReference",
           "motionIntent",
+          "requiredAssets",
           "layerArrangement",
           "transitionDirection",
+          "cameraZoom",
+          "headlineText",
         ],
       },
     },
     editorialNotes: { type: "string" },
   },
-  required: ["planId", "title", "hookLine", "visualSegments", "editorialNotes"],
+  required: ["planId", "title", "hookLine", "narrativeTheme", "visualSegments", "editorialNotes"],
 };
 
 // ============================================================================
@@ -425,7 +447,7 @@ export async function callWonderEditorialCleanup(
   };
 
   const payload = {
-    model: WONDER_MODEL_ID,
+    model: WONDER_STAGE_A_MODEL_ID,
     input: [
       {
         role: "user",
@@ -434,10 +456,10 @@ export async function callWonderEditorialCleanup(
     ],
     stream: true,
     temperature: 0.7,
-    max_output_tokens: WONDER_MAX_OUTPUT_TOKENS,
+    max_output_tokens: WONDER_STAGE_A_MAX_OUTPUT_TOKENS,
     top_p: 1,
     reasoning: {
-      effort: WONDER_REASONING_EFFORT,
+      effort: WONDER_STAGE_A_REASONING_EFFORT,
     },
     instructions: WONDER_EDITORIAL_CLEANUP_SYSTEM_PROMPT,
     text: {
@@ -453,7 +475,9 @@ export async function callWonderEditorialCleanup(
   const startTime = Date.now();
   onLogEvent?.("WONDER_REQUEST_STARTED", {
     runId,
-    model: WONDER_MODEL_ID,
+    model: WONDER_STAGE_A_MODEL_ID,
+    reasoningEffort: WONDER_STAGE_A_REASONING_EFFORT,
+    maxOutputTokens: WONDER_STAGE_A_MAX_OUTPUT_TOKENS,
     stage: "Stage_A_Editorial_Cleanup",
     candidatesCount: candidateCuts.length,
     wordsCount: allWords.length,
@@ -476,7 +500,8 @@ export async function callWonderEditorialCleanup(
         });
 
         if (!response.ok) {
-          throw new Error(`Wonder API returned HTTP ${response.status}`);
+          const errBody = await response.text().catch(() => "");
+          throw new Error(`Wonder API returned HTTP ${response.status}: ${errBody}`);
         }
         return await readModelResponse(response);
       },
@@ -683,7 +708,7 @@ export async function callWonderCreativeDirector(
   };
 
   const payload = {
-    model: WONDER_MODEL_ID,
+    model: WONDER_STAGE_B_MODEL_ID,
     input: [
       {
         role: "user",
@@ -692,10 +717,10 @@ export async function callWonderCreativeDirector(
     ],
     stream: true,
     temperature: 0.7,
-    max_output_tokens: WONDER_MAX_OUTPUT_TOKENS,
+    max_output_tokens: WONDER_STAGE_B_MAX_OUTPUT_TOKENS,
     top_p: 1,
     reasoning: {
-      effort: WONDER_REASONING_EFFORT,
+      effort: WONDER_STAGE_B_REASONING_EFFORT,
     },
     instructions: WONDER_CREATIVE_DIRECTOR_SYSTEM_PROMPT,
     text: {
@@ -711,7 +736,9 @@ export async function callWonderCreativeDirector(
   const startTime = Date.now();
   onLogEvent?.("WONDER_VISUAL_REQUEST_STARTED", {
     runId,
-    model: WONDER_MODEL_ID,
+    model: WONDER_STAGE_B_MODEL_ID,
+    reasoningEffort: WONDER_STAGE_B_REASONING_EFFORT,
+    maxOutputTokens: WONDER_STAGE_B_MAX_OUTPUT_TOKENS,
     stage: "Stage_B_Creative_Direction",
     cleanDuration,
     wordsCount: allEditedWords.length,
@@ -734,7 +761,8 @@ export async function callWonderCreativeDirector(
         });
 
         if (!response.ok) {
-          throw new Error(`Wonder Creative API returned HTTP ${response.status}`);
+          const errBody = await response.text().catch(() => "");
+          throw new Error(`Wonder Creative API returned HTTP ${response.status}: ${errBody}`);
         }
         return await readModelResponse(response);
       },

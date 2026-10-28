@@ -147,17 +147,67 @@ export function validateApprovedCutsSemantic(
     }
     if (overlapsProtected) continue;
 
-    // 5. Check if silence cut erroneously deletes spoken words in transcript
-    if (rawCut.type === "silence" && allWords.length > 0) {
-      const spokenOverlap = allWords.filter(
-        (w) => Math.max(start, w.start) < Math.min(end, w.end) - 0.05
+    // 5. Spoken-word boundary defense & accidental speech clipping protection
+    let clipsSpeech = false;
+    for (const w of allWords) {
+      // If this cut is specifically intended to remove this word (stutter/filler), skip boundary defense for it
+      const isTargetCutWord = rawCut.cutWord && (
+        w.word.toLowerCase() === rawCut.cutWord.toLowerCase() ||
+        rawCut.reason.toLowerCase().includes(w.word.toLowerCase())
       );
-      if (spokenOverlap.length > 0) {
-        warnings.push(
-          `Cut [${start}, ${end}] marked as silence overlaps spoken words: "${spokenOverlap.map((w) => w.word).join(" ")}"`
-        );
+      if (isTargetCutWord) continue;
+
+      // Does the cut completely engulf this non-target spoken word?
+      if (start <= w.start && end >= w.end && rawCut.type === "silence") {
+        rejectedCuts.push({
+          cut: rawCut,
+          reason: `Cut marked as silence completely deletes spoken word '${w.word}' [${w.start}s - ${w.end}s]`,
+        });
+        clipsSpeech = true;
+        break;
+      }
+
+      // Does the cut start inside an adjacent spoken word?
+      if (start > w.start && start < w.end - 0.04) {
+        const adjStart = +Math.min(totalDuration, w.end + 0.02).toFixed(2);
+        if (end - adjStart >= 0.1) {
+          adjustedCuts.push({
+            original: rawCut,
+            adjusted: { ...rawCut, start: adjStart, end },
+            reason: `Shifted cut start from ${start}s to ${adjStart}s to prevent clipping word '${w.word}'`,
+          });
+          start = adjStart;
+        } else {
+          rejectedCuts.push({
+            cut: rawCut,
+            reason: `Residual cut duration too small after protecting spoken word '${w.word}'`,
+          });
+          clipsSpeech = true;
+          break;
+        }
+      }
+
+      // Does the cut end inside an adjacent spoken word?
+      if (end > w.start + 0.04 && end < w.end) {
+        const adjEnd = +Math.max(0, w.start - 0.02).toFixed(2);
+        if (adjEnd - start >= 0.1) {
+          adjustedCuts.push({
+            original: rawCut,
+            adjusted: { ...rawCut, start, end: adjEnd },
+            reason: `Shifted cut end from ${end}s to ${adjEnd}s to prevent clipping word '${w.word}'`,
+          });
+          end = adjEnd;
+        } else {
+          rejectedCuts.push({
+            cut: rawCut,
+            reason: `Residual cut duration too small after protecting spoken word '${w.word}'`,
+          });
+          clipsSpeech = true;
+          break;
+        }
       }
     }
+    if (clipsSpeech) continue;
 
     validCuts.push({
       id: rawCut.id || `cut-valid-${validCuts.length + 1}`,

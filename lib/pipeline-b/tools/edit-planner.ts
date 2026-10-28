@@ -546,17 +546,12 @@ export function assembleFinalEditPlan(params: {
 
   let cleanDuration = +keepSegments.reduce((acc, s) => acc + s.duration, 0).toFixed(2);
 
-  // Safety Fallback: If cuts erroneously consumed everything or left negligible fragments (< 0.5s from a >= 1.0s video),
-  // keep the original source video to prevent emitting an empty or corrupt reel.
+  // Explicit error state: If cuts consumed everything or left negligible fragments (< 0.5s from a >= 1.0s video),
+  // reject the invalid cut plan explicitly rather than silently falling back to whole-video.
   if (keepSegments.length === 0 || (totalDuration >= 1.0 && cleanDuration < 0.5)) {
-    keepSegments.length = 0;
-    keepSegments.push({
-      start: 0,
-      end: totalDuration,
-      duration: totalDuration,
-      zoomScale: 1.0,
-    });
-    cleanDuration = totalDuration;
+    throw new Error(
+      `Cut validation failed: AI-approved cuts deleted excessive dialogue leaving only ${cleanDuration}s (less than 0.5s minimum required from ${totalDuration}s video). An explicit review state is required.`
+    );
   }
 
   const cutDuration = +(totalDuration - cleanDuration).toFixed(2);

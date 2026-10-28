@@ -16,6 +16,8 @@ import {
   buildEditedTranscript,
 } from "./tools/wonder-director.ts";
 import type { TranscriptSegment } from "./types.ts";
+import { executePipelineB } from "./orchestrator.ts";
+import { validateMedia } from "./tools/media-validator.ts";
 import { alignTranscriptWithScript } from "./tools/transcript-aligner.ts";
 import { getPipelineBTemplate, PIPELINE_B_TEMPLATES } from "./templates/registry.ts";
 
@@ -491,18 +493,17 @@ describe("Pipeline B — Code Review Automated Verification Suite (10 Target Cas
     assert.equal(plan.keepSegments[0].end, 3.0);
   });
 
-  it("Case 10: All content marked for removal — safety fallback preserves original video", () => {
-    // If cuts span the entire duration [0, 4.0]
-    const plan = planTalkingHeadEdit({
-      transcript: [],
-      silences: [{ start: 0.0, end: 4.0, duration: 4.0 }],
-      totalDuration: 4.0,
-    });
-
-    assert.ok(plan.keepSegments.length >= 1, "Must produce fallback keepSegment");
-    assert.equal(plan.keepSegments[0].start, 0);
-    assert.equal(plan.keepSegments[0].end, 4.0);
-    assert.equal(plan.cleanDuration, 4.0);
+  it("Case 10: All content marked for removal — explicit error state rather than silent whole-video fallback", () => {
+    // If cuts span the entire duration [0, 4.0], explicit error is thrown
+    assert.throws(
+      () =>
+        planTalkingHeadEdit({
+          transcript: [],
+          silences: [{ start: 0.0, end: 4.0, duration: 4.0 }],
+          totalDuration: 4.0,
+        }),
+      /Cut validation failed: AI-approved cuts deleted excessive dialogue/
+    );
   });
 });
 
@@ -542,7 +543,7 @@ describe("Pipeline B — Semantic Cuts Validation Layer", () => {
 
   it("strictly protects intentional speech by rejecting cuts overlapping protected ranges", () => {
     const rawCuts = [
-      { id: "c-inside", start: 2.2, end: 2.8, type: "repetition" as const, reason: "cut" },
+      { id: "c-inside", start: 2.2, end: 2.8, type: "retake" as const, reason: "cut" },
       { id: "c-partial", start: 1.5, end: 2.5, type: "silence" as const, reason: "cut" },
       { id: "c-clean", start: 4.5, end: 5.5, type: "silence" as const, reason: "clean" },
     ];
@@ -1118,4 +1119,157 @@ describe("Pipeline B — Full Verification Talking-Head Scenario", () => {
     ]);
   });
 });
+
+describe("Pipeline B — Real Media End-to-End Execution & Audio/Visual Verification", () => {
+  it("executes full workflow on a real talking-head video with audio, FFmpeg cuts, verified duration, and Spark code", async () => {
+    // Locate sample talking-head video from workspace
+    const sampleDir = path.join(process.cwd(), "workspace", "pipeline-b", "runs", "run-b-2026-10-28T20-34-41-616Z-5xbpr");
+    const rawSampleVideo = path.join(sampleDir, "raw_input.mp4");
+
+    if (!fs.existsSync(rawSampleVideo)) {
+      // Skip if sample file is absent in lightweight CI
+      return;
+    }
+
+    // Verify raw input has audio and visual streams
+    const rawMetadata = await validateMedia(rawSampleVideo);
+    assert.equal(rawMetadata.hasAudio, true, "Raw video must have audio");
+    assert.ok(rawMetadata.audioChannels && rawMetadata.audioChannels >= 1, "Raw video must have audio channels");
+    assert.ok(rawMetadata.duration > 0, "Raw video duration must be > 0");
+
+    // Create a new run directory for this e2e verification
+    const testRunDir = path.join(process.cwd(), "workspace", "pipeline-b", "runs", "test-e2e-media-verify");
+    if (!fs.existsSync(testRunDir)) {
+      fs.mkdirSync(testRunDir, { recursive: true });
+    }
+    const testVideoPath = path.join(testRunDir, "raw_input.mp4");
+    fs.copyFileSync(rawSampleVideo, testVideoPath);
+
+    const runState = createRun({
+      runId: "test-e2e-media-verify",
+      rawVideoPath: testVideoPath,
+      templateId: "voxEditorial",
+      mode: "rules-only", // deterministic media processing without network dependency
+    });
+
+    // Provide pre-extracted transcription so test focuses on cuts, FFmpeg, verification, and Spark
+    runState.transcript = [
+      {
+        id: 1,
+        start: 0,
+        end: 3.0,
+        text: "how to build video software",
+        words: [
+          { word: "how", start: 0, end: 0.5 },
+          { word: "to", start: 0.6, end: 1.0 },
+          { word: "build", start: 1.1, end: 1.8 },
+          { word: "video", start: 1.9, end: 2.4 },
+          { word: "software", start: 2.5, end: 3.0 },
+        ],
+      },
+      {
+        id: 2,
+        start: 4.5, // 1.5s silence gap
+        end: 7.0,
+        text: "in just a few minutes",
+        words: [
+          { word: "in", start: 4.5, end: 4.8 },
+          { word: "just", start: 4.9, end: 5.3 },
+          { word: "a", start: 5.4, end: 5.6 },
+          { word: "few", start: 5.7, end: 6.2 },
+          { word: "minutes", start: 6.3, end: 7.0 },
+        ],
+      },
+    ];
+    runState.silences = [{ start: 3.0, end: 4.5, duration: 1.5 }];
+    runState.stages.TRANSCRIBED.status = "completed";
+    runState.stages.TRANSCRIPT_ALIGNED.status = "completed";
+
+    const { saveState } = await import("./state.ts");
+    saveState(runState);
+
+    // Execute through pipeline
+    const completedState = await executePipelineB(runState.runId);
+
+    // 1. Verify FFmpeg cut video was created on disk
+    assert.ok(completedState.cleanVideoPath, "Clean video path must be set");
+    assert.ok(fs.existsSync(completedState.cleanVideoPath!), "Clean video file must physically exist on disk");
+
+    // 2. Validate clean video has valid audio, visual dimensions, and verified duration
+    const cleanMeta = await validateMedia(completedState.cleanVideoPath!);
+    assert.equal(cleanMeta.hasAudio, true, "Clean video must have active audio stream");
+    assert.ok(cleanMeta.audioChannels && cleanMeta.audioChannels >= 1, "Clean video must preserve audio channels");
+    assert.ok(cleanMeta.duration > 0, "Clean video duration must be positive");
+    assert.ok(cleanMeta.duration < rawMetadata.duration, "Clean video must be shorter than raw video after dead air cut");
+
+    // 3. Verify Spark 1.3 motion code was generated
+    assert.ok(completedState.motionCodePath, "Motion code path must be set");
+    assert.ok(fs.existsSync(completedState.motionCodePath!), "TalkingHeadReel.tsx must physically exist on disk");
+    const motionCodeContent = fs.readFileSync(completedState.motionCodePath!, "utf-8");
+    assert.ok(motionCodeContent.includes("TalkingHeadReel"), "Motion code must export TalkingHeadReel");
+    assert.ok(motionCodeContent.includes("visualSegments"), "Motion code must contain visualSegments");
+
+    // 4. Verify log causal trace
+    const logMessages = completedState.logs.map((l) => l.message);
+    assert.ok(logMessages.some((m) => m.includes("FFMPEG_CUT_STARTED")), "Must log FFMPEG_CUT_STARTED");
+    assert.ok(logMessages.some((m) => m.includes("FFMPEG_CUT_COMPLETED")), "Must log FFMPEG_CUT_COMPLETED");
+    assert.ok(logMessages.some((m) => m.includes("CLEAN_VIDEO_VERIFIED")), "Must log CLEAN_VIDEO_VERIFIED");
+    assert.ok(logMessages.some((m) => m.includes("SPARK_REQUEST_STARTED")), "Must log SPARK_REQUEST_STARTED");
+    assert.ok(logMessages.some((m) => m.includes("PREVIEW_READY")), "Must log PREVIEW_READY");
+  });
+});
+
+describe("Pipeline B — Genuine Meta API Integration Verification", () => {
+  it("authenticates against live Meta responses endpoint and returns schema-valid decisions", async () => {
+    const apiKey =
+      process.env.MODEL_API_KEY ||
+      process.env.MUSE_API_KEY ||
+      process.env.META_API_KEY;
+
+    if (!apiKey) {
+      // In CI environments without key, skip live network test
+      return;
+    }
+
+    const liveResult = await callWonderEditorialCleanup({
+      transcript: [
+        {
+          id: 1,
+          start: 0,
+          end: 3.0,
+          text: "this this software is really really fast",
+          words: [
+            { word: "this", start: 0, end: 0.4 },
+            { word: "this", start: 0.5, end: 0.9 },
+            { word: "software", start: 1.0, end: 1.5 },
+            { word: "is", start: 1.6, end: 1.8 },
+            { word: "really", start: 1.9, end: 2.4 },
+            { word: "really", start: 2.5, end: 2.9 },
+            { word: "fast", start: 2.9, end: 3.0 },
+          ],
+        },
+      ],
+      candidateCuts: [
+        {
+          id: "cand-live-stutter",
+          start: 0,
+          end: 0.48,
+          type: "repetition",
+          classification: "accidental_stutter",
+          confidence: 0.92,
+          affectedText: "this",
+          reason: "stutter",
+        },
+      ],
+      totalDuration: 3.0,
+      runId: "live-meta-verify",
+      mode: "wonder-ai",
+    });
+
+    assert.ok(liveResult.planId);
+    assert.ok(Array.isArray(liveResult.approvedCuts));
+    assert.ok(Array.isArray(liveResult.protectedRanges));
+  });
+});
+
 
