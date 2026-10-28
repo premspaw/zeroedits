@@ -1440,23 +1440,27 @@ export default function ProperMobileResponsiveChat() {
         const runId = data.runId;
         const state = data.state;
         const keepSegments = state?.editPlan?.keepSegments || [];
-        const cutDuration = (state?.editPlan?.cutSilenceDuration || 0).toFixed(1);
+        const cutDuration = Number(state?.editPlan?.cutSilenceDuration ?? 0).toFixed(1);
         const cutCount = state?.editPlan?.cutSilenceSegmentsCount || 0;
 
         // Map segments to Storyboard beats so the timeline is interactive
-        const beats: Beat[] = keepSegments.map((seg: any, idx: number) => ({
-          id: idx + 1,
-          label: `Scene ${idx + 1}`,
-          duration: `${(seg.outSec - seg.inSec).toFixed(1)}s`,
-          durNum: seg.outSec - seg.inSec,
-          start: seg.inSec,
-          end: seg.outSec,
-          script:
-            seg.words?.map((w: any) => w.word).join(" ") ||
-            `Scene ${idx + 1} (${seg.zoomFactor > 1 ? `${seg.zoomFactor}x Punch-in` : "Wide"})`,
-          headline: seg.zoomFactor > 1 ? `Punch-in ${seg.zoomFactor}x` : "Wide Shot",
-          visualDesc: `Retained speech segment from ${seg.inSec.toFixed(1)}s to ${seg.outSec.toFixed(1)}s`,
-        }));
+        const beats: Beat[] = keepSegments.map((seg: any, idx: number) => {
+          const segStart = typeof seg?.start === "number" ? seg.start : Number(seg?.inSec ?? 0);
+          const segEnd = typeof seg?.end === "number" ? seg.end : Number(seg?.outSec ?? segStart + 1);
+          const segDur = typeof seg?.duration === "number" ? seg.duration : Math.max(0.1, segEnd - segStart);
+          const zoom = typeof seg?.zoomScale === "number" ? seg.zoomScale : Number(seg?.zoomFactor ?? 1.0);
+          return {
+            id: idx + 1,
+            label: `Scene ${idx + 1}`,
+            duration: `${segDur.toFixed(1)}s`,
+            durNum: segDur,
+            start: +segStart.toFixed(2),
+            end: +segEnd.toFixed(2),
+            script: `Scene ${idx + 1} (${zoom > 1 ? `${zoom.toFixed(2)}x Punch-in` : "Wide Shot"})`,
+            headline: zoom > 1 ? `Punch-in ${zoom.toFixed(2)}x` : "Wide Shot",
+            visualDesc: `Retained speech segment from ${segStart.toFixed(1)}s to ${segEnd.toFixed(1)}s`,
+          };
+        });
 
         const cleanVideoUrl = `/api/pipeline-b/media/${runId}/clean`;
         const finalVideoUrl = `/api/pipeline-b/media/${runId}/final`;

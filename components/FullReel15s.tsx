@@ -392,7 +392,7 @@ export default function FullReel15s() {
                 border: "1px solid #EAE2CC",
               }}
             >
-              TIMEFRAME: {currentBeat.start.toFixed(1)}s - {currentBeat.end.toFixed(1)}s (2.5s duration)
+              TIMEFRAME: {Number(currentBeat?.start ?? 0).toFixed(1)}s - {Number(currentBeat?.end ?? 0).toFixed(1)}s (2.5s duration)
             </div>
           </motion.div>
         </AnimatePresence>
