@@ -93,30 +93,10 @@ export async function exportFinalVideo(params: {
       }
     }
 
-    // 3. Dynamic Subtitles mapped to the clean cut timeline
-    for (const segment of transcriptToUse) {
-      const cleanText = segment.text.replace(/%/g, "").replace(/['"\\:]/g, "").toUpperCase();
-      if (!cleanText.trim()) continue;
-
-      let sStart = segment.start;
-      let sEnd = segment.end;
-
-      if (!editPlan.editedTranscript || editPlan.editedTranscript.length === 0) {
-        const mappedS = mapRawTimeToCleanTime(segment.start, keepSegments);
-        const mappedE = mapRawTimeToCleanTime(segment.end, keepSegments);
-        if (mappedS === null || mappedE === null) continue;
-        sStart = mappedS;
-        sEnd = mappedE;
-      }
-
-      if (sEnd <= sStart) {
-        sEnd = sStart + 0.8;
-      }
-
-      filters.push(
-        `drawtext=text='${cleanText}':fontsize=38:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=10:x=(w-text_w)/2:y=h*0.78:enable='between(t,${sStart.toFixed(2)},${sEnd.toFixed(2)})'`
-      );
-    }
+    // 3. Dynamic Subtitles mapped to the clean cut timeline using libass subtitles filter
+    const escapedSrtPath = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+    const subtitleFilter = `subtitles='${escapedSrtPath}':force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=42'`;
+    filters.push(subtitleFilter);
 
     if (filters.length > 0) {
       await execFileAsync("ffmpeg", [
@@ -139,9 +119,8 @@ export async function exportFinalVideo(params: {
 
     return outputPath;
   } catch (err) {
-    console.warn("ffmpeg subtitle burning error, falling back to clean video:", err);
-    fs.copyFileSync(cleanVideoPath, outputPath);
-    return outputPath;
+    console.error("FFmpeg final video export error:", err);
+    throw new Error(`Failed to export final reel with burned subtitles: ${(err as Error).message}`);
   }
 }
 
