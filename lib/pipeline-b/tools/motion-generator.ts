@@ -103,13 +103,45 @@ export const TalkingHeadReel: React.FC = () => {
   );
   const layoutType = activeSegment?.layoutType || "fullscreen_speaker";
 
-  // Active word detection for kinetic subtitles
+  // Active word detection for kinetic pop captions
   const activeWordIndex = words.findIndex(
     (w) => currentTime >= w.start && currentTime <= w.end
   );
-  const activeWord = words[activeWordIndex] || words[0];
-  const chunkStart = Math.max(0, activeWordIndex - 2);
-  const currentChunk = words.slice(chunkStart, chunkStart + 5);
+  const activeWord = activeWordIndex !== -1 ? words[activeWordIndex] : null;
+  const chunkStart = Math.max(0, activeWordIndex - 1);
+  const currentChunk = activeWord ? words.slice(chunkStart, chunkStart + 4) : [];
+
+  // Kinetic spring pop calculation for active word (MrBeast / Hormozi pop physics)
+  const activeWordStartFrame = activeWord ? Math.round(activeWord.start * fps) : 0;
+  const wordPopSpring = spring({
+    frame: Math.max(0, frame - activeWordStartFrame),
+    fps,
+    config: { damping: 11, stiffness: 220, mass: 0.75 },
+  });
+  const popScale = interpolate(wordPopSpring, [0, 1], [0.85, 1.28]);
+  const emojiPopScale = interpolate(wordPopSpring, [0, 1], [0.55, 1.35]);
+
+  // Emoji keyword dictionary matching
+  const cleanActiveToken = (activeWord?.word || "").toLowerCase().replace(/[^a-z]/g, "");
+  const EMOJI_KEYWORD_MAP: Record<string, string> = {
+    fire: "🔥", insane: "🔥", crazy: "🔥", epic: "🔥", hot: "🔥", cool: "🔥",
+    fast: "⚡", speed: "⚡", quick: "⚡", instant: "⚡", now: "⚡", click: "⚡",
+    growth: "🚀", scale: "🚀", rocket: "🚀", launch: "🚀", boost: "🚀", double: "🚀",
+    idea: "💡", smart: "💡", trick: "💡", secret: "💡", tip: "💡", insight: "💡",
+    target: "🎯", goal: "🎯", result: "🎯", exact: "🎯", metric: "🎯",
+    money: "💰", cash: "💰", revenue: "💰", dollar: "💰", profit: "💰", price: "💰",
+    look: "👀", see: "👀", watch: "👀", check: "👀", notice: "👀",
+    ai: "🧠", model: "🧠", code: "🧠", pipeline: "🧠", data: "🧠",
+    stop: "❌", cut: "❌", wrong: "❌", bad: "❌", mistake: "❌", dead: "❌",
+    clean: "✅", perfect: "✅", done: "✅", easy: "✅", approved: "✅", yes: "✅",
+  };
+  const activeEmoji = EMOJI_KEYWORD_MAP[cleanActiveToken] || null;
+
+  // Active word color classification
+  const isPositiveWord = /^(clean|perfect|easy|done|yes|approved|growth|boost|profit|retention)$/i.test(cleanActiveToken);
+  const isAlertWord = /^(stop|cut|dead|wrong|mistake|waste|bad)$/i.test(cleanActiveToken);
+  const isTechWord = /^(ai|model|code|pipeline|wonder|spark|video)$/i.test(cleanActiveToken);
+  const activeColor = isPositiveWord ? "#10B981" : (isAlertWord ? "#FF4444" : (isTechWord ? "#00F0FF" : "#FFE600"));
 
   // 1. ACTIVE CAMERA DYNAMICS (Continuous smooth zoom interpolation & snappy punch-in)
   let cameraZoom = 1.0;
@@ -505,22 +537,48 @@ export const TalkingHeadReel: React.FC = () => {
         </div>
       )}
 
-      {/* 8. HORMOZI / MRBEAST STYLE WORD-BY-WORD KINETIC HIGHLIGHTING */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 210,
-          left: 40,
-          right: 40,
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: "12px 16px",
-          textAlign: "center",
-          zIndex: 55,
-        }}
-      >
+      {/* 8. HORMOZI / MRBEAST STYLE WORD-BY-WORD KINETIC POP CAPTIONS */}
+      {activeWord && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 210,
+            left: 36,
+            right: 36,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+            zIndex: 60,
+          }}
+        >
+          {/* Animated Keyword Emoji Burst */}
+          {activeEmoji && (
+            <div
+              style={{
+                fontSize: 72,
+                marginBottom: -8,
+                transform: \`scale(\${emojiPopScale}) translateY(-10px)\`,
+                filter: \`drop-shadow(0 10px 24px \${activeColor}99)\`,
+                transition: "transform 0.05s ease-out",
+              }}
+            >
+              {activeEmoji}
+            </div>
+          )}
+
+          {/* Kinetic Words Container */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "12px 16px",
+              textAlign: "center",
+            }}
+          >
         {currentChunk.map((w: any, idx: number) => {
           const isCurrent = currentTime >= w.start && currentTime <= w.end;
           const tiltAngle = ((idx % 2 === 0 ? 1 : -1) * (2.8 + (idx % 3) * 0.7));
@@ -529,31 +587,37 @@ export const TalkingHeadReel: React.FC = () => {
             <span
               key={idx}
               style={{
-                fontSize: isCurrent ? 60 : 46,
+                fontFamily: "'Montserrat', 'Anton', sans-serif",
+                fontSize: isCurrent ? 62 : 46,
                 fontWeight: 900,
                 textTransform: "uppercase",
                 letterSpacing: "-0.01em",
-                color: isCurrent ? "#FFE600" : "#FFFFFF",
-                WebkitTextStroke: isCurrent ? "3.5px #000000" : "2.5px #000000",
-                backgroundColor: isCurrent ? "rgba(10, 10, 15, 0.9)" : "transparent",
-                border: isCurrent ? "3px solid #FFC700" : "none",
-                padding: isCurrent ? "6px 20px" : "0 4px",
-                borderRadius: 18,
+                color: isCurrent ? activeColor : "#FFFFFF",
+                WebkitTextStroke: isCurrent ? "4px #000000" : "2.5px #000000",
+                backgroundColor: isCurrent ? "rgba(10, 10, 18, 0.92)" : "rgba(0, 0, 0, 0.45)",
+                border: isCurrent ? \`3.5px solid \${activeColor}\` : "1.5px solid rgba(255,255,255,0.18)",
+                padding: isCurrent ? "6px 22px" : "4px 12px",
+                borderRadius: 20,
                 transform: isCurrent
-                  ? \`scale(1.25) rotate(\${tiltAngle.toFixed(1)}deg)\`
-                  : "scale(0.98)",
-                transition: "all 0.06s cubic-bezier(0.16, 1, 0.3, 1)",
+                  ? \`scale(\${popScale}) rotate(\${tiltAngle.toFixed(1)}deg)\`
+                  : "scale(0.96)",
+                boxShadow: isCurrent
+                  ? \`0 16px 40px \${activeColor}55, 0 0 20px rgba(0,0,0,0.85)\`
+                  : "0 4px 12px rgba(0,0,0,0.5)",
                 textShadow: isCurrent
-                  ? "0 6px 22px rgba(255, 230, 0, 0.75), 0 2px 4px #000"
+                  ? \`0 6px 24px \${activeColor}BB, 0 2px 4px #000000\`
                   : "0 4px 14px rgba(0,0,0,0.9)",
-                opacity: isCurrent ? 1.0 : 0.75,
+                opacity: isCurrent ? 1.0 : 0.72,
+                transition: "all 0.05s ease-out",
               }}
             >
               {w.word}
             </span>
           );
         })}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* 9. Watermark Badge */}
       <div

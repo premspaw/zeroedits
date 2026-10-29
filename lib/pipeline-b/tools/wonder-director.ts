@@ -59,23 +59,24 @@ Review candidate cuts, evaluate spoken dialogue rhythm, approve edits that remov
 1. EDITORIAL GOAL:
    - Modern short-form video requires crisp pacing with zero dead air, zero repeated false starts, and zero stuttering.
    - Actively APPROVE candidate cuts for:
-     a) Rapid repeated word stutters (e.g. repeated words like "two two two...", rapid stammering tokens like "poop poop poop...", "this, this"). Keep only one clean utterance and cut the rest.
+     a) Rapid repeated word stutters (e.g. repeated words like "two two two...", repeated "like, like, like...", rapid stammering tokens like "poop poop poop...", "this, this"). Keep only one clean utterance and cut the rest so it strictly matches the script.
      b) Multi-word phrase restarts and retakes (e.g., "only when five clicks... only in five clicks", "it auto stitches... it auto stitches", "you can see... you can see"). Approve cutting the false take and preserve the clean final take.
-     c) Vocal fillers and hesitation sounds ("okay", "uh", "um", "ah", "er", "like") that precede retakes or create dead pauses.
-     d) Dead air (> 0.70s).
+     c) Vocal fillers and hesitation sounds ("ah", "ahh", "um", "umm", "uh", "er", "hmm", "okay", "like") that introduce dead pauses or precede speech.
+     d) Starting vocal fillers ("ah", "um") and initial dead air before the first real word: MUST be approved for cutting so the video hooks instantly without hesitation.
+     e) Dead air (> 0.40s).
 
-2. RHETORICAL EMPHASIS vs ACCIDENTAL STUTTER:
-   - Distinguish INTENTIONAL REPETITION (e.g., "very, very simple", "more and more", "never, never give up") from ACCIDENTAL STUTTERS (e.g., rapid duplicate repetitions, "two two two", repeated retakes).
-   - NEVER cut intentional emphasis. Place intentional emphasis in protectedRanges.
-   - For accidental stutters and phrase retakes, approve cutting the false-start or stumble while protecting the clean take.
-   - Do NOT protect rapid stammering or repeated noise tokens as "sound effects"; cut them cleanly to word boundaries.
+2. SCRIPT AS GROUND TRUTH & REPETITION RESOLUTION:
+   - When a userScript is provided, it represents the speaker's true intent.
+   - If the speaker says the same word 3, 4, or 5 times (e.g., "like, like, like"), but the script only has it once, you MUST approve cutting all redundant duplicate repetitions, preserving only the final clean instance.
+   - Distinguish INTENTIONAL RHETORICAL REPETITION (e.g., "very, very simple", "more and more", "never, never give up") from ACCIDENTAL HESITATIONS. Intentional repetition should be protected; accidental stutters must be cut.
 
 3. VOCAL FILLERS & NATURAL PAUSES:
-   - Approve cutting vocal fillers ("okay", "uh", "um", "like") when they introduce dead pauses or precede a restart.
-   - Protect natural breathing and dramatic pauses (0.30s to 0.65s).
+   - Approve cutting all vocal fillers ("ah", "um", "uh", "er", "like") that do not appear in the ground truth script.
+   - Preserve natural micro-breathing (0.15s to 0.35s). Do NOT protect long hesitation silences.
 
 4. PROTECTED RANGES & UNCERTAIN DECISIONS:
-   - Spoken ranges marked in protectedRanges CANNOT be cut. Protect ONLY genuine speech content, intentional emphasis, and clean final takes.
+   - Spoken ranges marked in protectedRanges CANNOT be cut. Protect ONLY genuine intended speech content, intentional emphasis, and clean final takes.
+   - Do NOT protect vocal fillers ("ah", "um") or stutter repetitions.
    - Document uncertain candidates in uncertainDecisions with the action taken ("kept_safe" or "cut") and rationale.
 
 5. OUTPUT FORMAT:
@@ -445,7 +446,7 @@ export async function callWonderEditorialCleanup(
       alternativeKeepOption: c.alternativeKeepOption,
     })),
     instruction:
-      "Stage A: Review transcript and candidate cuts. Differentiate intentional rhetorical repetition vs accidental stutters. Use word-aligned evidence and protect uncertain edits. Return approved cuts, protected ranges, and uncertain decisions matching the schema.",
+      "Stage A: Review transcript and candidate cuts. Core mandates: (1) ELIMINATE all vocal fillers ('ah', 'ahh', 'um', 'umm', 'uh', 'er', 'hmm', 'like') and dead air; (2) CUT starting 'ah' and initial dead air so video hooks instantly on the first real word; (3) When userScript or candidate cuts identify repeated words (e.g. repeated 'like, like, like' 4-5 times), APPROVE cutting all duplicate stutters, preserving exactly ONE clean instance matching script. Return approved cuts, protected ranges, and uncertain decisions matching the schema.",
   };
 
   const payload = {
@@ -559,10 +560,51 @@ export async function callWonderEditorialCleanup(
         }))
     : [];
 
+  // Ensure vocal fillers, initial 'ah', leading dead air, and script stutters are not locked by protectedRanges
+  const cleanedProtectedRanges = rawProtectedRanges.filter((p) => {
+    const pw = (p.protectedWords || "").toLowerCase().trim();
+    if (/^(ah|ahh|aah|um|umm|uh|er|hmm|ur)$/i.test(pw)) return false;
+    return true;
+  });
+
+  // Combine AI approved cuts with high-confidence candidate cuts (lead silence, lead filler, script stutters, fillers)
+  const approvedIds = new Set((parsed.approvedCuts || []).map((c: any) => c.id));
+  const mergedApprovedCuts: any[] = [...(parsed.approvedCuts || [])];
+
+  for (const cand of candidateCuts) {
+    if (approvedIds.has(cand.id)) continue;
+
+    const isLeadCut = cand.id === "cand-lead-silence" || cand.id === "cand-lead-filler";
+    const isScriptRepetition = cand.classification === "accidental_stutter" || cand.id.startsWith("cand-script-");
+    const isStutterGap = cand.id.startsWith("cand-stutter-gap") || cand.id.startsWith("cand-stutter-run");
+    const isHighConfFiller = (cand.classification === "filler_pause" || (cand.type as string) === "filler") && cand.confidence >= 0.90;
+
+    if (isLeadCut || isScriptRepetition || isStutterGap || isHighConfFiller) {
+      // Check if inside legitimate protected speech (excluding fillers)
+      const isProtected = cleanedProtectedRanges.some((p) => {
+        const oStart = Math.max(cand.start, p.start);
+        const oEnd = Math.min(cand.end, p.end);
+        return oEnd - oStart > 0.05;
+      });
+
+      if (!isProtected) {
+        mergedApprovedCuts.push({
+          id: cand.id,
+          start: cand.start,
+          end: cand.end,
+          type: cand.type === "repetition" ? "retake" : (cand.type === "sentence_pause" ? "silence" : (cand.type as any)),
+          reason: cand.reason,
+          cutWord: cand.affectedText,
+        });
+        approvedIds.add(cand.id);
+      }
+    }
+  }
+
   // Perform full semantic validation on approved cuts
-  const semanticValidation = validateApprovedCutsSemantic(parsed.approvedCuts, {
+  const semanticValidation = validateApprovedCutsSemantic(mergedApprovedCuts, {
     totalDuration,
-    protectedRanges: rawProtectedRanges,
+    protectedRanges: cleanedProtectedRanges,
     transcript,
   });
 
@@ -580,14 +622,14 @@ export async function callWonderEditorialCleanup(
     runId,
     planId,
     approvedCutsCount: semanticValidation.validCuts.length,
-    protectedRangesCount: rawProtectedRanges.length,
+    protectedRangesCount: cleanedProtectedRanges.length,
     rejectedCutsCount: semanticValidation.rejectedCuts.length,
   });
 
   return {
     planId,
     approvedCuts: semanticValidation.validCuts,
-    protectedRanges: rawProtectedRanges,
+    protectedRanges: cleanedProtectedRanges,
     uncertainDecisions: parsed.uncertainDecisions || [],
     editorialNotes:
       parsed.editorialNotes || "Wonder AI Director completed Stage A editorial cleanup.",

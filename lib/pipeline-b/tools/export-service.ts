@@ -32,10 +32,9 @@ export async function exportFinalVideo(params: {
       ? editPlan.editedTranscript
       : transcript;
 
-  // Create standard SRT subtitle file
+  // 1. Create standard SRT subtitle file for backward compatibility
   const srtPath = path.join(outputDir, "subtitles.srt");
   const srtLines: string[] = [];
-
   let entryIndex = 1;
   for (const segment of transcriptToUse) {
     const sTime = formatSrtTimestamp(segment.start);
@@ -46,57 +45,117 @@ export async function exportFinalVideo(params: {
     srtLines.push("");
     entryIndex++;
   }
-
   fs.writeFileSync(srtPath, srtLines.join("\n"), "utf-8");
 
-  try {
-    const filters: string[] = [];
-    const keepSegments = editPlan.keepSegments || [];
+  // 2. Create High-Retention Advanced SubStation Alpha (.ass) Subtitles (Hormozi / MrBeast pop typography)
+  const assPath = path.join(outputDir, "subtitles.ass");
+  const assLines: string[] = [
+    "[Script Info]",
+    "Title: Meta Muse Kinetic Pop Subtitles",
+    "ScriptType: v4.00+",
+    "WrapStyle: 0",
+    "ScaledBorderAndShadow: yes",
+    "YCbCr Matrix: TV.601",
+    "PlayResX: 1080",
+    "PlayResY: 1920",
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    "Style: PopMain,Montserrat,62,&H0000E6FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.0,2,40,40,240,1",
+    "Style: PopContext,Montserrat,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,240,1",
+    "Style: HookBadge,Montserrat,38,&H0000E6FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.0,2.0,8,40,40,100,1",
+    "Style: SceneBadge,Montserrat,42,&H00FFF000,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.0,2.0,8,40,40,200,1",
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+  ];
 
-    // 1. Top Hook Badge for the first 3.5 seconds
-    const badgeText = (editPlan.hookLine || "KEY INSIGHT").replace(/%/g, "").replace(/['"\\:]/g, "").slice(0, 32).toUpperCase();
-    filters.push(
-      `drawtext=text='[ ${badgeText} ]':fontsize=32:fontcolor=yellow:box=1:boxcolor=black@0.85:boxborderw=10:x=(w-text_w)/2:y=120:enable='between(t,0,3.5)'`
-    );
+  // Top Hook Badge (0.0s to 3.5s)
+  const badgeText = (editPlan.hookLine || "KEY INSIGHT").replace(/[%{}]/g, "").slice(0, 32).toUpperCase();
+  assLines.push(
+    `Dialogue: 1,0:00:00.00,0:00:03.50,HookBadge,,0,0,0,,{\\an8\\b1\\fscx106\\fscy106\\c&H0000E6FF&\\3c&H00000000&\\bord4.5\\shad2.5}[ 🔥 ${badgeText} 🔥 ]`
+  );
 
-    // 2a. Visual Badges & Image Overlay Callouts from visualPlan
-    for (const item of editPlan.visualPlan || []) {
-      if (item.type === "icon_badge" || item.type === "image_overlay") {
-        const itemText = item.content.replace(/%/g, "").replace(/['"\\:]/g, "").toUpperCase();
-        const start = Math.max(0, item.timestamp);
-        const end = start + Math.min(2.2, item.duration);
-        const boxColor = item.type === "image_overlay" ? "black@0.85" : "red@0.85";
-        const fontColor = item.type === "image_overlay" ? "yellow" : "white";
-        filters.push(
-          `drawtext=text='${itemText}':fontsize=34:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=12:x=(w-text_w)/2:y=200:enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'`
+  // Authoritative Visual Scenes & Animation Callouts
+  for (const seg of editPlan.visualSegments || []) {
+    if (seg.headlineText) {
+      const segText = seg.headlineText.replace(/[%{}]/g, "").toUpperCase();
+      const sTime = formatAssTimestamp(Math.max(0, seg.start));
+      const eTime = formatAssTimestamp(Math.min(editPlan.cleanDuration, seg.end));
+      if (seg.end > seg.start) {
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},SceneBadge,,0,0,0,,{\\an8\\b1\\fscx108\\fscy108\\c&H00FFF000&\\3c&H00000000&\\bord4.5\\shad2.5}★ ${segText} ★`
         );
       }
     }
+  }
 
-    // 2b. Authoritative Visual Scenes & Animation Callouts from visualSegments
-    for (const seg of editPlan.visualSegments || []) {
-      if (seg.headlineText) {
-        const segText = seg.headlineText.replace(/%/g, "").replace(/['"\\:]/g, "").toUpperCase();
-        const start = Math.max(0, seg.start);
-        const end = Math.min(editPlan.cleanDuration, seg.end);
-        if (end > start) {
-          const isHighlight =
-            seg.technique === "kinetic_typography" ||
-            seg.technique === "sam_cutout_pop" ||
-            seg.layoutType === "sam_cutout";
-          const boxColor = isHighlight ? "red@0.85" : "black@0.85";
-          const fontColor = isHighlight ? "yellow" : "white";
-          filters.push(
-            `drawtext=text='★ ${segText} ★':fontsize=36:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=12:x=(w-text_w)/2:y=210:enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'`
-          );
-        }
+  // Extract individual words for frame-accurate kinetic highlighting & emoji bursts
+  const wordsToRender: { word: string; start: number; end: number }[] = [];
+  for (const seg of transcriptToUse) {
+    if (seg.words && seg.words.length > 0) {
+      for (const w of seg.words) {
+        const wAny = w as any;
+        wordsToRender.push({
+          word: w.word,
+          start: wAny.editedStart ?? wAny.start ?? wAny.sourceStart ?? 0,
+          end: wAny.editedEnd ?? wAny.end ?? wAny.sourceEnd ?? 0,
+        });
       }
+    } else {
+      const splitWords = seg.text.split(/\s+/).filter(Boolean);
+      const segDur = Math.max(0.2, seg.end - seg.start);
+      const wordDur = segDur / splitWords.length;
+      splitWords.forEach((word, idx) => {
+        wordsToRender.push({
+          word,
+          start: +(seg.start + idx * wordDur).toFixed(2),
+          end: +(seg.start + (idx + 1) * wordDur).toFixed(2),
+        });
+      });
+    }
+  }
+
+  const EMOJI_KEYWORD_MAP: Record<string, string> = {
+    fire: "🔥 ", insane: "🔥 ", crazy: "🔥 ", epic: "🔥 ", hot: "🔥 ", cool: "🔥 ",
+    fast: "⚡ ", speed: "⚡ ", quick: "⚡ ", instant: "⚡ ", now: "⚡ ", click: "⚡ ",
+    growth: "🚀 ", scale: "🚀 ", rocket: "🚀 ", launch: "🚀 ", boost: "🚀 ", double: "🚀 ",
+    idea: "💡 ", smart: "💡 ", trick: "💡 ", secret: "💡 ", tip: "💡 ", insight: "💡 ",
+    target: "🎯 ", goal: "🎯 ", result: "🎯 ", exact: "🎯 ", metric: "🎯 ",
+    money: "💰 ", cash: "💰 ", revenue: "💰 ", dollar: "💰 ", profit: "💰 ", price: "💰 ",
+    look: "👀 ", see: "👀 ", watch: "👀 ", check: "👀 ", notice: "👀 ",
+    ai: "🧠 ", model: "🧠 ", code: "🧠 ", pipeline: "🧠 ", data: "🧠 ",
+    stop: "❌ ", cut: "❌ ", wrong: "❌ ", bad: "❌ ", mistake: "❌ ", dead: "❌ ",
+    clean: "✅ ", perfect: "✅ ", done: "✅ ", easy: "✅ ", approved: "✅ ", yes: "✅ ",
+  };
+
+  for (let i = 0; i < wordsToRender.length; i++) {
+    const w = wordsToRender[i];
+    const cleanToken = w.word.toLowerCase().replace(/[^a-z]/g, "");
+    const emojiPrefix = EMOJI_KEYWORD_MAP[cleanToken] || "";
+
+    // Vibrant ASS color: yellow for general, green for stats/positive, cyan for tech, red for alerts
+    let wordColor = "&H0000E6FF&"; // Yellow (&HAABBGGRR)
+    if (/^(clean|perfect|done|easy|yes|growth|boost|profit|retention)$/i.test(cleanToken)) {
+      wordColor = "&H0081B910&"; // Neon green
+    } else if (/^(ai|code|pipeline|wonder|spark|model|tech)$/i.test(cleanToken)) {
+      wordColor = "&H00FFF000&"; // Cyan
+    } else if (/^(stop|cut|dead|wrong|mistake|waste|bad)$/i.test(cleanToken)) {
+      wordColor = "&H004444FF&"; // Bright red
     }
 
-    // 3. Dynamic Subtitles mapped to the clean cut timeline using libass subtitles filter
-    const escapedSrtPath = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-    const subtitleFilter = `subtitles='${escapedSrtPath}':force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=42'`;
-    filters.push(subtitleFilter);
+    const sTime = formatAssTimestamp(w.start);
+    const eTime = formatAssTimestamp(Math.max(w.start + 0.12, w.end));
+    const safeWord = w.word.replace(/[%{}]/g, "").toUpperCase();
+    const textFormatted = `{\\fscx120\\fscy120\\c${wordColor}\\3c&H00000000&\\bord4.5\\shad2.5}${emojiPrefix}${safeWord}`;
+    assLines.push(`Dialogue: 0,${sTime},${eTime},PopMain,,0,0,0,,${textFormatted}`);
+  }
+
+  fs.writeFileSync(assPath, assLines.join("\n"), "utf-8");
+
+  try {
+    const escapedAssPath = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+    const filters: string[] = [`ass='${escapedAssPath}'`];
 
     if (filters.length > 0) {
       await execFileAsync("ffmpeg", [
@@ -122,6 +181,16 @@ export async function exportFinalVideo(params: {
     console.error("FFmpeg final video export error:", err);
     throw new Error(`Failed to export final reel with burned subtitles: ${(err as Error).message}`);
   }
+}
+
+function formatAssTimestamp(seconds: number): string {
+  const safeSec = Math.max(0, seconds);
+  const hrs = Math.floor(safeSec / 3600);
+  const mins = Math.floor((safeSec % 3600) / 60);
+  const secs = Math.floor(safeSec % 60);
+  const csecs = Math.floor((safeSec % 1) * 100);
+  const pad = (n: number, z = 2) => String(n).padStart(z, "0");
+  return `${hrs}:${pad(mins)}:${pad(secs)}.${pad(csecs)}`;
 }
 
 function mapRawTimeToCleanTime(rawTime: number, keepSegments: KeepSegment[]): number | null {
