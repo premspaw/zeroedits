@@ -21,8 +21,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const clientRunId = formData.get("runId") as string | null;
+    const stopAtStage = (formData.get("stopAtStage") as any) || undefined;
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const runId = `run-b-${timestamp}-${Math.random().toString(36).substring(2, 7)}`;
+    const runId = clientRunId || `run-b-${timestamp}-${Math.random().toString(36).substring(2, 7)}`;
     const runDir = path.join(process.cwd(), "workspace", "pipeline-b", "runs", runId);
 
     if (!fs.existsSync(runDir)) {
@@ -44,8 +46,8 @@ export async function POST(req: NextRequest) {
       mode,
     });
 
-    // Run the orchestrator pipeline up to PREVIEW_READY
-    const finalState = await executePipelineB(runId);
+    // Run the orchestrator pipeline up to PREVIEW_READY (or stopAtStage)
+    const finalState = await executePipelineB(runId, stopAtStage ? { stopAtStage } : undefined);
 
     return NextResponse.json({
       success: true,

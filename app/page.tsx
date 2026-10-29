@@ -113,6 +113,7 @@ interface ChatMessageItem {
   theme?: ThemeConfig;
   styleHint?: string;
   storyboard?: any;
+  editPlan?: any;
   sparkCode?: string;
   generationStatus?: "storyboarding" | "rendering" | "ready" | "error";
   generationError?: string;
@@ -1420,21 +1421,26 @@ export default function ProperMobileResponsiveChat() {
         text: `🎬 Auto-Edit: ${videoFile.name} (${Math.round(editVideoDuration || 0)}s)${userScriptContent ? " • Script provided" : ""}${userNote ? ` • Note: ${userNote}` : ""}`,
       };
 
+      const clientRunId = `run-b-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).substring(2, 7)}`;
       const stagedReply: ChatMessageItem = {
         id: botMsgId,
         role: "assistant",
-        text: "Pipeline B initiated: Running bounded specialist tools (media inspection → audio extraction → speech transcription → cut planning → ffmpeg media cutting → motion overlays)...",
+        text: "Pipeline B initiated: Uploading talking-head video to Wonder Muse AI Editorial Director...",
         generationStatus: "rendering",
         pipeline: "pipeline-b",
+        pipelineBRunId: clientRunId,
       };
 
       setMessages((prev) => [...prev, stagedUser, stagedReply]);
       setSelectedMessageId(botMsgId);
       setInput("");
 
+      let pollTimer: NodeJS.Timeout | null = null;
+
       try {
         const formData = new FormData();
         formData.append("video", videoFile);
+        formData.append("runId", clientRunId);
         if (userScriptContent) {
           formData.append("userScript", userScriptContent);
         } else if (userNote) {
@@ -1442,13 +1448,46 @@ export default function ProperMobileResponsiveChat() {
         }
         formData.append("templateId", "hormoziPunch");
 
-        setGeneratingStep("Analyzing audio & trimming dead silences with ffmpeg...");
+        setGeneratingStep("Uploading talking-head video & extracting audio...");
+
+        // Poll run status to update UI step in real-time as Wonder AI processes stages
+        pollTimer = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/pipeline-b/status/${clientRunId}`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              const curStage = statusData?.state?.currentStage;
+              if (curStage === "MEDIA_VALIDATED") {
+                setGeneratingStep("Validating media streams & audio channels...");
+              } else if (curStage === "TRANSCRIBED") {
+                setGeneratingStep("Transcribing spoken speech with exact word-level timestamps...");
+              } else if (curStage === "TRANSCRIPT_ALIGNED") {
+                setGeneratingStep("Aligning transcript & computing deviation scores...");
+              } else if (curStage === "EDIT_PLANNED") {
+                setGeneratingStep("Wonder Muse AI Stage A: Analyzing stutters, pauses & protected speech...");
+              } else if (curStage === "CUTS_VALIDATED") {
+                setGeneratingStep("Validating approved cuts against spoken-word boundaries...");
+              } else if (curStage === "CLEAN_VIDEO_CREATED") {
+                setGeneratingStep("Executing verified FFmpeg cuts based strictly on Wonder AI decisions...");
+              } else if (curStage === "VISUAL_PLAN_CREATED") {
+                setGeneratingStep("Wonder Muse AI Stage B: Planning creative layouts, kinetic titles & assets...");
+              } else if (curStage === "MOTION_GENERATED") {
+                setGeneratingStep("Spark 1.3: Generating 60fps compositor code...");
+              } else if (curStage === "PREVIEW_READY") {
+                setGeneratingStep("Final video & interactive storyboard ready!");
+              }
+            }
+          } catch {
+            // Ignore polling errors
+          }
+        }, 800);
 
         const response = await fetch("/api/pipeline-b/upload", {
           method: "POST",
           body: formData,
         });
 
+        if (pollTimer) clearInterval(pollTimer);
         const data = await response.json();
 
         if (!response.ok || !data.success) {
@@ -1461,7 +1500,7 @@ export default function ProperMobileResponsiveChat() {
           return;
         }
 
-        const runId = data.runId;
+        const runId = data.runId || clientRunId;
         const state = data.state;
         const keepSegments = state?.editPlan?.keepSegments || [];
         const cutDuration = Number(state?.editPlan?.cutSilenceDuration ?? 0).toFixed(1);
@@ -1512,6 +1551,7 @@ export default function ProperMobileResponsiveChat() {
           videoUrl: finalVideoUrl,
           finalDownloadUrl: finalVideoUrl,
           beats: beats.length > 0 ? beats : undefined,
+          editPlan: state?.editPlan,
           storyboard: beats.length > 0 ? {
             globalDirection: {
               concept: state?.editPlan?.title || "Talking-Head Reel",
@@ -1533,12 +1573,14 @@ export default function ProperMobileResponsiveChat() {
           text: `✨ Wonder AI Director & Pipeline B complete! Trimmed ${cutDuration}s across ${cutCount} pause(s)${repCount > 0 ? `, ${repCount} repetition retake(s)` : ""}${fillerCount > 0 ? `, ${fillerCount} vocal filler(s)` : ""}. Added ${animCount} Wonder-directed animated graphic stickers and burned synchronized kinetic subtitles.`,
         });
       } catch (err: any) {
+        if (pollTimer) clearInterval(pollTimer);
         updateMessage(botMsgId, {
           generationStatus: "error",
           generationError: err.message || "Network error running Pipeline B",
           text: `❌ Failed to run Pipeline B: ${err.message || "Unknown error"}`,
         });
       } finally {
+        if (pollTimer) clearInterval(pollTimer);
         setIsGenerating(false);
         setGeneratingStep("");
       }
@@ -2339,10 +2381,12 @@ export default function ProperMobileResponsiveChat() {
                               </button>
                             </div>
 
-                            {message.beats && (
+                            {(message.beats || message.editPlan) && (
                               <WonderStoryboard
-                                beats={message.beats}
+                                beats={message.beats || []}
                                 storyboard={message.storyboard}
+                                editPlan={message.editPlan}
+                                pipeline={message.pipeline}
                                 status={message.generationStatus}
                                 error={message.generationError}
                                 timing={message.timing}
