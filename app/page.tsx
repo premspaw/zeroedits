@@ -41,6 +41,7 @@ import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
 import StoryBankView from "@/components/StoryBankView";
+import Pip from "@/components/Pip";
 
 type FormatType =
   | "auto"
@@ -2228,8 +2229,8 @@ export default function ProperMobileResponsiveChat() {
             </button>
 
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#E4491B] via-[#E4491B] to-[#E4491B] text-[#FFFFFF] grid place-items-center serif text-[18px] leading-none select-none shadow-sm shadow-[#E4491B]/25">
-                P
+              <div className="relative shrink-0 flex items-center justify-center">
+                <Pip mood="idle" size={32} interactive={true} />
               </div>
               <span className="serif text-[19px] lg:text-[21px] tracking-[-0.02em] font-medium select-none text-[#141414]">
                 PAPER STUDIO
@@ -2469,12 +2470,24 @@ export default function ProperMobileResponsiveChat() {
                         {/* Single Unified Header */}
                         <div className="px-4 py-2.5 flex items-center justify-between border-b border-[#D5D2C8]/60 bg-[#ECEAE3]/50">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#E4491B] via-[#E4491B] to-[#E4491B] grid place-items-center text-white serif text-[12.5px] font-bold shadow-xs">
-                              P
+                            <div className="shrink-0 flex items-center justify-center">
+                              <Pip
+                                mood={
+                                  message.generationStatus === "ready"
+                                    ? "happy"
+                                    : message.generationStatus === "error"
+                                    ? "thinking"
+                                    : message.isGenerating
+                                    ? "writing"
+                                    : "idle"
+                                }
+                                size={28}
+                                interactive={false}
+                              />
                             </div>
                             <div>
                               <div className="mono text-[11px] font-bold tracking-[0.08em] text-[#141414] flex items-center gap-1.5">
-                                <span>PAPER STUDIO</span>
+                                <span>PIP • PAPER STUDIO</span>
                                 {isSelectedReel && (
                                   <span className="px-1.5 py-0.2 rounded-full bg-[#F6D9CC] text-[#E4491B] text-[8.5px] uppercase font-semibold">Active In Preview</span>
                                 )}

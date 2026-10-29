@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import Pip from "@/components/Pip";
 import {
   AlertTriangle,
   ArrowRight,
@@ -201,14 +202,18 @@ export default function WonderStoryboard({
       {isPipelineB && (
         <div className="border-b border-[#141414]/20 bg-[#F5F2EB] px-3.5 pt-3 pb-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[#E4491B] text-white">
-                <Scissors size={13} />
-              </span>
+            <div className="flex items-center gap-2.5">
+              <div className="shrink-0">
+                <Pip
+                  mood={cuts.length > 0 ? "idea" : "thinking"}
+                  size={36}
+                  interactive={true}
+                />
+              </div>
               <div>
                 <div className="flex items-center gap-1.5">
                   <span className="mono text-[9px] font-bold uppercase tracking-wider text-[#E4491B]">
-                    Wonder Stage A & B
+                    Pip & Wonder Stage A & B
                   </span>
                   <span className="mono text-[8px] bg-[#141414] text-white px-1.5 py-0.2 rounded-full font-semibold">
                     muse-wonder-1.0
