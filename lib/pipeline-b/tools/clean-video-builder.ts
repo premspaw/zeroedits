@@ -45,24 +45,29 @@ export async function buildCleanVideo(params: {
         outputPath,
       ]);
       return outputPath;
-    } catch {
-      // Fallback: direct copy if available
-      fs.copyFileSync(rawVideoPath, outputPath);
-      return outputPath;
+    } catch (err: any) {
+      throw new Error(`FFmpeg single-segment processing failed: ${err.message}`);
     }
   }
 
-  // For multi-segment cuts: create segment clips and concat them
+  // For multi-segment cuts: create segment clips with audio de-clicking and concat them
   const segmentFiles: string[] = [];
+  const concatListPath = path.join(outputDir, `concat_${Date.now()}.txt`);
+
   try {
     for (let i = 0; i < keepSegments.length; i++) {
       const seg = keepSegments[i];
-      const segPath = path.join(outputDir, `seg_${i}.mp4`);
+      const segPath = path.join(outputDir, `seg_${i}_${Date.now()}.mp4`);
 
       // Standardize all segments to portrait 1080x1920 (9:16) with alternating punch-in zoom
       const baseFilter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
       const punchFilter = "scale=1242:2208:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
       const videoFilter = seg.zoomScale > 1.05 ? punchFilter : baseFilter;
+
+      // 10ms micro-fade in/out on audio to prevent clicks/pops at cut transitions
+      const audioFadeDur = Math.min(0.01, seg.duration / 4);
+      const audioOutStart = Math.max(0, +(seg.duration - audioFadeDur).toFixed(3));
+      const audioFilter = `afade=t=in:ss=0:d=${audioFadeDur},afade=t=out:st=${audioOutStart}:d=${audioFadeDur}`;
 
       await execFileAsync("ffmpeg", [
         "-y",
@@ -74,6 +79,8 @@ export async function buildCleanVideo(params: {
         rawVideoPath,
         "-vf",
         videoFilter,
+        "-af",
+        audioFilter,
         "-r",
         "30",
         "-pix_fmt",
@@ -97,7 +104,6 @@ export async function buildCleanVideo(params: {
     }
 
     // Write concat file
-    const concatListPath = path.join(outputDir, "concat_list.txt");
     const fileEntries = segmentFiles.map((f) => `file '${f.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n");
     fs.writeFileSync(concatListPath, fileEntries, "utf-8");
 
@@ -134,7 +140,12 @@ export async function buildCleanVideo(params: {
       ]);
     }
 
-    // Clean up temporary segment files
+    return outputPath;
+  } catch (err: any) {
+    // Fail explicitly so the orchestrator records stage failure and can retry
+    throw new Error(`FFmpeg clean video assembly failed: ${err.message || String(err)}`);
+  } finally {
+    // Always clean up temporary segment files and concat list
     for (const segFile of segmentFiles) {
       if (fs.existsSync(segFile)) {
         try {
@@ -147,14 +158,5 @@ export async function buildCleanVideo(params: {
         fs.unlinkSync(concatListPath);
       } catch {}
     }
-
-    return outputPath;
-  } catch (err) {
-    console.warn("ffmpeg clean video concatenation error:", err);
-    // If complex concat fails, copy raw to output so pipeline continues reliably
-    if (fs.existsSync(rawVideoPath)) {
-      fs.copyFileSync(rawVideoPath, outputPath);
-    }
-    return outputPath;
   }
 }

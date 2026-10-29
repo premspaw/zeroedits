@@ -279,10 +279,10 @@ export function generateCandidateCuts(params: {
     }
   }
 
-  // 3b. Multi-word phrase retakes (length 2 to 6 words, with optional small gap/filler)
+  // 3b. Multi-word phrase retakes (length 2 to 6 words, with gap up to 6 words)
   for (let L = 6; L >= 2; L--) {
     for (let i = 0; i <= normalizedWords.length - 2 * L; i++) {
-      for (let gap = 0; gap <= 2; gap++) {
+      for (let gap = 0; gap <= 6; gap++) {
         const j = i + L + gap;
         if (j + L > normalizedWords.length) continue;
 
@@ -311,6 +311,57 @@ export function generateCandidateCuts(params: {
     }
   }
 
+  // 3c. Single-word false starts, abandoned statement restarts & stuttered determiners
+  for (let i = 0; i < allWords.length - 1; i++) {
+    const wCurrent = allWords[i];
+    const wNext = allWords[i + 1];
+    const curClean = normalizedWords[i];
+    const nextClean = normalizedWords[i + 1];
+
+    if (!curClean || INTENTIONAL_EMPHASIS_WORDS.has(curClean)) continue;
+
+    // Detect words repeated with 1 or 2 intervening tokens: e.g. "In only in 5 clicks" or "it auto stitches it"
+    const isRepeatedShortly = i < allWords.length - 2 && (curClean === normalizedWords[i + 2] || curClean === normalizedWords[i + 3]);
+    const isAbandonedWord = (curClean === "every" && nextClean === "all") ||
+                            (curClean === "in" && (nextClean === "only" || nextClean === "just") && i < allWords.length - 2 && normalizedWords[i + 2] === "in");
+
+    if (isRepeatedShortly || isAbandonedWord) {
+      const cStart = Math.max(0, +wCurrent.start.toFixed(2));
+      const cEnd = Math.min(totalDuration, +(wNext.start - 0.02).toFixed(2));
+      if (cEnd > cStart && (cEnd - cStart) >= 0.10) {
+        candidates.push({
+          id: `cand-false-start-${i + 1}`,
+          start: cStart,
+          end: cEnd,
+          type: "false_start",
+          classification: "accidental_stutter",
+          confidence: 0.90,
+          affectedText: wCurrent.word,
+          reason: `Trim false start of '${wCurrent.word}' before restarted utterance '${wNext.word}'`,
+        });
+      }
+    }
+  }
+
+  // 3d. Numerical sequences (e.g. "2 3 clicks" — distinguish counting vs correction)
+  const NUMBER_WORDS = new Set(["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  for (let i = 0; i < allWords.length - 1; i++) {
+    const curClean = normalizedWords[i];
+    const nextClean = normalizedWords[i + 1];
+    if (NUMBER_WORDS.has(curClean) && NUMBER_WORDS.has(nextClean)) {
+      candidates.push({
+        id: `cand-number-seq-${i + 1}`,
+        start: allWords[i].start,
+        end: allWords[i + 1].end,
+        type: "correction",
+        classification: "needs_review",
+        confidence: 0.85,
+        affectedText: `${allWords[i].word} ${allWords[i + 1].word}`,
+        reason: `Review numerical sequence '${allWords[i].word} ${allWords[i + 1].word}' — determine if counting cadence or spoken self-correction`,
+      });
+    }
+  }
+
   // 4. Vocal Fillers & Hesitation Markers
   for (let i = 0; i < allWords.length; i++) {
     const w = allWords[i];
@@ -321,12 +372,12 @@ export function generateCandidateCuts(params: {
 
     let isFiller = isExplicitFiller;
     if (isConversational) {
-      // Conversational fillers ("like", "so", "yeah") count as fillers if preceded or followed by pause >= 0.2s or at start
+      // Conversational fillers ("like", "so", "yeah") count as fillers if preceded or followed by pause >= 0.15s or at clause start
       const prevWord = i > 0 ? allWords[i - 1] : null;
       const nextWord = i < allWords.length - 1 ? allWords[i + 1] : null;
       const prevGap = prevWord ? w.start - prevWord.end : 1.0;
       const nextGap = nextWord ? nextWord.start - w.end : 1.0;
-      if (prevGap >= 0.20 || nextGap >= 0.20 || i === 0) {
+      if (prevGap >= 0.15 || nextGap >= 0.15 || i === 0) {
         isFiller = true;
       }
     }
@@ -334,7 +385,7 @@ export function generateCandidateCuts(params: {
     if (isFiller) {
       const cStart = Math.max(0, +w.start.toFixed(2));
       const cEnd = Math.min(totalDuration, +w.end.toFixed(2));
-      if (cEnd > cStart) {
+      if (cEnd > cStart && (cEnd - cStart) >= 0.08) {
         candidates.push({
           id: `cand-filler-${i + 1}`,
           start: cStart,
@@ -391,8 +442,12 @@ export function wonderMuseEditorialDirector(params: {
 
   // 2. Filter & Approve Candidate Cuts
   for (const cand of candidates) {
-    // Never approve intentional emphasis cuts or natural dramatic pauses
-    if (cand.classification === "intentional_emphasis" || cand.classification === "natural_pause") {
+    // Never approve intentional emphasis cuts, natural dramatic pauses, or unconfirmed review items
+    if (
+      cand.classification === "intentional_emphasis" ||
+      cand.classification === "natural_pause" ||
+      cand.classification === "needs_review"
+    ) {
       continue;
     }
 
@@ -407,7 +462,7 @@ export function wonderMuseEditorialDirector(params: {
     // Approve accidental stutters, dead air, and phrase retakes
     let cutType: EditCut["type"] = "silence";
     if (cand.type === "filler") cutType = "filler";
-    else if (cand.type === "repetition" || cand.type === "phrase_retake") cutType = "retake";
+    else if (cand.type === "repetition" || cand.type === "phrase_retake" || cand.type === "false_start") cutType = "retake";
 
     approvedCuts.push({
       id: `cut-${approvedCuts.length + 1}`,
@@ -660,6 +715,7 @@ export function assembleFinalEditPlan(params: {
     visualPlan: mappedVisualPlan,
     visualSegments: (editorial as any).visualSegments,
     editedTranscript: (editorial as any).editedTranscript,
+    transcript,
     templateId: template.id,
     notes: editorial.editorialNotes || editorial.notes || "Plan assembled from Wonder AI Director decisions.",
   };

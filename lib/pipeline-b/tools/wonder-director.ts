@@ -603,6 +603,9 @@ export function buildEditedTranscript(
   keepSegments: KeepSegment[]
 ): EditedTranscriptSegment[] {
   const editedSegments: EditedTranscriptSegment[] = [];
+  const cleanDuration = +keepSegments.reduce((acc, k) => acc + k.duration, 0).toFixed(2);
+
+  let lastEditedEnd = 0;
 
   for (const seg of transcript) {
     const editedWords = [];
@@ -610,8 +613,18 @@ export function buildEditedTranscript(
       const mid = (w.start + w.end) / 2;
       const isRetained = keepSegments.some((k) => mid >= k.start && mid <= k.end);
       if (isRetained) {
-        const eStart = mapSourceTimeToEditedTime(w.start, keepSegments);
-        const eEnd = mapSourceTimeToEditedTime(w.end, keepSegments);
+        let eStart = mapSourceTimeToEditedTime(w.start, keepSegments);
+        let eEnd = mapSourceTimeToEditedTime(w.end, keepSegments);
+
+        // Ensure word does not start before the previous word ends on the edited timeline
+        eStart = Math.max(lastEditedEnd, +eStart.toFixed(2));
+        const minDur = Math.max(0.12, Math.min(0.60, +(w.word.length * 0.05).toFixed(2)));
+        if (eEnd <= eStart) {
+          eEnd = +(eStart + minDur).toFixed(2);
+        }
+        eEnd = Math.min(cleanDuration, +eEnd.toFixed(2));
+        lastEditedEnd = eEnd;
+
         editedWords.push({
           word: w.word,
           sourceStart: w.start,
@@ -1021,7 +1034,11 @@ export function createDeterministicFallbackPlan(params: {
   }
 
   for (const cand of candidateCuts) {
-    if (cand.classification === "intentional_emphasis" || cand.classification === "natural_pause") {
+    if (
+      cand.classification === "intentional_emphasis" ||
+      cand.classification === "natural_pause" ||
+      cand.classification === "needs_review"
+    ) {
       continue;
     }
     const isProtected = protectedRanges.some(
@@ -1031,7 +1048,7 @@ export function createDeterministicFallbackPlan(params: {
 
     let cutType: EditCut["type"] = "silence";
     if (cand.type === "filler") cutType = "filler";
-    else if (cand.type === "repetition" || cand.type === "phrase_retake") cutType = "retake";
+    else if (cand.type === "repetition" || cand.type === "phrase_retake" || cand.type === "false_start") cutType = "retake";
 
     approvedCuts.push({
       id: `cut-rules-${approvedCuts.length + 1}`,

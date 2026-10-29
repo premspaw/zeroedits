@@ -12,6 +12,7 @@ import {
   Clapperboard,
   Eye,
   Film,
+  FileText,
   Info,
   Layers,
   Loader2,
@@ -21,6 +22,8 @@ import {
   Scissors,
   ShieldCheck,
   Sparkles,
+  Undo2,
+  Edit3,
 } from "lucide-react";
 
 interface StoryboardBeat {
@@ -43,11 +46,14 @@ interface WonderStoryboardProps {
   storyboard?: any;
   editPlan?: any;
   pipeline?: "pipeline-a" | "pipeline-b";
+  pipelineBRunId?: string;
   status?: "storyboarding" | "rendering" | "ready" | "error";
   error?: string;
   onPlay: () => void;
   onRetry?: () => void;
   onApproveCuts?: () => void;
+  onRebuildCuts?: (customCuts: any[]) => void;
+  onSeekTime?: (timeSec: number) => void;
   disabled?: boolean;
   timing?: string;
   onEdit?: (scene: number) => void;
@@ -72,11 +78,14 @@ export default function WonderStoryboard({
   storyboard,
   editPlan,
   pipeline,
+  pipelineBRunId,
   status,
   error,
   onPlay,
   onRetry,
   onApproveCuts,
+  onRebuildCuts,
+  onSeekTime,
   disabled = false,
   timing,
   onEdit,
@@ -87,11 +96,23 @@ export default function WonderStoryboard({
   const protectedRanges = editPlan?.protectedRanges || [];
   const uncertainDecisions = editPlan?.uncertainDecisions || [];
   const candidateCuts = editPlan?.candidateCuts || [];
+  const transcriptSegments = editPlan?.transcript || [];
 
   // Determine initial tab: prefer cuts view if cuts exist in pipeline B
-  const [activeBoardTab, setActiveBoardTab] = useState<"cuts" | "protected" | "scenes">(
+  const [activeBoardTab, setActiveBoardTab] = useState<"cuts" | "protected" | "transcript" | "scenes">(
     isPipelineB && cuts.length > 0 ? "cuts" : "scenes"
   );
+
+  const [userCuts, setUserCuts] = useState<any[]>(cuts);
+  const [captionTexts, setCaptionTexts] = useState<Record<number, string>>({});
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const [rebuildSuccess, setRebuildSuccess] = useState(false);
+
+  useEffect(() => {
+    if (cuts && cuts.length > 0) {
+      setUserCuts(cuts);
+    }
+  }, [cuts]);
 
   const [selectedScene, setSelectedScene] = useState(0);
   const [cycling, setCycling] = useState(true);
@@ -279,6 +300,30 @@ export default function WonderStoryboard({
                 {beats.length}
               </span>
             </button>
+
+            {transcriptSegments.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveBoardTab("transcript")}
+                className={`rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5 text-[11px] font-bold transition ${
+                  activeBoardTab === "transcript"
+                    ? "bg-[#141414] text-white shadow-2xs"
+                    : "bg-white/80 text-[#52504A] hover:bg-white hover:text-[#141414] border border-[#D5D2C8]"
+                }`}
+              >
+                <FileText size={12} className={activeBoardTab === "transcript" ? "text-[#E4491B]" : ""} />
+                <span>Transcript Editor</span>
+                <span
+                  className={`mono text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                    activeBoardTab === "transcript"
+                      ? "bg-[#E4491B] text-white"
+                      : "bg-[#ECEAE3] text-[#141414]"
+                  }`}
+                >
+                  {transcriptSegments.flatMap((s: any) => s.words || []).length}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -470,6 +515,217 @@ export default function WonderStoryboard({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: INTERACTIVE TRANSCRIPT-BASED EDITOR */}
+      {isPipelineB && activeBoardTab === "transcript" && (
+        <div className="p-3.5 space-y-3 bg-[#FAF8F3]">
+          {/* Header Controls */}
+          <div className="rounded-xl border border-[#D5D2C8] bg-white p-3 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ECEAE3] pb-2 text-[11px]">
+              <span className="mono font-semibold uppercase tracking-wider text-[#6B6A64]">
+                Word-Aligned Interactive Transcript
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="mono text-[9.5px] text-[#52504A] bg-[#F7F5EF] px-2 py-0.5 rounded border border-[#EBE7DF]">
+                  Click word to seek video
+                </span>
+                {pipelineBRunId && (
+                  <button
+                    type="button"
+                    disabled={isRebuilding || disabled}
+                    onClick={async () => {
+                      setIsRebuilding(true);
+                      setRebuildSuccess(false);
+                      try {
+                        const res = await fetch("/api/pipeline-b/resume", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            runId: pipelineBRunId,
+                            customApprovedCuts: userCuts,
+                            customCaptionOverrides: captionTexts,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          setRebuildSuccess(true);
+                          onRebuildCuts?.(userCuts);
+                          setTimeout(() => setRebuildSuccess(false), 3000);
+                        }
+                      } catch (err) {
+                        console.error("Rebuild error:", err);
+                      } finally {
+                        setIsRebuilding(false);
+                      }
+                    }}
+                    className="mono text-[10px] font-bold px-2.5 py-1 rounded-md bg-[#E4491B] text-white hover:bg-[#C93D14] transition inline-flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                  >
+                    {isRebuilding ? (
+                      <>
+                        <Loader2 size={11} className="animate-spin" />
+                        <span>Rebuilding Cut...</span>
+                      </>
+                    ) : rebuildSuccess ? (
+                      <>
+                        <Check size={11} />
+                        <span>Rebuilt Successfully!</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={11} />
+                        <span>Rebuild Video With Custom Cuts</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-3 pt-2 text-[10px] mono">
+              <span className="inline-flex items-center gap-1 text-[#9B1C1C]">
+                <span className="w-2.5 h-2.5 rounded bg-[#FDE8E8] border border-[#F8B4B4] inline-block" />
+                Cut Audio (Click Restore to Keep)
+              </span>
+              <span className="inline-flex items-center gap-1 text-[#03543F]">
+                <span className="w-2.5 h-2.5 rounded bg-[#DEF7EC] border border-[#BCF0DA] inline-block" />
+                Protected Rhetorical Delivery
+              </span>
+              <span className="inline-flex items-center gap-1 text-[#92400E]">
+                <span className="w-2.5 h-2.5 rounded bg-[#FEF3C7] border border-[#FDE68A] inline-block" />
+                Candidate Stutter / Filler
+              </span>
+              <span className="inline-flex items-center gap-1 text-[#52504A]">
+                <span className="w-2.5 h-2.5 rounded bg-white border border-[#D5D2C8] inline-block" />
+                Retained Speech
+              </span>
+            </div>
+          </div>
+
+          {/* Transcript Segments & Words */}
+          <div className="space-y-3">
+            {transcriptSegments.map((seg: any) => {
+              const segText = captionTexts[seg.id] ?? seg.text;
+              return (
+                <div
+                  key={seg.id}
+                  className="rounded-xl border border-[#D5D2C8] bg-white p-3.5 shadow-2xs space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ECEAE3] pb-2">
+                    <span className="mono text-[10px] font-bold bg-[#ECEAE3] text-[#141414] px-2 py-0.5 rounded-full">
+                      Block {seg.id} • {Number(seg.start).toFixed(2)}s – {Number(seg.end).toFixed(2)}s
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[10.5px]">
+                      <Edit3 size={11} className="text-[#6B6A64]" />
+                      <span className="mono text-[9px] uppercase tracking-wider text-[#6B6A64]">
+                        Editable Caption Subtitle:
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Inline Caption Editor */}
+                  <div>
+                    <input
+                      type="text"
+                      value={segText}
+                      onChange={(e) =>
+                        setCaptionTexts((prev) => ({ ...prev, [seg.id]: e.target.value }))
+                      }
+                      className="w-full text-[12px] font-medium text-[#141414] bg-[#F7F5EF] border border-[#EBE7DF] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#E4491B] transition"
+                      placeholder="Custom subtitle caption text..."
+                    />
+                  </div>
+
+                  {/* Interactive Word Chips */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {(seg.words || []).map((w: any, wIdx: number) => {
+                      const mid = (w.start + w.end) / 2;
+                      const isCut = userCuts.some((c: any) => mid >= c.start && mid <= c.end);
+                      const isProtected = protectedRanges.some(
+                        (pr: any) => mid >= pr.start && mid <= pr.end
+                      );
+                      const candidate = candidateCuts.find(
+                        (c: any) => mid >= c.start && mid <= c.end
+                      );
+
+                      return (
+                        <div
+                          key={wIdx}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition ${
+                            isCut
+                              ? "bg-[#FEF2F2] border border-[#FCA5A5] text-[#991B1B]"
+                              : isProtected
+                              ? "bg-[#F0FDF4] border border-[#86EFAC] text-[#166534]"
+                              : candidate
+                              ? "bg-[#FFFBEB] border border-[#FCD34D] text-[#92400E]"
+                              : "bg-white border border-[#E5E7EB] text-[#1F2937] hover:border-[#9CA3AF]"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            title={`Seek to ${w.start}s`}
+                            onClick={() => {
+                              onSeekTime?.(w.start);
+                              window.dispatchEvent(
+                                new CustomEvent("seek-pipeline-b", { detail: { time: w.start } })
+                              );
+                            }}
+                            className="inline-flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            <span className={isCut ? "line-through opacity-75" : "font-semibold"}>
+                              {w.word}
+                            </span>
+                            <span className="mono text-[8.5px] opacity-60">
+                              {w.start}s
+                            </span>
+                          </button>
+
+                          {isCut ? (
+                            <button
+                              type="button"
+                              title="Restore this word into clean video"
+                              onClick={() => {
+                                setUserCuts((prev) =>
+                                  prev.filter(
+                                    (c: any) => !(mid >= c.start && mid <= c.end)
+                                  )
+                                );
+                              }}
+                              className="ml-1 text-[9px] mono px-1.5 py-0.2 rounded bg-white text-[#991B1B] border border-[#FCA5A5] hover:bg-[#FEE2E2] font-bold cursor-pointer"
+                            >
+                              Restore
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              title="Cut this word from clean video"
+                              onClick={() => {
+                                setUserCuts((prev) => [
+                                  ...prev,
+                                  {
+                                    id: `cut-user-${Date.now()}-${wIdx}`,
+                                    start: Math.max(0, +w.start.toFixed(2)),
+                                    end: Math.max(w.start + 0.1, +w.end.toFixed(2)),
+                                    type: candidate?.type || "filler",
+                                    reason: `User cut word: '${w.word}'`,
+                                  },
+                                ]);
+                              }}
+                              className="ml-1 text-[8.5px] mono px-1 py-0.2 rounded bg-[#F3F4F6] text-[#4B5563] hover:bg-[#FEE2E2] hover:text-[#991B1B] font-bold cursor-pointer"
+                            >
+                              Cut
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

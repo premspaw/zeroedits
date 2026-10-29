@@ -60,14 +60,15 @@ export interface CandidateCut {
   id: string;
   start: number;
   end: number;
-  type: "silence" | "filler" | "repetition" | "phrase_retake" | "sentence_pause";
+  type: "silence" | "filler" | "repetition" | "phrase_retake" | "sentence_pause" | "false_start" | "correction";
   classification:
     | "accidental_stutter"
     | "intentional_emphasis"
     | "filler_pause"
     | "natural_pause"
     | "dead_air"
-    | "uncertain";
+    | "uncertain"
+    | "needs_review";
   confidence: number;
   affectedText: string;
   reason: string;
@@ -209,6 +210,7 @@ export interface EditPlan {
   visualPlan: VisualOverlayItem[];
   visualSegments?: VisualPlanSegment[];
   editedTranscript?: EditedTranscriptSegment[];
+  transcript?: TranscriptSegment[];
   templateId: string;
   notes: string;
 }

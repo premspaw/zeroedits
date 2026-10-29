@@ -187,8 +187,73 @@ export const TalkingHeadReel: React.FC = () => {
         const scale = Math.min(1.0, Math.max(0.1, timeIn * 6));
         const zIdx = seg.layerArrangement === "foreground" ? 60 : (seg.layerArrangement === "overlay" ? 40 : 20);
 
-        // Technique A: Animated Diagram & UI Mockup
-        if (seg.technique === "animated_diagram" || seg.technique === "ui_mockup") {
+        // Technique A: Animated Diagram & UI Mockup (Render realistic animated graphics)
+        if (seg.technique === "animated_diagram") {
+          return (
+            <div
+              key={seg.id}
+              style={{
+                position: "absolute",
+                top: layoutType === "picture_in_picture" ? 180 : 110,
+                left: "50%",
+                transform: \`translateX(-50%) scale(\${scale})\`,
+                width: 460,
+                backgroundColor: "${template.cardBg}",
+                border: "3px solid ${template.primaryColor}",
+                borderRadius: 24,
+                boxShadow: "0 24px 64px rgba(0,0,0,0.75)",
+                padding: "18px 22px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                zIndex: zIdx,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#EF4444" }} />
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#F59E0B" }} />
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#10B981" }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "${template.highlightColor}" }}>
+                  ARCHITECTURE DIAGRAM
+                </span>
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: "${template.textColor}" }}>
+                {seg.headlineText || "System Data Flow"}
+              </div>
+              {/* Rich SVG Animated Network Diagram */}
+              <div style={{ width: "100%", height: 120, backgroundColor: "#0F0F14", borderRadius: 16, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                <svg width="420" height="110" viewBox="0 0 420 110" fill="none">
+                  <path d="M 50 55 L 150 55 L 270 55 L 370 55" stroke="${template.primaryColor}" strokeWidth="3" strokeDasharray="6 6" />
+                  {/* Node 1: Raw Video */}
+                  <rect x="20" y="30" width="60" height="50" rx="12" fill="#1A1A24" stroke="${template.highlightColor}" strokeWidth="2" />
+                  <text x="50" y="58" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="bold">Raw Clip</text>
+                  {/* Node 2: Stage A */}
+                  <rect x="120" y="25" width="70" height="60" rx="14" fill="#241E1E" stroke="#E4491B" strokeWidth="2.5" />
+                  <text x="155" y="52" textAnchor="middle" fill="#E4491B" fontSize="9" fontWeight="bold">Wonder AI</text>
+                  <text x="155" y="66" textAnchor="middle" fill="#FFFFFF" fontSize="8">Cut Engine</text>
+                  {/* Node 3: FFmpeg */}
+                  <rect x="235" y="30" width="70" height="50" rx="12" fill="#1A1A24" stroke="#537349" strokeWidth="2" />
+                  <text x="270" y="58" textAnchor="middle" fill="#537349" fontSize="9" fontWeight="bold">Clean Cut</text>
+                  {/* Node 4: Spark Reel */}
+                  <rect x="340" y="25" width="65" height="60" rx="14" fill="#221C14" stroke="${template.highlightColor}" strokeWidth="2.5" />
+                  <text x="372" y="52" textAnchor="middle" fill="${template.highlightColor}" fontSize="9" fontWeight="bold">Final 4K</text>
+                  <text x="372" y="66" textAnchor="middle" fill="#FFFFFF" fontSize="8">Reel TSX</text>
+                  {/* Pulsing Data Packet */}
+                  <circle cx={50 + ((timeIn * 90) % 320)} cy="55" r="5" fill="${template.highlightColor}">
+                    <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite" />
+                  </circle>
+                </svg>
+              </div>
+              <div style={{ fontSize: 12, color: "${template.textColor}", opacity: 0.85, lineHeight: 1.35 }}>
+                {seg.motionIntent}
+              </div>
+            </div>
+          );
+        }
+
+        if (seg.technique === "ui_mockup") {
           return (
             <div
               key={seg.id}
@@ -201,35 +266,53 @@ export const TalkingHeadReel: React.FC = () => {
                 backgroundColor: "${template.cardBg}",
                 border: "3px solid ${template.primaryColor}",
                 borderRadius: 24,
-                boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
-                padding: "20px 24px",
+                boxShadow: "0 24px 64px rgba(0,0,0,0.75)",
+                padding: "18px 22px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 12,
+                gap: 10,
                 zIndex: zIdx,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#EF4444" }} />
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#F59E0B" }} />
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#10B981" }} />
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "${template.textColor}", opacity: 0.6 }}>
-                  {seg.technique === "animated_diagram" ? "Architecture Diagram" : "UI Demo"}
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "${template.highlightColor}" }}>
+                  TIMELINE AUTO-EDITOR UI
+                </span>
+                <span style={{ fontSize: 10, backgroundColor: "#10B981", color: "#FFFFFF", padding: "2px 8px", borderRadius: 8, fontWeight: 900 }}>
+                  ACTIVE
                 </span>
               </div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: "${template.highlightColor}" }}>
-                {seg.headlineText || "Interactive Flow"}
+              <div style={{ fontSize: 20, fontWeight: 900, color: "${template.textColor}" }}>
+                {seg.headlineText || "1-Click Word Cut Track"}
               </div>
-              <div style={{ fontSize: 13, color: "${template.textColor}", opacity: 0.85, lineHeight: 1.4 }}>
+              {/* Waveform UI Mockup */}
+              <div style={{ width: "100%", height: 70, backgroundColor: "#14141E", borderRadius: 12, padding: "8px 12px", display: "flex", alignItems: "center", gap: 3, overflow: "hidden" }}>
+                {Array.from({ length: 36 }).map((_, barIdx) => {
+                  const h = 12 + Math.sin(barIdx * 0.8 + timeIn * 5) * 22;
+                  const isCutBar = barIdx >= 14 && barIdx <= 18;
+                  return (
+                    <div
+                      key={barIdx}
+                      style={{
+                        flex: 1,
+                        height: h,
+                        backgroundColor: isCutBar ? "#EF4444" : "${template.highlightColor}",
+                        opacity: isCutBar ? 0.35 : 0.9,
+                        borderRadius: 3,
+                        transition: "height 0.1s ease",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: "${template.textColor}", opacity: 0.85 }}>
                 {seg.motionIntent}
               </div>
             </div>
           );
         }
 
-        // Technique B: B-roll Clip Takeover
+        // Technique B: Cinematic B-roll Takeover with Viewfinder Overlay
         if (seg.technique === "broll_clip" || seg.layoutType === "broll_takeover") {
           return (
             <div
@@ -237,22 +320,31 @@ export const TalkingHeadReel: React.FC = () => {
               style={{
                 position: "absolute",
                 inset: 0,
-                backgroundColor: "rgba(10, 10, 15, 0.95)",
+                background: "radial-gradient(circle at center, rgba(30, 25, 45, 0.96) 0%, rgba(10, 10, 15, 0.98) 100%)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: 48,
+                padding: 40,
                 zIndex: zIdx,
               }}
             >
-              <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: "${template.highlightColor}" }}>
-                B-Roll Overlay
+              {/* Camera Viewfinder Reticle */}
+              <div style={{ position: "absolute", top: 32, left: 32, width: 24, height: 24, borderTop: "2px solid ${template.highlightColor}", borderLeft: "2px solid ${template.highlightColor}" }} />
+              <div style={{ position: "absolute", top: 32, right: 32, width: 24, height: 24, borderTop: "2px solid ${template.highlightColor}", borderRight: "2px solid ${template.highlightColor}" }} />
+              <div style={{ position: "absolute", bottom: 32, left: 32, width: 24, height: 24, borderBottom: "2px solid ${template.highlightColor}", borderLeft: "2px solid ${template.highlightColor}" }} />
+              <div style={{ position: "absolute", bottom: 32, right: 32, width: 24, height: 24, borderBottom: "2px solid ${template.highlightColor}", borderRight: "2px solid ${template.highlightColor}" }} />
+
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", borderRadius: 20, backgroundColor: "rgba(228, 73, 27, 0.2)", border: "1px solid ${template.primaryColor}" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#EF4444" }} />
+                <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: "${template.highlightColor}" }}>
+                  CINEMATIC B-ROLL
+                </span>
               </div>
-              <div style={{ fontSize: 40, fontWeight: 900, textAlign: "center", color: "${template.textColor}", marginTop: 16 }}>
+              <div style={{ fontSize: 36, fontWeight: 900, textAlign: "center", color: "#FFFFFF", marginTop: 18, lineHeight: 1.15, maxWidth: 440 }}>
                 {seg.headlineText || seg.spokenReference}
               </div>
-              <div style={{ fontSize: 16, color: "${template.textColor}", opacity: 0.7, marginTop: 12, textAlign: "center", maxWidth: 460 }}>
+              <div style={{ fontSize: 14, color: "${template.textColor}", opacity: 0.8, marginTop: 14, textAlign: "center", maxWidth: 420, lineHeight: 1.4 }}>
                 {seg.motionIntent}
               </div>
             </div>

@@ -5,7 +5,7 @@
 
 import path from "path";
 import fs from "fs";
-import type { PipelineBRunState, PipelineBStage } from "./types.ts";
+import type { PipelineBRunState, PipelineBStage, EditCut } from "./types.ts";
 import {
   loadState,
   recordStageStart,
@@ -404,11 +404,41 @@ export async function exportPipelineBVideo(runId: string): Promise<PipelineBRunS
   return state;
 }
 
-export async function resumePipelineB(runId: string): Promise<PipelineBRunState> {
+export async function resumePipelineB(
+  runId: string,
+  options?: {
+    customApprovedCuts?: EditCut[];
+    customCaptionOverrides?: Record<string, string>;
+  }
+): Promise<PipelineBRunState> {
   const state = loadState(runId);
 
-  // If paused or failed, reset the failed stage to pending and re-execute
-  if (state.status === "failed") {
+  // If user provided custom cut edits in the transcript UI, re-assemble edit plan and reset cut stages
+  if (options?.customApprovedCuts && state.editPlan) {
+    const updatedPlan = assembleFinalEditPlan({
+      candidateCuts: state.editPlan.candidateCuts || [],
+      editorial: {
+        approvedCuts: options.customApprovedCuts,
+        protectedRanges: state.editPlan.protectedRanges || [],
+        visualPlan: state.editPlan.visualPlan || [],
+        hookLine: state.editPlan.hookLine || "Talking Head Reel",
+        title: state.editPlan.title,
+      },
+      totalDuration: state.metadata?.duration || 15,
+      templateId: state.templateId,
+      pacingProfile: state.pacingProfile,
+      transcript: state.transcript || [],
+    });
+    state.editPlan = updatedPlan;
+    state.stages.CLEAN_VIDEO_CREATED.status = "pending";
+    state.stages.VISUAL_PLAN_CREATED.status = "pending";
+    state.stages.ASSETS_RESOLVED.status = "pending";
+    state.stages.MOTION_GENERATED.status = "pending";
+    state.stages.PREVIEW_READY.status = "pending";
+    state.status = "running";
+    saveState(state);
+  } else if (state.status === "failed") {
+    // If paused or failed, reset the failed stage to pending and re-execute
     const failedStage = state.currentStage;
     if (state.stages[failedStage]) {
       state.stages[failedStage].status = "pending";

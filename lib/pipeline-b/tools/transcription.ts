@@ -191,6 +191,97 @@ export function computeTranscriptionCoverage(params: {
   };
 }
 
+/**
+ * Sanitizes and aligns word-level timestamps:
+ * 1. Resolves chunk stride offset jumps (preventing backward jumps).
+ * 2. Eliminates zero-duration and inverted-duration tokens.
+ * 3. Clamps implausibly long durations against acoustic silences and natural speech pacing.
+ * 4. Enforces strict sequential monotonicity and non-overlapping word boundaries.
+ */
+export function sanitizeAndAlignWordTimestamps(params: {
+  rawWords: TranscriptWord[];
+  silences: { start: number; end: number; duration: number }[];
+  totalDuration: number;
+}): TranscriptWord[] {
+  const { rawWords, silences, totalDuration } = params;
+  if (!rawWords || rawWords.length === 0) return [];
+
+  // Filter out empty or whitespace-only tokens
+  let words: TranscriptWord[] = rawWords
+    .map((w) => ({
+      word: String(w.word || "").trim().replace(/[.,!?;:]/g, ""),
+      start: Number.isFinite(w.start) ? +w.start.toFixed(2) : 0,
+      end: Number.isFinite(w.end) ? +w.end.toFixed(2) : 0,
+      confidence: Number.isFinite(w.confidence) ? w.confidence : 0.85,
+    }))
+    .filter((w) => w.word.length > 0);
+
+  if (words.length === 0) return [];
+
+  // 1. Detect and repair chunk stride offset jumps (e.g. from multi-window Whisper decoding)
+  for (let i = 1; i < words.length; i++) {
+    const prev = words[i - 1];
+    const curr = words[i];
+    // If a word timestamp jumps backward significantly compared to the previous word
+    if (curr.start < prev.start - 0.40) {
+      const shift = +(prev.end + 0.08 - curr.start).toFixed(2);
+      for (let j = i; j < words.length; j++) {
+        words[j].start = +(words[j].start + shift).toFixed(2);
+        words[j].end = +(words[j].end + shift).toFixed(2);
+      }
+    }
+  }
+
+  // 2. Fix zero-duration and inverted-duration tokens (e.g. [4.94, 4.94] or [26.36, 25.48])
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (w.end <= w.start) {
+      const nextStart = i < words.length - 1 ? words[i + 1].start : totalDuration;
+      const naturalDur = Math.max(0.18, Math.min(0.50, +(w.word.length * 0.065).toFixed(2)));
+      if (nextStart > w.start + 0.05) {
+        w.end = +Math.min(nextStart - 0.02, w.start + naturalDur).toFixed(2);
+      } else {
+        w.end = +(w.start + naturalDur).toFixed(2);
+        if (i < words.length - 1 && words[i + 1].start < w.end) {
+          words[i + 1].start = w.end;
+        }
+      }
+    }
+  }
+
+  // 3. Clamp implausibly long durations against acoustic silences and natural speech pacing
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    // Clamp against detected acoustic silences
+    for (const s of silences) {
+      if (w.start < s.start && w.end > s.start + 0.04) {
+        w.end = +Math.max(w.start + 0.15, +(s.start - 0.02).toFixed(2));
+      }
+    }
+    // Clamp implausibly long word durations (> 1.0s for short words <= 5 chars, > 1.6s for others)
+    const dur = +(w.end - w.start).toFixed(2);
+    if (dur > 1.0 && w.word.length <= 5) {
+      w.end = +(w.start + Math.min(0.45, +(dur * 0.35).toFixed(2))).toFixed(2);
+    } else if (dur > 1.6) {
+      w.end = +(w.start + Math.min(0.70, +(dur * 0.40).toFixed(2))).toFixed(2);
+    }
+  }
+
+  // 4. Enforce strict sequential monotonicity and non-overlapping word boundaries
+  for (let i = 0; i < words.length; i++) {
+    if (i > 0 && words[i].start < words[i - 1].end) {
+      words[i].start = words[i - 1].end;
+    }
+    if (words[i].end <= words[i].start) {
+      words[i].end = +(words[i].start + 0.16).toFixed(2);
+    }
+    words[i].start = Math.max(0, +words[i].start.toFixed(2));
+    words[i].end = Math.min(totalDuration, +words[i].end.toFixed(2));
+  }
+
+  return words;
+}
+
 export async function transcribeAudio(params: {
   videoPath: string;
   wavPath: string;
@@ -205,54 +296,59 @@ export async function transcribeAudio(params: {
   // Detect silences for precise natural speech pauses (threshold -30dB, min 0.35s)
   const silences = await detectSilences(wavPath, -30, 0.35);
 
-  let words: TranscriptWord[] = [];
+  let rawWords: TranscriptWord[] = [];
   let source: "whisper" | "script_fallback" = "whisper";
 
-  // 1. Try real speech transcription using local Whisper model (chunked long-form)
+  // 1. Genuine speech transcription using local Whisper model (chunked long-form)
   const whisperWords = await runWhisperTranscription(wavPath);
   if (whisperWords && whisperWords.length > 0) {
-    words = whisperWords;
+    rawWords = whisperWords;
   } else {
     source = "script_fallback";
-    // 2. Fallback to user script or synthetic alignment
-    const baseText = userScript && userScript.trim().length > 0
-      ? userScript.trim()
-      : "Welcome to this talking-head video. In this quick video we reveal the secret to high conversion reels with kinetic typography and clean cuts.";
+    if (userScript && userScript.trim().length > 0) {
+      const baseText = userScript.trim();
+      const splitWords = baseText
+        .replace(/[^\w\s'-]/g, "")
+        .split(/\s+/)
+        .filter(Boolean);
 
-    const rawWords = baseText
-      .replace(/[^\w\s'-]/g, "")
-      .split(/\s+/)
-      .filter(Boolean);
+      const wordCount = splitWords.length || 1;
+      const totalSilenceTime = silences.reduce((acc, s) => acc + s.duration, 0);
+      const speakingTime = Math.max(1, totalDuration - totalSilenceTime);
+      const avgWordDuration = speakingTime / wordCount;
 
-    const wordCount = rawWords.length || 1;
+      let currentTime = 0;
+      for (let i = 0; i < splitWords.length; i++) {
+        const currentSilence = silences.find((s) => s.start <= currentTime && currentTime < s.end);
+        if (currentSilence) {
+          currentTime = currentSilence.end;
+        }
 
-    // Compute non-silence speaking time
-    const totalSilenceTime = silences.reduce((acc, s) => acc + s.duration, 0);
-    const speakingTime = Math.max(1, totalDuration - totalSilenceTime);
-    const avgWordDuration = speakingTime / wordCount;
+        const start = +currentTime.toFixed(2);
+        const end = +Math.min(totalDuration, start + avgWordDuration).toFixed(2);
+        currentTime = end + 0.05;
 
-    // Generate word-level timestamps
-    let currentTime = 0;
-
-    for (let i = 0; i < rawWords.length; i++) {
-      // Check if current time falls in a detected silence
-      const currentSilence = silences.find((s) => s.start <= currentTime && currentTime < s.end);
-      if (currentSilence) {
-        currentTime = currentSilence.end;
+        rawWords.push({
+          word: splitWords[i],
+          start,
+          end,
+          confidence: 0.50, // Accurately mark fallback confidence
+        });
       }
-
-      const start = +currentTime.toFixed(2);
-      const end = +Math.min(totalDuration, start + avgWordDuration).toFixed(2);
-      currentTime = end + 0.05;
-
-      words.push({
-        word: rawWords[i],
-        start,
-        end,
-        confidence: 0.95,
-      });
+    } else {
+      // Per instructions: Never invent fabricated transcripts without speech data
+      throw new Error(
+        "Speech recognition failed to transcribe audio and no script was provided. Please ensure the video contains clear audio and retry."
+      );
     }
   }
+
+  // Apply real speech alignment, de-chunking, and duration sanitization
+  const words = sanitizeAndAlignWordTimestamps({
+    rawWords,
+    silences,
+    totalDuration,
+  });
 
   // Group into speech segments (approx 4-8 words each for caption blocks)
   const segments: TranscriptSegment[] = [];

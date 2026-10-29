@@ -3,7 +3,7 @@ import { resumePipelineB } from "@/lib/pipeline-b/orchestrator";
 
 export async function POST(req: NextRequest) {
   try {
-    const { runId } = await req.json();
+    const { runId, customApprovedCuts, customCaptionOverrides } = await req.json();
     if (!runId) {
       return NextResponse.json(
         { success: false, error: "Missing runId parameter." },
@@ -11,7 +11,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const state = await resumePipelineB(runId);
+    const state = await resumePipelineB(runId, {
+      customApprovedCuts,
+      customCaptionOverrides,
+    });
 
     return NextResponse.json({
       success: true,

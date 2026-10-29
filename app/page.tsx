@@ -2574,6 +2574,7 @@ export default function ProperMobileResponsiveChat() {
                                 storyboard={message.storyboard}
                                 editPlan={message.editPlan}
                                 pipeline={message.pipeline}
+                                pipelineBRunId={message.pipelineBRunId}
                                 status={message.generationStatus}
                                 error={message.generationError}
                                 timing={message.timing}
