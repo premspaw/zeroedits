@@ -408,6 +408,25 @@ export default function WonderStoryboard({
               <p className="leading-relaxed whitespace-pre-wrap">{editPlan.notes}</p>
             </div>
           )}
+
+          {/* Action Bar: Approve Cuts & Generate Reel */}
+          {onApproveCuts && (
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#141414]/15 mt-3 bg-white p-3 rounded-xl border border-[#D5D2C8] shadow-2xs">
+              <div className="text-[11px] text-[#52504A]">
+                <span className="font-semibold text-[#141414]">Human Editorial Approval: </span>
+                <span>Send Wonder-approved cuts to FFmpeg, Wonder Stage B visual director, and Spark 1.3 compositor.</span>
+              </div>
+              <button
+                type="button"
+                onClick={onApproveCuts}
+                disabled={disabled || isBuilding}
+                className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] px-4 py-2 text-[12px] font-bold text-white shadow-[2px_2px_0px_#141414] transition active:scale-95 disabled:opacity-50"
+              >
+                <Scissors size={13} />
+                <span>Apply Cuts & Generate Full Reel</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -637,6 +656,23 @@ export default function WonderStoryboard({
               Retry video
             </button>
           )}
+        </div>
+      )}
+
+      {status === "storyboarding" && onApproveCuts && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-[#141414]/30 px-3.5 py-2.5 sm:px-4 bg-[#F5F2EB]">
+          <p className="text-[11px] font-semibold text-[#141414]">
+            Wonder Stage A cut analysis ready for review.
+          </p>
+          <button
+            type="button"
+            onClick={onApproveCuts}
+            disabled={disabled}
+            className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] px-3.5 py-1.5 text-[11px] font-bold text-white shadow-[2px_2px_0px_#141414] transition hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Scissors size={12} />
+            <span>Apply Cuts & Generate Reel</span>
+          </button>
         </div>
       )}
 

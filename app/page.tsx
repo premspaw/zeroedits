@@ -1123,6 +1123,7 @@ export default function ProperMobileResponsiveChat() {
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
   const [input, setInput] = useState("");
   const [isInternetEnabled, setIsInternetEnabled] = useState(false);
+  const [reviewCutsFirst, setReviewCutsFirst] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessageItem[]>(SHOWCASE_REELS);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>("reel-1");
@@ -1397,6 +1398,102 @@ export default function ProperMobileResponsiveChat() {
     } catch {}
   };
 
+  const handleApproveCuts = async (message: ChatMessageItem) => {
+    if (!message.pipelineBRunId || isGenerating || isGeneratingCode) return;
+    const runId = message.pipelineBRunId;
+    setIsGenerating(true);
+    setGeneratingStep("Executing verified FFmpeg cuts based strictly on Wonder AI decisions...");
+
+    updateMessage(message.id, {
+      generationStatus: "rendering",
+    });
+
+    let pollTimer: NodeJS.Timeout | null = null;
+    pollTimer = setInterval(async () => {
+      try {
+        const statusRes = await fetch(`/api/pipeline-b/status/${runId}`);
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          const curStage = statusData?.state?.currentStage;
+          if (curStage === "CLEAN_VIDEO_CREATED") {
+            setGeneratingStep("FFmpeg cutting clean video & verifying duration on disk...");
+          } else if (curStage === "VISUAL_PLAN_CREATED") {
+            setGeneratingStep("Wonder Muse AI Stage B: Planning creative layouts, kinetic titles & assets...");
+          } else if (curStage === "MOTION_GENERATED") {
+            setGeneratingStep("Spark 1.3: Generating 60fps compositor code...");
+          } else if (curStage === "PREVIEW_READY") {
+            setGeneratingStep("Final video & interactive storyboard ready!");
+          }
+        }
+      } catch {}
+    }, 800);
+
+    try {
+      const resumeRes = await fetch("/api/pipeline-b/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId }),
+      });
+      if (pollTimer) clearInterval(pollTimer);
+      const data = await resumeRes.json();
+      if (!resumeRes.ok || !data.success) {
+        throw new Error(data.error || "Failed to resume Pipeline B execution");
+      }
+
+      const state = data.state;
+      const finalVideoUrl = `/api/pipeline-b/media/${runId}/final`;
+
+      const visualSegments = state?.editPlan?.visualSegments || [];
+      const keepSegments = state?.editPlan?.keepSegments || [];
+      const beats: Beat[] = (visualSegments.length > 0 ? visualSegments : keepSegments).map((seg: any, idx: number) => {
+        const segStart = typeof seg?.start === "number" ? seg.start : Number(seg?.inSec ?? 0);
+        const segEnd = typeof seg?.end === "number" ? seg.end : Number(seg?.outSec ?? segStart + 1);
+        const segDur = Math.max(0.1, +(segEnd - segStart).toFixed(2));
+        const zoom = typeof seg?.cameraZoom === "number" ? seg.cameraZoom : (typeof seg?.zoomScale === "number" ? seg.zoomScale : 1.0);
+        const techniqueLabel = seg?.technique ? String(seg.technique).replace(/_/g, " ").toUpperCase() : "";
+        const layoutLabel = seg?.layoutType ? String(seg.layoutType).replace(/_/g, " ") : "";
+
+        return {
+          id: idx + 1,
+          label: `Scene ${idx + 1}${techniqueLabel ? ` • ${techniqueLabel}` : ""}`,
+          duration: `${segDur.toFixed(1)}s`,
+          durNum: segDur,
+          start: +segStart.toFixed(2),
+          end: +segEnd.toFixed(2),
+          script: seg?.spokenReference || `Scene ${idx + 1} (${zoom > 1 ? `${zoom.toFixed(2)}x Punch-in` : "Wide Shot"})`,
+          headline: seg?.headlineText || (techniqueLabel || (zoom > 1 ? `Punch-in ${zoom.toFixed(2)}x` : "Wide Shot")),
+          visualDesc: seg?.motionIntent
+            ? `${techniqueLabel} (${layoutLabel}) — ${seg.motionIntent}`
+            : `Retained speech segment from ${segStart.toFixed(1)}s to ${segEnd.toFixed(1)}s`,
+          motion: seg?.motionIntent || "Synchronized animated sticker & kinetic punch",
+          camera: zoom > 1 ? `Dynamic ${zoom.toFixed(2)}x Zoom Punch-in` : "Static Wide Angle",
+          transition: seg?.transitionDirection ? `${String(seg.transitionDirection).replace(/_/g, " ")} entrance` : "Cut",
+        };
+      });
+
+      updateMessage(message.id, {
+        generationStatus: "ready",
+        generationError: undefined,
+        videoUrl: finalVideoUrl,
+        finalDownloadUrl: finalVideoUrl,
+        beats: beats.length > 0 ? beats : message.beats,
+        editPlan: state.editPlan,
+        text: `✨ Wonder AI cuts executed & Spark 1.3 motion reel completed! Trimmed ${state?.editPlan?.cutSilenceDuration || 0}s. Clean video composited with 60fps kinetic graphics.`,
+      });
+    } catch (err: any) {
+      if (pollTimer) clearInterval(pollTimer);
+      updateMessage(message.id, {
+        generationStatus: "error",
+        generationError: err.message,
+        text: `❌ Error cutting video: ${err.message}`,
+      });
+    } finally {
+      if (pollTimer) clearInterval(pollTimer);
+      setIsGenerating(false);
+      setGeneratingStep("");
+    }
+  };
+
   const handleSend = async () => {
     // Auto-edit mode: activate Pipeline B (upload -> transcribe -> silence cut -> clean video -> overlays)
     if (studioMode === "autoEdit") {
@@ -1445,6 +1542,9 @@ export default function ProperMobileResponsiveChat() {
           formData.append("userScript", userScriptContent);
         } else if (userNote) {
           formData.append("userScript", userNote);
+        }
+        if (reviewCutsFirst) {
+          formData.append("stopAtStage", "EDIT_PLANNED");
         }
         formData.append("templateId", "hormoziPunch");
 
@@ -1542,14 +1642,15 @@ export default function ProperMobileResponsiveChat() {
 
         const cleanVideoUrl = `/api/pipeline-b/media/${runId}/clean`;
         const finalVideoUrl = `/api/pipeline-b/media/${runId}/final`;
+        const isPausedAtEditorial = state?.currentStage === "EDIT_PLANNED";
 
         updateMessage(botMsgId, {
-          generationStatus: "ready",
+          generationStatus: isPausedAtEditorial ? "storyboarding" : "ready",
           generationError: undefined,
           pipeline: "pipeline-b",
           pipelineBRunId: runId,
-          videoUrl: finalVideoUrl,
-          finalDownloadUrl: finalVideoUrl,
+          videoUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
+          finalDownloadUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
           beats: beats.length > 0 ? beats : undefined,
           editPlan: state?.editPlan,
           storyboard: beats.length > 0 ? {
@@ -1570,7 +1671,9 @@ export default function ProperMobileResponsiveChat() {
             })),
             duration: beats.reduce((acc, b) => acc + (b.durNum || 0), 0),
           } : undefined,
-          text: `✨ Wonder AI Director & Pipeline B complete! Trimmed ${cutDuration}s across ${cutCount} pause(s)${repCount > 0 ? `, ${repCount} repetition retake(s)` : ""}${fillerCount > 0 ? `, ${fillerCount} vocal filler(s)` : ""}. Added ${animCount} Wonder-directed animated graphic stickers and burned synchronized kinetic subtitles.`,
+          text: isPausedAtEditorial
+            ? `✨ Wonder Muse Stage A Editorial Cleanup complete! Found ${cutCount} approved cut(s) (${cutDuration}s reduction) and protected ${state?.editPlan?.protectedRanges?.length || 0} speech ranges. Review decisions below, then click "Apply Cuts & Generate Reel" to execute FFmpeg cutting and Spark 1.3 motion overlays.`
+            : `✨ Wonder AI Director & Pipeline B complete! Trimmed ${cutDuration}s across ${cutCount} pause(s)${repCount > 0 ? `, ${repCount} repetition retake(s)` : ""}${fillerCount > 0 ? `, ${fillerCount} vocal filler(s)` : ""}. Added ${animCount} Wonder-directed animated graphic stickers and burned synchronized kinetic subtitles.`,
         });
       } catch (err: any) {
         if (pollTimer) clearInterval(pollTimer);
@@ -2394,6 +2497,7 @@ export default function ProperMobileResponsiveChat() {
                                 disabled={isGenerating || isGeneratingCode}
                                 onPlay={() => handleOpenFullReel(message)}
                                 onRetry={() => handleOpenFullReel({ ...message, sparkCode: "" })}
+                                onApproveCuts={() => handleApproveCuts(message)}
                                 unifiedMode={true}
                               />
                             )}
@@ -2952,6 +3056,19 @@ export default function ProperMobileResponsiveChat() {
                             {editScript.trim() && (
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReviewCutsFirst((prev) => !prev)}
+                            title="Pause after Wonder Stage A cut analysis to review cuts in storyboard before FFmpeg slices"
+                            className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
+                              reviewCutsFirst
+                                ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
+                                : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
+                            }`}
+                          >
+                            <Scissors size={12} />
+                            <span>{reviewCutsFirst ? "Review cuts ON" : "Review cuts"}</span>
                           </button>
                         </>
                       )}
