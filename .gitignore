@@ -21,6 +21,9 @@ workspace/
 scratch/
 public/voiceover/
 public/renders/
+public/temp-render/
+public/*.mp4
+data/storybank/audio/
 
 # typescript
 *.tsbuildinfo
