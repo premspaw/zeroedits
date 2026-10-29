@@ -163,9 +163,14 @@ export function generateCandidateCuts(params: {
   const { allWords, transcript, silences, totalDuration, pacing, userScript } = params;
   const candidates: CandidateCut[] = [];
 
+  // Sanitize words: discard invalid or trailing hallucinated words beyond totalDuration
+  const validWords = allWords.filter(
+    (w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start && w.start < totalDuration
+  );
+
   // 0a. Initial Dead Air Before First Spoken Word (cuts dead air >= 0.35s, preserves subtle audio preroll)
-  if (allWords.length > 0 && allWords[0].start >= 0.35) {
-    const leadCutEnd = Math.max(0, +(allWords[0].start - 0.05).toFixed(2));
+  if (validWords.length > 0 && validWords[0].start >= 0.35) {
+    const leadCutEnd = Math.max(0, +(validWords[0].start - 0.05).toFixed(2));
     if (leadCutEnd > 0) {
       candidates.push({
         id: "cand-lead-silence",
@@ -174,18 +179,18 @@ export function generateCandidateCuts(params: {
         type: "silence",
         classification: "dead_air",
         confidence: 0.99,
-        affectedText: `[Initial Dead Air ${allWords[0].start.toFixed(2)}s]`,
+        affectedText: `[Initial Dead Air ${validWords[0].start.toFixed(2)}s]`,
         reason: `Trim initial dead air before speaker begins talking`,
       });
     }
   }
 
   // 0b. Starting Vocal Fillers ("ah", "um", "uh", "okay", "so") before actual speech content
-  if (allWords.length > 1) {
-    const firstClean = allWords[0].word.toLowerCase().replace(/[^\w]/g, "");
+  if (validWords.length > 1) {
+    const firstClean = validWords[0].word.toLowerCase().replace(/[^\w]/g, "");
     if (ISOLATED_FILLERS.has(firstClean) || FILLER_SOUND_REGEX.test(firstClean)) {
-      const nextStart = allWords[1].start;
-      const cStart = Math.max(0, +allWords[0].start.toFixed(2));
+      const nextStart = validWords[1].start;
+      const cStart = Math.max(0, +validWords[0].start.toFixed(2));
       const cEnd = Math.min(totalDuration, +(nextStart - 0.03).toFixed(2));
       if (cEnd > cStart) {
         candidates.push({
@@ -195,8 +200,8 @@ export function generateCandidateCuts(params: {
           type: "filler",
           classification: "filler_pause",
           confidence: 0.99,
-          affectedText: allWords[0].word,
-          reason: `Trim starting hesitation sound '${allWords[0].word}' so video hooks immediately on '${allWords[1].word}'`,
+          affectedText: validWords[0].word,
+          reason: `Trim starting hesitation sound '${validWords[0].word}' so video hooks immediately on '${validWords[1].word}'`,
         });
       }
     }
@@ -293,8 +298,32 @@ export function generateCandidateCuts(params: {
     }
   }
 
+  // 2b. Inter-word dead air & hesitation pauses (between consecutive words)
+  for (let i = 0; i < validWords.length - 1; i++) {
+    const wCurrent = validWords[i];
+    const wNext = validWords[i + 1];
+    const pauseDur = +(wNext.start - wCurrent.end).toFixed(2);
+
+    if (pauseDur >= pacing.minSilenceDuration) {
+      const pStart = +(wCurrent.end + pacing.preservedSilenceMargin).toFixed(2);
+      const pEnd = +(wNext.start - pacing.minSpeechMargin).toFixed(2);
+      if (pEnd > pStart && (pEnd - pStart) >= 0.12) {
+        candidates.push({
+          id: `cand-word-gap-${i + 1}`,
+          start: pStart,
+          end: pEnd,
+          type: "silence",
+          classification: "dead_air",
+          confidence: 0.94,
+          affectedText: `[Pause ${pauseDur.toFixed(2)}s between '${wCurrent.word}' and '${wNext.word}']`,
+          reason: `Trim dead air (${pauseDur.toFixed(2)}s) between '${wCurrent.word}' and '${wNext.word}' leaving ${pacing.preservedSilenceMargin}s natural breathing room`,
+        });
+      }
+    }
+  }
+
   // 3. Repeated Words, Runs & Multi-Word Phrase Retakes
-  const normalizedWords = allWords.map((w) => w.word.toLowerCase().replace(/[^\w]/g, ""));
+  const normalizedWords = validWords.map((w) => w.word.toLowerCase().replace(/[^\w]/g, ""));
 
   // 3a. Identical word runs (runLength >= 2, e.g. "two two", "like, like, like, like")
   let rStart = 0;
@@ -311,19 +340,19 @@ export function generateCandidateCuts(params: {
         // e.g. "very, very"
         candidates.push({
           id: `cand-emphasis-${rStart + 1}`,
-          start: allWords[rStart].start,
-          end: allWords[rEnd - 1].end,
+          start: validWords[rStart].start,
+          end: validWords[rEnd - 1].end,
           type: "repetition",
           classification: "intentional_emphasis",
           confidence: 0.92,
-          affectedText: allWords.slice(rStart, rEnd).map((w) => w.word).join(" "),
-          reason: `Intentional emphasis on '${allWords[rStart].word}' — preserve for speaker delivery`,
+          affectedText: validWords.slice(rStart, rEnd).map((w) => w.word).join(" "),
+          reason: `Intentional emphasis on '${validWords[rStart].word}' — preserve for speaker delivery`,
         });
       } else {
         // e.g. "two two" or "like, like, like, like"
-        // Keep ONLY the last clean instance (allWords[rEnd - 1]), cut all prior stutters!
-        const wFirst = allWords[rStart];
-        const wCleanInstance = allWords[rEnd - 1];
+        // Keep ONLY the last clean instance (validWords[rEnd - 1]), cut all prior stutters!
+        const wFirst = validWords[rStart];
+        const wCleanInstance = validWords[rEnd - 1];
 
         const cStart = Math.max(0, +wFirst.start.toFixed(2));
         const cEnd = Math.min(totalDuration, +(wCleanInstance.start - 0.02).toFixed(2));
@@ -335,7 +364,7 @@ export function generateCandidateCuts(params: {
             type: "repetition",
             classification: "accidental_stutter",
             confidence: 0.98,
-            affectedText: allWords.slice(rStart, rEnd - 1).map((w) => w.word).join(" "),
+            affectedText: validWords.slice(rStart, rEnd - 1).map((w) => w.word).join(" "),
             reason: `Trim ${runLength - 1} repeated stutter(s) of '${wFirst.word}', keeping clean final instance '${wCleanInstance.word}'`,
           });
         }
@@ -348,12 +377,12 @@ export function generateCandidateCuts(params: {
 
   // 3a-2. Separated repeated words across hesitation filler (e.g. "like ... ah ... like")
   for (let i = 0; i < normalizedWords.length - 1; i++) {
-    const w1 = allWords[i];
+    const w1 = validWords[i];
     const clean1 = normalizedWords[i];
     if (!clean1 || INTENTIONAL_EMPHASIS_WORDS.has(clean1)) continue;
 
     for (let step = 2; step <= 3 && i + step < normalizedWords.length; step++) {
-      const wTarget = allWords[i + step];
+      const wTarget = validWords[i + step];
       const cleanTarget = normalizedWords[i + step];
 
       if (cleanTarget === clean1) {
@@ -373,7 +402,7 @@ export function generateCandidateCuts(params: {
               type: "repetition",
               classification: "accidental_stutter",
               confidence: 0.96,
-              affectedText: allWords.slice(i, i + step).map((w) => w.word).join(" "),
+              affectedText: validWords.slice(i, i + step).map((w) => w.word).join(" "),
               reason: `Trim stuttered repeat of '${w1.word}' across hesitation filler, keeping clean resume at '${wTarget.word}'`,
             });
             break;
@@ -383,30 +412,59 @@ export function generateCandidateCuts(params: {
     }
   }
 
-  // 3b. Multi-word phrase retakes (length 2 to 6 words, with gap up to 6 words)
-  for (let L = 6; L >= 2; L--) {
+  // 3b. Multi-word phrase retakes (detects repeated n-grams and trims the false start completely)
+  const seenRetakeStarts = new Set<number>();
+  for (let L = 5; L >= 2; L--) {
     for (let i = 0; i <= normalizedWords.length - 2 * L; i++) {
-      for (let gap = 0; gap <= 6; gap++) {
-        const j = i + L + gap;
-        if (j + L > normalizedWords.length) continue;
+      if (seenRetakeStarts.has(i)) continue;
+      const phrase1 = normalizedWords.slice(i, i + L).join(" ");
+      if (!phrase1.trim()) continue;
 
-        const words1 = normalizedWords.slice(i, i + L);
-        const words2 = normalizedWords.slice(j, j + L);
+      for (let j = i + L; j <= Math.min(normalizedWords.length - L, i + L + 12); j++) {
+        const phrase2 = normalizedWords.slice(j, j + L).join(" ");
+        if (phrase1 === phrase2) {
+          const intermediateWords = normalizedWords.slice(i + L, j);
+          const hasParallelConjunction = intermediateWords.includes("and") || intermediateWords.includes("or");
+          if (hasParallelConjunction && intermediateWords.length >= 4) {
+            continue; // Intentional rhetorical parallel, e.g. "it adds animations effects like this and it adds typography like this"
+          }
 
-        if (isPhraseSimilar(words1, words2)) {
-          const cStart = Math.max(0, +allWords[i].start.toFixed(2));
-          const cEnd = Math.min(totalDuration, +(allWords[j].start - 0.02).toFixed(2));
+          let take1StartIdx = i;
+          while (take1StartIdx > 0 && take1StartIdx > i - 3) {
+            const prevGap = validWords[take1StartIdx].start - validWords[take1StartIdx - 1].end;
+            if (prevGap >= 0.35) break;
+            const pClean = normalizedWords[take1StartIdx - 1];
+            if (["a", "an", "the", "used", "it", "so", "just"].includes(pClean)) {
+              take1StartIdx--;
+            } else {
+              break;
+            }
+          }
+
+          let take2StartIdx = j;
+          for (let m = i + L - 1; m < j; m++) {
+            const gap = validWords[m + 1].start - validWords[m].end;
+            if (gap >= 0.30) {
+              take2StartIdx = m + 1;
+              break;
+            }
+          }
+
+          const cStart = Math.max(0, +validWords[take1StartIdx].start.toFixed(2));
+          const cEnd = Math.min(totalDuration, +(validWords[take2StartIdx].start - 0.04).toFixed(2));
+
           if (cEnd > cStart && (cEnd - cStart) >= 0.15) {
             candidates.push({
-              id: `cand-phrase-retake-${i + 1}`,
+              id: `cand-phrase-retake-${take1StartIdx + 1}`,
               start: cStart,
               end: cEnd,
               type: "phrase_retake",
               classification: "accidental_stutter",
-              confidence: 0.95,
-              affectedText: allWords.slice(i, j).map((w) => w.word).join(" "),
-              reason: `Trim false start of repeated phrase: '${allWords.slice(i, j).map((w) => w.word).join(" ")}'`,
+              confidence: 0.98,
+              affectedText: validWords.slice(take1StartIdx, take2StartIdx).map((w) => w.word).join(" "),
+              reason: `Trim false start of repeated phrase: '${validWords.slice(take1StartIdx, take2StartIdx).map((w) => w.word).join(" ")}' keeping clean take '${validWords.slice(take2StartIdx, j + L).map((w) => w.word).join(" ")}'`,
             });
+            seenRetakeStarts.add(take1StartIdx);
             i = j + L - 1;
             break;
           }
@@ -416,17 +474,17 @@ export function generateCandidateCuts(params: {
   }
 
   // 3c. Single-word false starts, abandoned statement restarts & stuttered determiners
-  for (let i = 0; i < allWords.length - 1; i++) {
-    const wCurrent = allWords[i];
-    const wNext = allWords[i + 1];
+  for (let i = 0; i < validWords.length - 1; i++) {
+    const wCurrent = validWords[i];
+    const wNext = validWords[i + 1];
     const curClean = normalizedWords[i];
     const nextClean = normalizedWords[i + 1];
 
     if (!curClean || INTENTIONAL_EMPHASIS_WORDS.has(curClean)) continue;
 
-    const isRepeatedShortly = i < allWords.length - 2 && (curClean === normalizedWords[i + 2] || curClean === normalizedWords[i + 3]);
+    const isRepeatedShortly = i < validWords.length - 2 && (curClean === normalizedWords[i + 2] || curClean === normalizedWords[i + 3]);
     const isAbandonedWord = (curClean === "every" && nextClean === "all") ||
-                            (curClean === "in" && (nextClean === "only" || nextClean === "just") && i < allWords.length - 2 && normalizedWords[i + 2] === "in");
+                            (curClean === "in" && (nextClean === "only" || nextClean === "just") && i < validWords.length - 2 && normalizedWords[i + 2] === "in");
 
     if (isRepeatedShortly || isAbandonedWord) {
       const cStart = Math.max(0, +wCurrent.start.toFixed(2));
@@ -447,8 +505,8 @@ export function generateCandidateCuts(params: {
   }
 
   // 4. Vocal Fillers & Hesitation Markers ("ah", "um", "uh", "er", "hmm", "like")
-  for (let i = 0; i < allWords.length; i++) {
-    const w = allWords[i];
+  for (let i = 0; i < validWords.length; i++) {
+    const w = validWords[i];
     const clean = normalizedWords[i];
 
     const isExplicitFiller = ISOLATED_FILLERS.has(clean) || FILLER_SOUND_REGEX.test(clean);
@@ -457,8 +515,8 @@ export function generateCandidateCuts(params: {
     let isFiller = isExplicitFiller;
     if (isConversational) {
       // Conversational fillers ("like", "so", "yeah") count as fillers if preceded or followed by pause >= 0.12s, at clause start, or repeated
-      const prevWord = i > 0 ? allWords[i - 1] : null;
-      const nextWord = i < allWords.length - 1 ? allWords[i + 1] : null;
+      const prevWord = i > 0 ? validWords[i - 1] : null;
+      const nextWord = i < validWords.length - 1 ? validWords[i + 1] : null;
       const prevGap = prevWord ? w.start - prevWord.end : 1.0;
       const nextGap = nextWord ? nextWord.start - w.end : 1.0;
       const isRepeatedNear = (prevWord && normalizedWords[i - 1] === clean) || (nextWord && normalizedWords[i + 1] === clean);
@@ -468,8 +526,8 @@ export function generateCandidateCuts(params: {
     }
 
     if (isFiller) {
-      const prevWord = i > 0 ? allWords[i - 1] : null;
-      const nextWord = i < allWords.length - 1 ? allWords[i + 1] : null;
+      const prevWord = i > 0 ? validWords[i - 1] : null;
+      const nextWord = i < validWords.length - 1 ? validWords[i + 1] : null;
 
       // Expand cut to swallow adjacent dead pauses around the filler sound
       const cStart = prevWord

@@ -61,10 +61,9 @@ export async function exportFinalVideo(params: {
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    "Style: PopMain,Montserrat,62,&H0000E6FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.0,2,40,40,240,1",
-    "Style: PopContext,Montserrat,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,240,1",
-    "Style: HookBadge,Montserrat,38,&H0000E6FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.0,2.0,8,40,40,100,1",
-    "Style: SceneBadge,Montserrat,42,&H00FFF000,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.0,2.0,8,40,40,200,1",
+    "Style: PopMain,Montserrat,68,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5.5,2.5,2,40,40,240,1",
+    "Style: HookBadge,Montserrat,40,&H0000E6FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,100,1",
+    "Style: SceneBadge,Montserrat,44,&H00FFF000,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,200,1",
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -129,33 +128,80 @@ export async function exportFinalVideo(params: {
     clean: "✅ ", perfect: "✅ ", done: "✅ ", easy: "✅ ", approved: "✅ ", yes: "✅ ",
   };
 
+  // Group words into natural kinetic phrase chunks (3 to 4 words per chunk, breaking at pauses >= 0.45s)
+  const chunks: { words: typeof wordsToRender; start: number; end: number }[] = [];
+  let currentChunkWords: typeof wordsToRender = [];
+
   for (let i = 0; i < wordsToRender.length; i++) {
-    const w = wordsToRender[i];
-    const cleanToken = w.word.toLowerCase().replace(/[^a-z]/g, "");
-    const emojiPrefix = EMOJI_KEYWORD_MAP[cleanToken] || "";
+    const curW = wordsToRender[i];
+    const prevW = currentChunkWords[currentChunkWords.length - 1];
 
-    // Vibrant ASS color: yellow for general, green for stats/positive, cyan for tech, red for alerts
-    let wordColor = "&H0000E6FF&"; // Yellow (&HAABBGGRR)
-    if (/^(clean|perfect|done|easy|yes|growth|boost|profit|retention)$/i.test(cleanToken)) {
-      wordColor = "&H0081B910&"; // Neon green
-    } else if (/^(ai|code|pipeline|wonder|spark|model|tech)$/i.test(cleanToken)) {
-      wordColor = "&H00FFF000&"; // Cyan
-    } else if (/^(stop|cut|dead|wrong|mistake|waste|bad)$/i.test(cleanToken)) {
-      wordColor = "&H004444FF&"; // Bright red
+    const isLongPause = prevW && curW.start - prevW.end >= 0.45;
+    const isChunkFull = currentChunkWords.length >= 4;
+
+    if (currentChunkWords.length > 0 && (isLongPause || isChunkFull)) {
+      chunks.push({
+        words: currentChunkWords,
+        start: currentChunkWords[0].start,
+        end: currentChunkWords[currentChunkWords.length - 1].end,
+      });
+      currentChunkWords = [];
     }
+    currentChunkWords.push(curW);
+  }
+  if (currentChunkWords.length > 0) {
+    chunks.push({
+      words: currentChunkWords,
+      start: currentChunkWords[0].start,
+      end: currentChunkWords[currentChunkWords.length - 1].end,
+    });
+  }
 
-    const sTime = formatAssTimestamp(w.start);
-    const eTime = formatAssTimestamp(Math.max(w.start + 0.12, w.end));
-    const safeWord = w.word.replace(/[%{}]/g, "").toUpperCase();
-    const textFormatted = `{\\fscx120\\fscy120\\c${wordColor}\\3c&H00000000&\\bord4.5\\shad2.5}${emojiPrefix}${safeWord}`;
-    assLines.push(`Dialogue: 0,${sTime},${eTime},PopMain,,0,0,0,,${textFormatted}`);
+  // Generate Hormozi / MrBeast kinetic captions: phrase chunk displayed with active word popping
+  for (const chunk of chunks) {
+    for (let k = 0; k < chunk.words.length; k++) {
+      const activeW = chunk.words[k];
+      const nextW = k < chunk.words.length - 1 ? chunk.words[k + 1] : null;
+
+      // Active timing starts when the word begins, lasts until next word begins or end of word + 0.08s
+      const sTime = formatAssTimestamp(activeW.start);
+      const rawETime = nextW ? nextW.start : Math.max(activeW.start + 0.14, activeW.end);
+      const eTime = formatAssTimestamp(rawETime);
+
+      const formattedWords = chunk.words.map((w, j) => {
+        const cleanToken = w.word.toLowerCase().replace(/[^a-z]/g, "");
+        const safeWord = w.word.replace(/[%{}]/g, "").toUpperCase();
+
+        if (j === k) {
+          // ACTIVE WORD: 125% scale bounce, vibrant electric color, 5.5px black outline, 2.5px shadow, emoji burst
+          const emojiPrefix = EMOJI_KEYWORD_MAP[cleanToken] || "";
+          let wordColor = "&H0000E6FF&"; // Electric yellow (&HAABBGGRR)
+          if (/^(clean|perfect|done|easy|yes|growth|boost|profit|retention)$/i.test(cleanToken)) {
+            wordColor = "&H0081B910&"; // Neon green
+          } else if (/^(ai|code|pipeline|wonder|spark|model|tech)$/i.test(cleanToken)) {
+            wordColor = "&H00FFF000&"; // Electric cyan
+          } else if (/^(stop|cut|dead|wrong|mistake|waste|bad)$/i.test(cleanToken)) {
+            wordColor = "&H004444FF&"; // Signal red
+          }
+
+          return `{\\b1\\fscx125\\fscy125\\c${wordColor}\\3c&H00000000&\\bord5.5\\shad2.5}${emojiPrefix}${safeWord}`;
+        } else {
+          // INACTIVE CONTEXT WORD: 100% scale, pure white, clean outline
+          return `{\\b1\\fscx100\\fscy100\\c&H00FFFFFF&\\3c&H00000000&\\bord3.5\\shad1.5}${safeWord}`;
+        }
+      });
+
+      const lineText = formattedWords.join(" ");
+      assLines.push(`Dialogue: 0,${sTime},${eTime},PopMain,,0,0,0,,${lineText}`);
+    }
   }
 
   fs.writeFileSync(assPath, assLines.join("\n"), "utf-8");
 
   try {
+    const fontsDir = path.resolve(process.cwd(), "public/fonts").replace(/\\/g, "/").replace(/:/g, "\\:");
     const escapedAssPath = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-    const filters: string[] = [`ass='${escapedAssPath}'`];
+    const filters: string[] = [`ass='${escapedAssPath}':fontsdir='${fontsDir}'`];
 
     if (filters.length > 0) {
       await execFileAsync("ffmpeg", [

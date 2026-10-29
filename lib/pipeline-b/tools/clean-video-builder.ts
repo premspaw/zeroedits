@@ -71,6 +71,7 @@ export async function buildCleanVideo(params: {
 
       await execFileAsync("ffmpeg", [
         "-y",
+        "-accurate_seek",
         "-ss",
         seg.start.toString(),
         "-t",
