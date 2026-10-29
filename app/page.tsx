@@ -35,10 +35,12 @@ import {
   Plus,
   Trash2,
   Video,
+  BookOpen,
 } from "lucide-react";
 import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
+import StoryBankView from "@/components/StoryBankView";
 
 type FormatType =
   | "auto"
@@ -1112,6 +1114,8 @@ export default function ProperMobileResponsiveChat() {
   const [timing, setTiming] = useState<TimingType>("15s");
   const [voice, setVoice] = useState<VoiceType>("EN-IN");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  type HeaderTab = "script" | "edit";
+  const [activeHeaderTab, setActiveHeaderTab] = useState<HeaderTab>("script");
   // Pipeline B (auto-edit) staging — chat bar only, engine lands next.
   type StudioMode = "create" | "autoEdit";
   const [studioMode, setStudioMode] = useState<StudioMode>("create");
@@ -1134,6 +1138,15 @@ export default function ProperMobileResponsiveChat() {
   // a permanent spinner with no storyboard and a paused preview. Real history
   // is never deleted — only content-less in-flight states are repaired.
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "edit" || window.location.hash === "#edit") {
+        setActiveHeaderTab("edit");
+      } else if (tabParam === "script" || window.location.hash === "#script") {
+        setActiveHeaderTab("script");
+      }
+    }
     try {
       const saved = localStorage.getItem("paper_studio_reels_v4");
       if (saved) {
@@ -1538,7 +1551,9 @@ export default function ProperMobileResponsiveChat() {
         const formData = new FormData();
         formData.append("video", videoFile);
         formData.append("runId", clientRunId);
-        if (userScriptContent) {
+        if (userScriptContent && userNote) {
+          formData.append("userScript", `[Target Script]:\n${userScriptContent}\n\n[Director Instructions]:\n${userNote}`);
+        } else if (userScriptContent) {
           formData.append("userScript", userScriptContent);
         } else if (userNote) {
           formData.append("userScript", userNote);
@@ -1650,7 +1665,7 @@ export default function ProperMobileResponsiveChat() {
           pipeline: "pipeline-b",
           pipelineBRunId: runId,
           videoUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
-          finalDownloadUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
+          sparkCode: data.motionCode || undefined,
           beats: beats.length > 0 ? beats : undefined,
           editPlan: state?.editPlan,
           storyboard: beats.length > 0 ? {
@@ -2110,6 +2125,40 @@ export default function ProperMobileResponsiveChat() {
               </button>
             </div>
 
+            {/* Mobile Navigation Tabs: Script first, Edit second */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 mb-4 rounded-xl bg-[#ECEAE3] border border-[#D5D2C8] shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveHeaderTab("script");
+                  setIsMobileDrawerOpen(false);
+                }}
+                className={`py-2 rounded-lg mono text-[12px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${
+                  activeHeaderTab === "script"
+                    ? "bg-[#141414] text-white shadow-xs"
+                    : "text-[#6B6A64] hover:text-[#141414]"
+                }`}
+              >
+                <BookOpen size={13} className={activeHeaderTab === "script" ? "text-[#E4491B]" : ""} />
+                <span>Script</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveHeaderTab("edit");
+                  setIsMobileDrawerOpen(false);
+                }}
+                className={`py-2 rounded-lg mono text-[12px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${
+                  activeHeaderTab === "edit"
+                    ? "bg-[#141414] text-white shadow-xs"
+                    : "text-[#6B6A64] hover:text-[#141414]"
+                }`}
+              >
+                <Scissors size={13} className={activeHeaderTab === "edit" ? "text-[#E4491B]" : ""} />
+                <span>Edit</span>
+              </button>
+            </div>
+
             <button
               onClick={handleNewReel}
               className="w-full py-2.5 px-3.5 rounded-2xl bg-gradient-to-r from-[#E4491B] via-[#E4491B] to-[#C93D14] text-white text-[13px] font-semibold flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,85,32,0.25)] hover:brightness-110 active:scale-[0.98] transition mb-4 shrink-0"
@@ -2191,6 +2240,34 @@ export default function ProperMobileResponsiveChat() {
             </div>
           </div>
 
+          {/* Header Navigation Tabs: Script first, Edit second */}
+          <nav aria-label="Main Navigation" className="flex items-center gap-1 p-1 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] shadow-xs">
+            <button
+              type="button"
+              onClick={() => setActiveHeaderTab("script")}
+              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-full mono text-[12px] font-bold transition-all active:scale-95 ${
+                activeHeaderTab === "script"
+                  ? "bg-[#141414] text-white shadow-xs"
+                  : "text-[#6B6A64] hover:text-[#141414] hover:bg-[#ECEAE3]"
+              }`}
+            >
+              <BookOpen size={13} className={activeHeaderTab === "script" ? "text-[#E4491B]" : ""} />
+              <span>Script</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveHeaderTab("edit")}
+              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-full mono text-[12px] font-bold transition-all active:scale-95 ${
+                activeHeaderTab === "edit"
+                  ? "bg-[#141414] text-white shadow-xs"
+                  : "text-[#6B6A64] hover:text-[#141414] hover:bg-[#ECEAE3]"
+              }`}
+            >
+              <Scissors size={13} className={activeHeaderTab === "edit" ? "text-[#E4491B]" : ""} />
+              <span>Edit</span>
+            </button>
+          </nav>
+
           <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] shadow-xs select-none">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-xs shadow-emerald-500/50" />
             <span className="mono text-[11px] uppercase tracking-widest text-[#6B6A64]">
@@ -2236,8 +2313,15 @@ export default function ProperMobileResponsiveChat() {
         </div>
       </header>
 
-      {/* Main Studio Viewport */}
-      <div className="mx-auto max-w-[1600px] w-full flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
+      {/* Main Viewport: Script (Story Bank) vs Edit (Studio) */}
+      {activeHeaderTab === "script" ? (
+        <div className="mx-auto max-w-[1600px] w-full min-h-[calc(100vh-64px)] p-4 sm:p-6">
+          <StoryBankView hideHeader={true} onSwitchToStudio={() => setActiveHeaderTab("edit")} />
+        </div>
+      ) : (
+        <>
+          {/* Main Studio Viewport */}
+          <div className="mx-auto max-w-[1600px] w-full flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
         {/* Left History Sidebar */}
         <aside className="hidden lg:flex w-[280px] shrink-0 border-r-2 border-[#141414] bg-[#ECEAE3] flex-col p-4 sticky top-[64px] h-[calc(100vh-64px)] overflow-y-auto">
           {/* Top: New Studio Reel button */}
@@ -3295,6 +3379,8 @@ export default function ProperMobileResponsiveChat() {
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {/* Spark 1.3 JSX Code & Live Animation Modal */}
       {isCodeModalOpen && (
