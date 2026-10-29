@@ -21,6 +21,22 @@ export interface PipelineBTemplate {
 }
 
 export const PIPELINE_B_TEMPLATES: Record<string, PipelineBTemplate> = {
+  dynamicDirector: {
+    id: "dynamicDirector",
+    name: "Dynamic Director",
+    tagline: "Fullscreen Hook -> Pipeline A Procedural Animation with Floating Founder PiP -> Fullscreen CTA",
+    fontFamily: "Montserrat, Anton, sans-serif",
+    primaryColor: "#FFE600",
+    highlightColor: "#FF6B00",
+    textColor: "#FFFFFF",
+    cardBg: "rgba(10, 10, 18, 0.94)",
+    punchInFrequency: "high",
+    captionStyle: "word_by_word",
+    enableSfx: true,
+    enableProgressBar: true,
+    enablePaperBadge: true,
+    aspectRatio: "9:16",
+  },
   hormoziPunch: {
     id: "hormoziPunch",
     name: "Hormozi Punch",

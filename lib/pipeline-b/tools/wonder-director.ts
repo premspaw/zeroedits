@@ -1129,6 +1129,140 @@ export function createDeterministicCreativePlan(params: {
   const visualSegments: VisualPlanSegment[] = [];
   const visualPlan: VisualOverlayItem[] = [];
 
+  // Dynamic Director: Fullscreen Hook -> Pipeline A Procedural Animation with PiP -> Fullscreen CTA
+  if (template.id === "dynamicDirector" && cleanDuration >= 6.0 && allEditedWords.length > 0) {
+    const hookEnd = Math.min(3.5, +(cleanDuration * 0.22).toFixed(2));
+    const ctaStart = Math.max(hookEnd + 2.0, +(cleanDuration - 3.5).toFixed(2));
+
+    const hookWordsList = allEditedWords.filter((w) => w.editedStart < hookEnd);
+    const hookWords = hookWordsList.map((w) => w.word).join(" ") || "KEY INSIGHT";
+
+    const middleWords = allEditedWords.filter((w) => w.editedStart >= hookEnd && w.editedStart < ctaStart);
+    const conceptKeyword =
+      middleWords.find((w) => /\b(?:code|app|video|fast|edit|ai|pipeline|system|model|build|software)\b/i.test(w.word))?.word ||
+      middleWords[0]?.word ||
+      "DYNAMIC ARCHITECTURE";
+
+    const ctaWordsList = allEditedWords.filter((w) => w.editedStart >= ctaStart);
+    const ctaWords = ctaWordsList.map((w) => w.word).join(" ") || "TRY IT NOW";
+
+    // 1. Fullscreen Hook
+    visualSegments.push({
+      id: `vseg-hook-${runId}`,
+      start: 0,
+      end: hookEnd,
+      layoutType: "fullscreen_speaker",
+      technique: "kinetic_typography",
+      spokenReference: hookWords,
+      motionIntent: "High-impact fullscreen founder hook with punch-in camera dynamics",
+      layerArrangement: "overlay",
+      transitionDirection: "pop_in",
+      cameraZoom: 1.15,
+      headlineText: hookWords.slice(0, 32).toUpperCase(),
+      brandSettings: {
+        primaryColor: template.primaryColor,
+        highlightColor: template.highlightColor,
+        fontFamily: template.fontFamily,
+      },
+    });
+
+    visualPlan.push({
+      id: "overlay-hook-1",
+      segmentId: `vseg-hook-${runId}`,
+      type: "kinetic_word",
+      timestamp: 0,
+      duration: hookEnd,
+      content: hookWords.slice(0, 32).toUpperCase(),
+      animation: "pop",
+      style: {
+        bg: template.cardBg,
+        textColor: template.highlightColor,
+        border: template.primaryColor,
+      },
+    });
+
+    // 2. Explainer Core: Pipeline A Procedural Animation Background + Floating PiP Founder Card
+    visualSegments.push({
+      id: `vseg-explainer-${runId}`,
+      start: hookEnd,
+      end: ctaStart,
+      layoutType: "picture_in_picture",
+      technique: "procedural_graphic",
+      spokenReference: conceptKeyword,
+      motionIntent: "Pipeline A procedural HTML/SVG animation running across full canvas with speaker in floating PiP card",
+      layerArrangement: "background",
+      transitionDirection: "slide_up",
+      cameraZoom: 1.0,
+      headlineText: conceptKeyword.toUpperCase(),
+      brandSettings: {
+        primaryColor: template.primaryColor,
+        highlightColor: template.highlightColor,
+        fontFamily: template.fontFamily,
+      },
+    });
+
+    visualPlan.push({
+      id: "overlay-explainer-2",
+      segmentId: `vseg-explainer-${runId}`,
+      type: "image_overlay",
+      timestamp: hookEnd,
+      duration: +(ctaStart - hookEnd).toFixed(2),
+      content: conceptKeyword.toUpperCase(),
+      animation: "fade",
+      style: {
+        bg: template.cardBg,
+        textColor: template.highlightColor,
+        border: template.primaryColor,
+      },
+    });
+
+    // 3. Fullscreen CTA / Punchline Cutback
+    visualSegments.push({
+      id: `vseg-cta-${runId}`,
+      start: ctaStart,
+      end: cleanDuration,
+      layoutType: "fullscreen_speaker",
+      technique: "kinetic_typography",
+      spokenReference: ctaWords,
+      motionIntent: "High-impact punchline cutback to fullscreen founder for call-to-action",
+      layerArrangement: "overlay",
+      transitionDirection: "pop_in",
+      cameraZoom: 1.18,
+      headlineText: ctaWords.slice(0, 32).toUpperCase(),
+      brandSettings: {
+        primaryColor: template.primaryColor,
+        highlightColor: template.highlightColor,
+        fontFamily: template.fontFamily,
+      },
+    });
+
+    visualPlan.push({
+      id: "overlay-cta-3",
+      segmentId: `vseg-cta-${runId}`,
+      type: "kinetic_word",
+      timestamp: ctaStart,
+      duration: +(cleanDuration - ctaStart).toFixed(2),
+      content: ctaWords.slice(0, 32).toUpperCase(),
+      animation: "pop",
+      style: {
+        bg: template.cardBg,
+        textColor: template.highlightColor,
+        border: template.primaryColor,
+      },
+    });
+
+    const hookDisplay = hookWordsList.slice(0, 6).map((w) => w.word).join(" ");
+    return {
+      planId: `rules-creative-${runId}`,
+      title: hookDisplay || "Dynamic Director Reel",
+      hookLine: hookDisplay ? `"${hookDisplay}..."` : "Dynamic Director Reel",
+      narrativeTheme: "Dynamic Director with Pipeline A HTML animation and speaker PiP",
+      visualSegments,
+      visualPlan,
+      editorialNotes: "Dynamic Director switching arc: Fullscreen Hook -> Procedural Animation PiP -> Fullscreen CTA.",
+    };
+  }
+
   // Segment 1: Opening Hook
   if (allEditedWords.length > 0) {
     const openingWords = allEditedWords.slice(0, 5);

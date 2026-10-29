@@ -212,6 +212,45 @@ export const TalkingHeadReel: React.FC = () => {
             transition: "transform 0.08s linear",
           }}
         />
+        {layoutType === "picture_in_picture" && (
+          <div
+            style={{
+              position: "absolute",
+              top: 14,
+              left: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "rgba(10, 10, 18, 0.88)",
+              border: "1.5px solid rgba(255, 230, 0, 0.6)",
+              borderRadius: 999,
+              padding: "4px 10px",
+              zIndex: 10,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.8)",
+            }}
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                backgroundColor: "#EF4444",
+                boxShadow: "0 0 8px #EF4444",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 9.5,
+                fontWeight: 900,
+                color: "#FFE600",
+                letterSpacing: "0.12em",
+                fontFamily: "monospace",
+              }}
+            >
+              FOUNDER
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 2. Top Sleek Progress Bar */}
@@ -386,19 +425,21 @@ export const TalkingHeadReel: React.FC = () => {
 
         // B. TOPIC-AWARE PROCEDURAL SVG GRAPHICS (Animated Terminal or System Diagram)
         if (seg.technique === "animated_diagram" || seg.technique === "procedural_graphic") {
+          const isPiP = layoutType === "picture_in_picture";
           return (
             <div
               key={seg.id}
               style={{
                 position: "absolute",
-                top: layoutType === "picture_in_picture" ? 180 : 130,
-                left: "50%",
-                transform: \`translateX(-50%) scale(\${scale})\`,
-                width: 480,
-                backgroundColor: "rgba(16, 16, 24, 0.96)",
-                border: "3px solid #E4491B",
+                top: isPiP ? 115 : 130,
+                left: isPiP ? 36 : "50%",
+                right: isPiP ? 36 : undefined,
+                transform: isPiP ? \`scale(\${scale})\` : \`translateX(-50%) scale(\${scale})\`,
+                width: isPiP ? "calc(100% - 72px)" : 480,
+                backgroundColor: "rgba(14, 14, 22, 0.96)",
+                border: "3px solid ${template.primaryColor}",
                 borderRadius: 28,
-                boxShadow: "0 28px 72px rgba(0,0,0,0.85), 0 0 32px rgba(228, 73, 27, 0.3)",
+                boxShadow: "0 28px 72px rgba(0,0,0,0.85), 0 0 32px rgba(255, 230, 0, 0.25)",
                 padding: "20px 24px",
                 display: "flex",
                 flexDirection: "column",

@@ -30,6 +30,11 @@ describe("Pipeline B — Template Registry", () => {
 
     const fallback = getPipelineBTemplate("unknown-id");
     assert.equal(fallback.id, "hormoziPunch");
+
+    const director = getPipelineBTemplate("dynamicDirector");
+    assert.equal(director.id, "dynamicDirector");
+    assert.equal(director.primaryColor, "#FFE600");
+    assert.equal(director.aspectRatio, "9:16");
   });
 });
 
@@ -707,6 +712,36 @@ describe("Pipeline B — Wonder Stage A & Stage B Architecture", () => {
     assert.ok(creative.visualSegments.length >= 1);
     assert.equal(creative.visualSegments[0].layoutType, "fullscreen_speaker");
     assert.equal(creative.visualSegments[0].technique, "kinetic_typography");
+
+    // Dynamic Director Switching Arc: Fullscreen Hook -> Procedural Animation PiP -> Fullscreen CTA
+    const dynamicDirectorPlan = await callWonderCreativeDirector({
+      editedTranscript: [
+        {
+          id: 1,
+          start: 0,
+          end: 14.0,
+          text: "stop manual editing now pipeline automatically builds everything with code try it today",
+          words: [
+            { word: "stop", sourceStart: 0, sourceEnd: 0.5, editedStart: 0, editedEnd: 0.5 },
+            { word: "manual", sourceStart: 0.5, sourceEnd: 1.0, editedStart: 0.5, editedEnd: 1.0 },
+            { word: "editing", sourceStart: 1.0, sourceEnd: 1.8, editedStart: 1.0, editedEnd: 1.8 },
+            { word: "pipeline", sourceStart: 4.0, sourceEnd: 5.0, editedStart: 4.0, editedEnd: 5.0 },
+            { word: "code", sourceStart: 6.0, sourceEnd: 7.0, editedStart: 6.0, editedEnd: 7.0 },
+            { word: "today", sourceStart: 12.0, sourceEnd: 13.5, editedStart: 12.0, editedEnd: 13.5 },
+          ],
+        },
+      ],
+      cleanDuration: 14.0,
+      templateId: "dynamicDirector",
+      runId: "test-dynamic-director",
+      mode: "rules-only",
+    });
+
+    assert.equal(dynamicDirectorPlan.visualSegments.length, 3);
+    assert.equal(dynamicDirectorPlan.visualSegments[0].layoutType, "fullscreen_speaker"); // Hook
+    assert.equal(dynamicDirectorPlan.visualSegments[1].layoutType, "picture_in_picture"); // Procedural Graphic + PiP
+    assert.equal(dynamicDirectorPlan.visualSegments[1].technique, "procedural_graphic");
+    assert.equal(dynamicDirectorPlan.visualSegments[2].layoutType, "fullscreen_speaker"); // CTA
   });
 });
 
