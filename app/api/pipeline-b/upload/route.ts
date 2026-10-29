@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
     });
 
     // Run the orchestrator pipeline up to PREVIEW_READY (or stopAtStage)
+    const finalState = await executePipelineB(runId, stopAtStage ? { stopAtStage } : undefined);
+
     let motionCode = "";
     if (finalState.motionCodePath && fs.existsSync(finalState.motionCodePath)) {
       motionCode = fs.readFileSync(finalState.motionCodePath, "utf-8");
