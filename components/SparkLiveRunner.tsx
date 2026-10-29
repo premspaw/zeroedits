@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useId } from "react";
 import { Play, Pause, RotateCcw, Maximize2, Minimize2, Download, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { createSparkPreviewDocument } from "./spark-preview-document";
+import Pip from "./Pip";
 
 interface SparkLiveRunnerProps {
   code: string;
@@ -189,10 +190,15 @@ export default function SparkLiveRunner({
           </div>
         ) : (isGenerating || !isLoaded) && (
           <div className="absolute inset-0 z-20 bg-[#F7F5EF] text-[#141414] flex flex-col items-center justify-center p-6 text-center" role="status">
-            <Loader2 size={28} className="animate-spin text-[#E4491B] mb-4" />
-            <p className="serif text-[22px] mb-2 text-[#141414]">{isGenerating ? "Spark is creating your video" : "Opening your animation"}</p>
+            <Pip
+              mood="writing"
+              size={64}
+              showDialogue={true}
+              dialogue={generatingStep || "Drawing paper physics & typography..."}
+            />
+            <p className="serif text-[20px] mt-2 mb-1 text-[#141414]">{isGenerating ? "Spark is creating your video" : "Opening your animation"}</p>
             <p className="text-[12px] text-[#6B6A64] max-w-[250px] leading-relaxed">
-              {generatingStep || (isGenerating ? "Explore Wonder’s storyboard while the scenes come together." : "Loading the preview and preparing the first frame.")}
+              Explore Wonder’s storyboard while the scenes come together.
             </p>
           </div>
         )}
@@ -210,6 +216,9 @@ export default function SparkLiveRunner({
                 <RotateCcw size={13} />
               </button>
               <span className="mono text-[10px] text-white/90 tabular-nums">{currentTime.toFixed(1)} / {totalVideoDuration.toFixed(1)}s</span>
+              <div className="ml-1.5 shrink-0" title={isPlaying ? "Pip is watching" : "Paused"}>
+                <Pip mood={isPlaying ? "happy" : "idle"} size={22} interactive={false} />
+              </div>
             </div>
             {onExportMP4 ? (
               <button

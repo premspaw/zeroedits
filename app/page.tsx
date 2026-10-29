@@ -36,12 +36,13 @@ import {
   Trash2,
   Video,
   BookOpen,
+  RefreshCw,
 } from "lucide-react";
 import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
 import StoryBankView from "@/components/StoryBankView";
-import Pip from "@/components/Pip";
+import Pip, { type PipMood, type PipAction } from "@/components/Pip";
 
 type FormatType =
   | "auto"
@@ -2584,6 +2585,104 @@ export default function ProperMobileResponsiveChat() {
                               </button>
                             </div>
 
+                            {/* Pip Interactive Question & Decision Presenter */}
+                            {(() => {
+                              const isPipelineB = message.pipeline === "pipeline-b" || !!message.editPlan;
+                              const cuts = message.editPlan?.cuts || [];
+                              const cutDur = cuts.reduce((acc: number, c: any) => acc + Math.max(0, (c.end || 0) - (c.start || 0)), 0);
+
+                              let pipMood: PipMood = "idle";
+                              let question = "";
+                              let actions: PipAction[] = [];
+
+                              if (message.generationStatus === "error") {
+                                pipMood = "thinking";
+                                question = "I ran into an issue while generating this reel. Want to retry?";
+                                actions = [
+                                  {
+                                    label: "Retry Reel",
+                                    icon: <RefreshCw size={11} />,
+                                    variant: "primary",
+                                    onClick: () => handleOpenFullReel({ ...message, sparkCode: "" }),
+                                  },
+                                ];
+                              } else if (isPipelineB) {
+                                pipMood = cuts.length > 0 ? "idea" : "reading";
+                                question = cuts.length > 0
+                                  ? `Found ${cuts.length} cuts saving -${cutDur.toFixed(2)}s. Shall we trim pauses and punch in on key points?`
+                                  : "Speech boundaries verified. 100% natural speech cadence intact. Ready to export?";
+                                actions = [
+                                  ...(cuts.length > 0
+                                    ? [
+                                        {
+                                          label: "Apply Editorial Cuts",
+                                          icon: <Scissors size={11} />,
+                                          variant: "primary" as const,
+                                          onClick: () => handleApproveCuts(message),
+                                        },
+                                      ]
+                                    : []),
+                                  {
+                                    label: "Play Reel",
+                                    icon: <Play size={11} />,
+                                    variant: "secondary" as const,
+                                    onClick: () => handleOpenFullReel(message),
+                                  },
+                                  {
+                                    label: "Want a punchier hook?",
+                                    icon: <Sparkles size={11} />,
+                                    variant: "subtle" as const,
+                                    onClick: () => {
+                                      setInput("Make the hook punchier and shorten first 3 seconds");
+                                      textareaRef.current?.focus();
+                                    },
+                                  },
+                                ];
+                              } else {
+                                pipMood = "happy";
+                                question = "Here's your reel! 60fps paper animation with dynamic typography is ready. What do you think?";
+                                actions = [
+                                  {
+                                    label: "Play Full Reel",
+                                    icon: <Play size={11} />,
+                                    variant: "primary" as const,
+                                    onClick: () => handleOpenFullReel(message),
+                                  },
+                                  {
+                                    label: "Download MP4",
+                                    icon: <Download size={11} />,
+                                    variant: "secondary" as const,
+                                    onClick: () => {
+                                      setSelectedMessageId(message.id);
+                                      setIsExportModalOpen(true);
+                                    },
+                                  },
+                                  {
+                                    label: "Want a punchier hook?",
+                                    icon: <Sparkles size={11} />,
+                                    variant: "subtle" as const,
+                                    onClick: () => {
+                                      setInput("Make the opening hook punchier and more dramatic");
+                                      textareaRef.current?.focus();
+                                    },
+                                  },
+                                ];
+                              }
+
+                              return (
+                                <div className="p-3 border-b border-[#D5D2C8]/50 bg-gradient-to-r from-[#F7F5EF] via-[#FAF8F3] to-[#F7F5EF]">
+                                  <Pip
+                                    mood={pipMood}
+                                    size={46}
+                                    orientation="horizontal"
+                                    question={question}
+                                    actions={actions}
+                                    interactive={true}
+                                  />
+                                </div>
+                              );
+                            })()}
+
                             {(message.beats || message.editPlan) && (
                               <WonderStoryboard
                                 beats={message.beats || []}
@@ -2961,7 +3060,29 @@ export default function ProperMobileResponsiveChat() {
                     </div>
                   )}
                   {/* Top: Text Input + Clear button */}
-                  <div className="px-3.5 pt-2 pb-1 relative flex items-start gap-2">
+                  <div className="px-3.5 pt-2 pb-1 relative flex items-start gap-2.5">
+                    <div
+                      className="shrink-0 pt-0.5"
+                      title={
+                        isGenerating || isGeneratingCode
+                          ? "Pip is writing your script..."
+                          : input.trim().length > 0
+                          ? "Pip is listening..."
+                          : "Pip is ready. Type your idea!"
+                      }
+                    >
+                      <Pip
+                        mood={
+                          isGenerating || isGeneratingCode
+                            ? "writing"
+                            : input.trim().length > 0
+                            ? "listening"
+                            : "idle"
+                        }
+                        size={32}
+                        interactive={true}
+                      />
+                    </div>
                     <textarea
                       ref={textareaRef}
                       value={input}
@@ -3196,7 +3317,7 @@ export default function ProperMobileResponsiveChat() {
                       </button>
                     </div>
 
-                    {/* Right: Vibrant Generate Button */}
+                    {/* Right: Vibrant Generate Button with Pip */}
                     <button
                       type="button"
                       onClick={handleSend}
@@ -3208,17 +3329,26 @@ export default function ProperMobileResponsiveChat() {
                           : !input.trim())
                       }
                       aria-label="Generate Reel"
-                      className="h-8.5 sm:h-9 px-4 sm:px-5 rounded-full border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] text-white font-bold text-[13px] flex items-center gap-1.5 shadow-[2px_2px_0px_#141414] disabled:opacity-40 disabled:shadow-none hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] transition shrink-0 ml-auto"
+                      className="h-8.5 sm:h-9 px-3 sm:px-4 rounded-full border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] text-white font-bold text-[13px] flex items-center gap-1.5 shadow-[2px_2px_0px_#141414] disabled:opacity-40 disabled:shadow-none hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] transition shrink-0 ml-auto"
                     >
+                      <div className="shrink-0">
+                        <Pip
+                          mood={
+                            isGenerating || isGeneratingCode
+                              ? "writing"
+                              : input.trim().length > 0
+                              ? "listening"
+                              : "idle"
+                          }
+                          size={18}
+                          interactive={false}
+                        />
+                      </div>
                       {isGenerating || isGeneratingCode ? (
-                        <>
-                          <Loader2 size={14} className="animate-spin" />
-                          <span>Generating...</span>
-                        </>
+                        <span>Generating...</span>
                       ) : (
                         <>
-                          <Sparkles size={14} />
-                          <span>Generate</span>
+                          <span>{studioMode === "autoEdit" ? "Auto-Edit Video" : "Generate"}</span>
                           <Send size={12} className="opacity-80 ml-0.5" />
                         </>
                       )}

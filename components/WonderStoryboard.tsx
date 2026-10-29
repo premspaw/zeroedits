@@ -436,9 +436,14 @@ export default function WonderStoryboard({
                       </div>
 
                       {cut.reason && (
-                        <div className="mt-2 text-[11px] leading-relaxed text-[#52504A] bg-[#F7F5EF] p-2 rounded-lg border border-[#EBE7DF]">
-                          <span className="font-semibold text-[#141414]">Wonder AI Rationale: </span>
-                          {cut.reason}
+                        <div className="mt-2 flex items-start gap-2 bg-[#F7F5EF] p-2 rounded-lg border border-[#EBE7DF]">
+                          <div className="shrink-0 mt-0.5">
+                            <Pip mood="idea" size={26} interactive={false} />
+                          </div>
+                          <div className="min-w-0 text-[11px] leading-relaxed text-[#52504A]">
+                            <span className="font-semibold text-[#141414]">Pip's Editorial Rationale: </span>
+                            {cut.reason}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -507,16 +512,21 @@ export default function WonderStoryboard({
                     Shielded from Cut
                   </span>
                 </div>
-                <div className="pt-2 space-y-1">
-                  {range.protectedWords && (
-                    <p className="text-[12px] font-semibold text-[#141414]">
-                      &ldquo;{range.protectedWords}&rdquo;
+                <div className="pt-2 flex items-start gap-2">
+                  <div className="shrink-0 mt-0.5">
+                    <Pip mood="reading" size={26} interactive={false} />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    {range.protectedWords && (
+                      <p className="text-[12px] font-semibold text-[#141414]">
+                        &ldquo;{range.protectedWords}&rdquo;
+                      </p>
+                    )}
+                    <p className="text-[11px] text-[#52504A] leading-relaxed">
+                      <span className="font-semibold text-[#141414]">Pip's Shield Reason: </span>
+                      {range.reason}
                     </p>
-                  )}
-                  <p className="text-[11px] text-[#52504A] leading-relaxed">
-                    <span className="font-semibold text-[#141414]">Protection Basis: </span>
-                    {range.reason}
-                  </p>
+                  </div>
                 </div>
               </div>
             ))}
