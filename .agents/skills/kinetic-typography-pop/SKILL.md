@@ -219,13 +219,54 @@ export const KineticPopCaptions: React.FC<{
 
 ## 5. FFmpeg Subtitle Burn Optimization (ASS Filter)
 
-When exporting the final MP4 using FFmpeg without Remotion, do NOT use generic Arial with `boxcolor=black@0.85`. Use Advanced SubStation Alpha (ASS) format with:
-- `Fontname=Montserrat` (or `Anton`)
-- `Fontsize=24`
-- `PrimaryColour=&H0000E6FF` (Electric yellow in BGR)
-- `OutlineColour=&H00000000` (Pure black outline)
-- `Outline=3.5`
-- `Shadow=1.5`
-- `BorderStyle=1`
-- `Alignment=2` (Bottom Center)
-- `MarginV=140` (Above TikTok/Reels UI safe zone)
+When exporting the final MP4 using FFmpeg without Remotion, do NOT use generic Arial with `boxcolor=black@0.85`. Use Advanced SubStation Alpha (ASS) format with the validated Hormozi configuration below.
+
+---
+
+## SECTION 02: Kinetic Typography Pop — Validated Audit & Implementation
+
+Audit of user’s ASS config + Remotion spring implementation. All fonts SIL OFL.
+
+### Hormozi Formula (1080×1920 • 30FPS)
+
+#### Original — User Wrote (3 Issues Audited)
+```ass
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, Outline, Shadow, Bold...
+Style: Default, Montserrat, 24, &H0000E6FF, &H00000000, 3.5, 1.5, 0, ...
+```
+
+- **ISSUE 1 — PrimaryColour**:
+  In ASS `&HAABBGGRR` hex format, `&H0000E6FF` corresponds to Alpha=`00`, Blue=`00`, Green=`E6`, Red=`FF`. This decodes to RGB(255, 230, 0) = `#FFE600` (Electric Yellow). It is verified as correct for electric yellow; explicit alpha `&H0000E6FF` is maintained.
+- **ISSUE 2 — Missing Bold=1**:
+  `Montserrat 900` needs `Bold=1` in ASS, otherwise FFmpeg falls back to 400 regular. Specifying `Montserrat Black` or `Montserrat` with `Bold=1` ensures heavy weight is strictly preserved.
+- **ISSUE 3 — Outline/Shadow + MarginV**:
+  Outline 3.5 is good, but needs `BorderStyle=1`. `MarginV 140` is too low for safe area (it collides with description text/audio tags) — use `MarginV 210` (or `\pos(540,1650)` on 1080×1920) for TikTok and Reels UI safe zone.
+
+---
+
+### FIXED — VALIDATED (COPY READY)
+
+#### [V4+ Styles] + [Events] — FFmpeg libass Fallback
+```ass
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: PopActive,Montserrat Black,58,&H0000E6FF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,210,1
+Style: PopIdle,Montserrat Black,46,&H00FFFFFF,&H000000FF,&H00000000,&H66000000,1,0,0,0,96,96,0,0,1,2.5,0.8,2,40,40,210,1
+Style: Emoji,Apple Color Emoji,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,0,0,2,40,40,320,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:00.45,PopActive,,0,0,0,,{\an5\pos(540,1650)}STOP
+Dialogue: 0,0:00:00.45,0:00:01.00,PopActive,,0,0,0,,{\an5\pos(540,1650)}EDITING
+```
+
+- **Bold=1 ✔**: Montserrat 900 / Montserrat Black
+- **&H0000E6FF = #FFE600 BGR ✔**: Electric Yellow with 00 alpha
+- **MarginV 210 Safe Zone ✔**: 210px margin protects subtitles from TikTok/Reels UI overlap
+

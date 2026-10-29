@@ -61,9 +61,12 @@ export async function exportFinalVideo(params: {
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    "Style: PopMain,Montserrat,68,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5.5,2.5,2,40,40,240,1",
-    "Style: HookBadge,Montserrat,40,&H0000E6FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,100,1",
-    "Style: SceneBadge,Montserrat,44,&H00FFF000,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,200,1",
+    "Style: PopActive,Montserrat,58,&H0000E6FF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,210,1",
+    "Style: PopIdle,Montserrat,46,&H00FFFFFF,&H000000FF,&H00000000,&H66000000,1,0,0,0,96,96,0,0,1,2.5,0.8,2,40,40,210,1",
+    "Style: Emoji,Apple Color Emoji,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,0,0,2,40,40,320,1",
+    "Style: PopMain,Montserrat,58,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,210,1",
+    "Style: HookBadge,Montserrat,40,&H0000E6FF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,100,1",
+    "Style: SceneBadge,Montserrat,44,&H00FFF000,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,200,1",
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -184,10 +187,10 @@ export async function exportFinalVideo(params: {
             wordColor = "&H004444FF&"; // Signal red
           }
 
-          return `{\\b1\\fscx125\\fscy125\\c${wordColor}\\3c&H00000000&\\bord5.5\\shad2.5}${emojiPrefix}${safeWord}`;
+          return `{\\b1\\fscx125\\fscy125\\c${wordColor}\\3c&H00000000&\\bord3.5\\shad1.5}${emojiPrefix}${safeWord}`;
         } else {
           // INACTIVE CONTEXT WORD: 100% scale, pure white, clean outline
-          return `{\\b1\\fscx100\\fscy100\\c&H00FFFFFF&\\3c&H00000000&\\bord3.5\\shad1.5}${safeWord}`;
+          return `{\\b1\\fscx100\\fscy100\\c&H00FFFFFF&\\3c&H00000000&\\bord2.5\\shad0.8}${safeWord}`;
         }
       });
 
