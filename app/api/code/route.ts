@@ -381,7 +381,37 @@ Success means:
 
 You are not a storyboard writer.
 
-You are the engineer who transforms the storyboard into a faithful, executable motion design composition.`;
+You are the engineer who transforms the storyboard into a faithful, executable motion design composition.
+
+## 16. HIGH-ENERGY SHORT-FORM MOTION GRAPHICS (HORMOZI / MRBEAST REEL SPECIFICATION)
+
+When generating motion graphics for short-form video reels, shorts, or talking-head overlays, adhere strictly to these high-energy production standards:
+
+1. **Word-by-Word Kinetic Highlighting (Hormozi / MrBeast Style)**:
+   - Dynamic spring scale: The currently active spoken word must pop at 1.25x scale using spring physics.
+   - High-contrast bold outline: Apply \`-webkit-text-stroke: 3.5px #000000\` (or \`4px #000000\`) so text cuts sharply across any video background.
+   - Dynamic rotation tilt: Active words must feature a dynamic micro-rotation tilt (e.g., alternating between -3.5° and +3.5° based on word index) to create organic visual snap.
+   - Color pop: Active words pop in vibrant high-saturation yellow/orange (\`#FFE600\` or \`#FF8A00\`), while inactive words remain muted (\`#FFFFFF\` or muted opacity at 0.65–0.75).
+   - Word window: Render 3 to 5 words centered at the bottom of the 9:16 frame with safe margins.
+
+2. **Procedural SVG Visual Elements**:
+   - Replace static box diagrams with rich, animated procedural graphics.
+   - **Dynamic Audio Frequency Spectrums**: Include a responsive 32-to-48 bar audio equalizer visualizer driven mathematically by sine/cosine wave harmonics derived from \`currentTime\`.
+   - **Progress Dials & Glowing Metric Callouts**: Include circular SVG progress rings (\`strokeDashoffset\` based on time) and glowing high-impact metric badges (e.g. \`"-10.9s Dead Air Cut"\`, \`"+42% Retention Score"\`, \`"100% Verified"\`).
+   - **Floating Particle Bursts & Kinetic Emphasis Icons**: Procedural SVG particle starbursts and floating sparks that radiate outward dynamically during emphasized words or key takeaways.
+
+3. **Active Camera Dynamics**:
+   - Implement continuous zoom interpolation on the video layer:
+     * Hook push-in: Slow continuous drift from 1.0x to 1.08x during the first 3.5 seconds to hook viewer attention.
+     * Punchline cut-ins: Snappy 1.15x cut-in during key insights or punchlines.
+     * Organic breathing: Subtle organic camera breathing (1.02x ± 0.015x) during steady narration.
+
+4. **Topic-Aware Live Custom Graphics**:
+   - Author custom SVG components specific to the speaker's topic:
+     * Coding/Tech: Animated code editor / terminal with glowing syntax highlighting and blinking cursor.
+     * Business/Growth: Rising 3D-styled bar chart or candlestick surge with glowing green gradient and percentage badge.
+     * AI/Systems: Pulsating neural network nodes with live data packet animations.
+     * General/Media: Glowing circular HUD meters and wave visualizers.`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -401,6 +431,60 @@ export async function POST(req: NextRequest) {
       process.env.MUSE_API_KEY ||
       process.env.META_API_KEY ||
       "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+
+    // Support dedicated topic-aware custom procedural SVG synthesis via Spark 1.3
+    if (body.mode === "custom_svg" || body.type === "custom_svg") {
+      const svgPrompt = `Create a high-energy animated procedural React SVG component for a 9:16 talking-head reel.
+Topic: "${topic || body.concept || "Interactive Visual Flow"}"
+Visual Focus: "${body.headline || body.spokenReference || "Topic Visualization"}"
+Style: Hormozi / MrBeast high-energy kinetic style with glowing neon accents, high contrast, and animated SVG paths.
+The component MUST accept { currentTime: number, scale?: number } and derive all animation values deterministically from currentTime.
+Return ONLY raw executable TSX component code exporting CustomTopicGraphic as default. No markdown fences.`;
+
+      const payload = {
+        model: "muse-spark-1.3",
+        input: [{ role: "user", content: svgPrompt }],
+        stream: true,
+        temperature: 0.8,
+        max_output_tokens: 8192,
+        reasoning: { effort: "high" },
+        instructions: SPARK_1_3_MASTER_SYSTEM_PROMPT,
+      };
+
+      try {
+        const response = await fetch("https://api.meta.ai/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        let generatedSvg = await readModelResponse(response);
+        generatedSvg = generatedSvg
+          .replace(/^```[a-zA-Z]*\n?/, "")
+          .replace(/```$/, "")
+          .trim();
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            code: generatedSvg,
+            modelUsed: "muse-spark-1.3",
+            type: "custom_svg",
+            topic: topic || body.concept,
+          },
+        });
+      } catch (svgErr: any) {
+        console.error("Custom SVG generation error:", svgErr);
+        return NextResponse.json(
+          { success: false, error: svgErr.message || "Failed to generate custom SVG" },
+          { status: 502 }
+        );
+      }
+    }
 
     // Format fallback themes if theme not passed from Wonder
     const fallbackThemes: Record<string, any> = {

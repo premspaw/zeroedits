@@ -30,6 +30,7 @@ import {
 import { validateCuts } from "./tools/cuts-validator.ts";
 import { buildCleanVideo } from "./tools/clean-video-builder.ts";
 import { generateTalkingHeadMotionCode } from "./tools/motion-generator.ts";
+import { generateMuseImage } from "./tools/image-generator.ts";
 import { exportFinalVideo } from "./tools/export-service.ts";
 
 export interface OrchestratorRunOptions {
@@ -296,7 +297,35 @@ export async function executePipelineB(
     // 8. ASSETS_RESOLVED
     if (shouldRunStage(state, "ASSETS_RESOLVED")) {
       recordStageStart(state, "ASSETS_RESOLVED");
-      recordStageSuccess(state, "ASSETS_RESOLVED", { resolved: true });
+      const resolvedAssets: Record<string, string> = {};
+
+      const imageSegments = (state.editPlan?.visualSegments || []).filter(
+        (seg) => seg.technique === "generated_image" || seg.layoutType === "broll_takeover"
+      );
+
+      for (const seg of imageSegments) {
+        try {
+          const prompt =
+            seg.headlineText ||
+            seg.spokenReference ||
+            seg.motionIntent ||
+            "Cinematic social video b-roll";
+          const genResult = await generateMuseImage({
+            prompt,
+            runId,
+            assetId: seg.id,
+          });
+          resolvedAssets[seg.id] = genResult.publicUrl;
+        } catch (assetErr) {
+          console.warn(`[ASSETS_RESOLVED] Non-fatal asset generation warning for segment ${seg.id}:`, assetErr);
+        }
+      }
+
+      state.resolvedAssets = resolvedAssets;
+      recordStageSuccess(state, "ASSETS_RESOLVED", {
+        resolved: true,
+        resolvedCount: Object.keys(resolvedAssets).length,
+      });
     }
     if (options?.stopAtStage === "ASSETS_RESOLVED") return state;
 
@@ -318,6 +347,7 @@ export async function executePipelineB(
         transcript: state.transcript || [],
         cleanVideoUrl,
         templateId: state.templateId,
+        resolvedAssets: state.resolvedAssets,
       });
 
       const motionCodePath = path.join(runDir, "TalkingHeadReel.tsx");

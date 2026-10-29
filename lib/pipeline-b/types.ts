@@ -260,6 +260,7 @@ export interface PipelineBRunState {
   motionCodePath?: string;
   previewUrl?: string;
   finalVideoPath?: string;
+  resolvedAssets?: Record<string, string>;
   stages: Record<PipelineBStage, StageRecord>;
   logs: { timestamp: string; level: "info" | "warn" | "error"; message: string }[];
 }

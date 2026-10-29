@@ -23,6 +23,9 @@ public/voiceover/
 public/renders/
 public/temp-render/
 public/*.mp4
+public/*.png
+public/*.jpg
+public/assets/
 data/storybank/audio/
 
 # typescript
