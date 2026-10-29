@@ -2477,7 +2477,10 @@ export default function ProperMobileResponsiveChat() {
                                     ? "happy"
                                     : message.generationStatus === "error"
                                     ? "thinking"
-                                    : message.isGenerating
+                                    : message.generationStatus === "storyboarding" ||
+                                      message.generationStatus === "rendering" ||
+                                      message.typing ||
+                                      (isGenerating && messageIndex === messages.length - 1)
                                     ? "writing"
                                     : "idle"
                                 }
