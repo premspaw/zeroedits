@@ -70,7 +70,7 @@ export async function executePipelineB(
       const tStart = Date.now();
       logEvent("TRANSCRIPTION_STARTED", { runId, wavPath });
 
-      const { segments, silences } = await transcribeAudio({
+      const { segments, silences, coverage } = await transcribeAudio({
         videoPath: state.rawVideoPath,
         wavPath,
         totalDuration: state.metadata?.duration || 15,
@@ -81,6 +81,7 @@ export async function executePipelineB(
       const allWords = segments.flatMap((s) => s.words);
       state.transcript = segments;
       state.silences = silences;
+      if (coverage) state.transcriptionCoverage = coverage;
 
       logEvent("TRANSCRIPTION_COMPLETED", {
         runId,
@@ -88,6 +89,7 @@ export async function executePipelineB(
         wordsCount: allWords.length,
         segmentsCount: segments.length,
         silencesCount: silences.length,
+        coverage,
       });
 
       recordStageSuccess(state, "TRANSCRIBED", {
@@ -116,7 +118,8 @@ export async function executePipelineB(
     if (shouldRunStage(state, "EDIT_PLANNED")) {
       recordStageStart(state, "EDIT_PLANNED");
       const allWords = (state.transcript || []).flatMap((s) => s.words);
-      const pacing = PACING_CONFIGS.natural;
+      const pacingProfile = state.pacingProfile || "natural";
+      const pacing = PACING_CONFIGS[pacingProfile] || PACING_CONFIGS.natural;
 
       // Step 4a: Candidate Cut Detection (Silences, Fillers, Repetitions, False Starts)
       const candidateCuts = generateCandidateCuts({
@@ -136,7 +139,7 @@ export async function executePipelineB(
         totalDuration: state.metadata?.duration || 15,
         templateId: state.templateId,
         userScript: state.userScript,
-        pacingProfile: "natural",
+        pacingProfile,
         runId,
         mode: state.mode || "wonder-ai",
         onLogEvent: logEvent,
@@ -156,7 +159,7 @@ export async function executePipelineB(
         },
         totalDuration: state.metadata?.duration || 15,
         templateId: state.templateId,
-        pacingProfile: "natural",
+        pacingProfile,
         transcript: state.transcript || [],
       });
 

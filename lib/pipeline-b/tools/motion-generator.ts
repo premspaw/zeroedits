@@ -316,6 +316,104 @@ export const TalkingHeadReel: React.FC = () => {
           );
         }
 
+        // Technique E: SAM Cutout / Foreground Pop
+        if (seg.technique === "sam_cutout_pop" || seg.layoutType === "sam_cutout") {
+          return (
+            <div
+              key={seg.id}
+              style={{
+                position: "absolute",
+                top: 140,
+                left: "50%",
+                transform: \`translateX(-50%) scale(\${scale})\`,
+                backgroundColor: "${template.cardBg}",
+                border: "4px solid ${template.highlightColor}",
+                borderRadius: 28,
+                padding: "16px 28px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                boxShadow: "0 20px 60px rgba(228, 73, 27, 0.4)",
+                zIndex: zIdx,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 22 }}>✨</span>
+                <span style={{ fontSize: 24, fontWeight: 900, color: "${template.highlightColor}", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {seg.headlineText || "FOCUS CUTOUT"}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: "${template.textColor}", opacity: 0.9, textAlign: "center" }}>
+                {seg.motionIntent}
+              </div>
+            </div>
+          );
+        }
+
+        // Technique F: Generative Visual / Conceptual Illustration
+        if (seg.technique === "generated_image" || seg.technique === "ai_video") {
+          return (
+            <div
+              key={seg.id}
+              style={{
+                position: "absolute",
+                top: 150,
+                left: "50%",
+                transform: \`translateX(-50%) scale(\${scale})\`,
+                width: 420,
+                backgroundColor: "${template.cardBg}",
+                border: "3px solid ${template.primaryColor}",
+                borderRadius: 24,
+                padding: "20px 24px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
+                zIndex: zIdx,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "${template.highlightColor}" }}>
+                  {seg.technique === "ai_video" ? "Generative Scene" : "Visual Illustration"}
+                </span>
+                <span style={{ fontSize: 18 }}>🎨</span>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "${template.textColor}" }}>
+                {seg.headlineText || seg.spokenReference}
+              </div>
+              <div style={{ fontSize: 13, color: "${template.textColor}", opacity: 0.85, lineHeight: 1.4 }}>
+                {seg.motionIntent}
+              </div>
+            </div>
+          );
+        }
+
+        // Default Fallback: Floating Highlight Badge
+        if (seg.headlineText) {
+          return (
+            <div
+              key={seg.id}
+              style={{
+                position: "absolute",
+                top: 140,
+                left: "50%",
+                transform: \`translateX(-50%) scale(\${scale})\`,
+                backgroundColor: "${template.cardBg}",
+                border: "2px solid ${template.primaryColor}",
+                borderRadius: 18,
+                padding: "10px 24px",
+                boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+                zIndex: zIdx,
+              }}
+            >
+              <span style={{ fontSize: 20, fontWeight: 900, color: "${template.highlightColor}" }}>
+                {seg.headlineText}
+              </span>
+            </div>
+          );
+        }
+
         return null;
       })}
 

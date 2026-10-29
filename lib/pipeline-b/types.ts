@@ -235,6 +235,15 @@ export interface PipelineBRunState {
   userScript?: string;
   templateId: string;
   mode?: "wonder-ai" | "rules-only";
+  pacingProfile?: PacingProfile;
+  transcriptionCoverage?: {
+    model: string;
+    source: "whisper" | "script_fallback";
+    lastWordEnd: number;
+    totalDuration: number;
+    untranscribedTailSec: number;
+    complete: boolean;
+  };
   metadata?: MediaMetadata;
   transcript?: TranscriptSegment[];
   editedTranscript?: EditedTranscriptSegment[];

@@ -11,7 +11,16 @@ import type { TranscriptSegment, TranscriptWord } from "../types.ts";
 
 const execFileAsync = util.promisify(execFile);
 
-let cachedWhisperPipeline: any = null;
+// Whisper model is configurable. base.en is noticeably more accurate than tiny.en on
+// real talking-head audio (tiny.en hallucinates repetition loops on fast speech).
+export const WHISPER_MODEL_ID = process.env.PIPELINE_B_WHISPER_MODEL || "Xenova/whisper-base.en";
+
+// Whisper's encoder sees a fixed 30s window. Without chunking, transformers.js decodes
+// ONLY the first window and silently drops the rest of the audio.
+const WHISPER_CHUNK_LENGTH_S = 30;
+const WHISPER_STRIDE_LENGTH_S = 5;
+
+const cachedWhisperPipelines: Record<string, any> = {};
 
 async function getAudioFloat32(wavPath: string): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
@@ -40,11 +49,15 @@ async function runWhisperTranscription(wavPath: string): Promise<TranscriptWord[
   try {
     const dynamicImport = new Function("specifier", "return import(specifier)");
     const { pipeline } = await dynamicImport("@xenova/transformers");
-    if (!cachedWhisperPipeline) {
-      cachedWhisperPipeline = await pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en");
+    if (!cachedWhisperPipelines[WHISPER_MODEL_ID]) {
+      cachedWhisperPipelines[WHISPER_MODEL_ID] = await pipeline("automatic-speech-recognition", WHISPER_MODEL_ID);
     }
     const audioData = await getAudioFloat32(wavPath);
-    const result: any = await cachedWhisperPipeline(audioData, { return_timestamps: "word" });
+    const result: any = await cachedWhisperPipelines[WHISPER_MODEL_ID](audioData, {
+      return_timestamps: "word",
+      chunk_length_s: WHISPER_CHUNK_LENGTH_S,
+      stride_length_s: WHISPER_STRIDE_LENGTH_S,
+    });
 
     if (result && Array.isArray(result.chunks) && result.chunks.length > 0) {
       return result.chunks.map((c: any) => ({
@@ -133,9 +146,49 @@ export async function detectSilences(
   }
 }
 
+export interface TranscriptionCoverage {
+  model: string;
+  source: "whisper" | "script_fallback";
+  lastWordEnd: number;
+  totalDuration: number;
+  /** Seconds of audio after the last transcribed word that are NOT detected silence. */
+  untranscribedTailSec: number;
+  complete: boolean;
+}
+
 export interface TranscriptionOutput {
   segments: TranscriptSegment[];
   silences: { start: number; end: number; duration: number }[];
+  coverage: TranscriptionCoverage;
+}
+
+/**
+ * Measures whether the transcript actually covers the spoken audio.
+ * A tail longer than 2s that is not silence means speech was dropped.
+ */
+export function computeTranscriptionCoverage(params: {
+  words: TranscriptWord[];
+  silences: { start: number; end: number; duration: number }[];
+  totalDuration: number;
+  model: string;
+  source: "whisper" | "script_fallback";
+}): TranscriptionCoverage {
+  const { words, silences, totalDuration, model, source } = params;
+  const lastWordEnd = words.length > 0 ? Math.max(...words.map((w) => w.end)) : 0;
+  let tail = Math.max(0, totalDuration - lastWordEnd);
+  for (const s of silences) {
+    const overlap = Math.min(s.end, totalDuration) - Math.max(s.start, lastWordEnd);
+    if (overlap > 0) tail -= overlap;
+  }
+  const untranscribedTailSec = +Math.max(0, tail).toFixed(2);
+  return {
+    model,
+    source,
+    lastWordEnd: +lastWordEnd.toFixed(2),
+    totalDuration: +totalDuration.toFixed(2),
+    untranscribedTailSec,
+    complete: untranscribedTailSec <= 2.0,
+  };
 }
 
 export async function transcribeAudio(params: {
@@ -153,12 +206,14 @@ export async function transcribeAudio(params: {
   const silences = await detectSilences(wavPath, -30, 0.35);
 
   let words: TranscriptWord[] = [];
+  let source: "whisper" | "script_fallback" = "whisper";
 
-  // 1. Try real speech transcription using local Whisper model
+  // 1. Try real speech transcription using local Whisper model (chunked long-form)
   const whisperWords = await runWhisperTranscription(wavPath);
   if (whisperWords && whisperWords.length > 0) {
     words = whisperWords;
   } else {
+    source = "script_fallback";
     // 2. Fallback to user script or synthetic alignment
     const baseText = userScript && userScript.trim().length > 0
       ? userScript.trim()
@@ -213,5 +268,13 @@ export async function transcribeAudio(params: {
     });
   }
 
-  return { segments, silences };
+  const coverage = computeTranscriptionCoverage({
+    words,
+    silences,
+    totalDuration,
+    model: WHISPER_MODEL_ID,
+    source,
+  });
+
+  return { segments, silences, coverage };
 }

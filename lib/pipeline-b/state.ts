@@ -40,6 +40,7 @@ export function createRun(params: {
   userScript?: string;
   templateId?: string;
   mode?: "wonder-ai" | "rules-only";
+  pacingProfile?: "natural" | "snappy" | "relaxed";
 }): PipelineBRunState {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const runId = params.runId || `run-b-${timestamp}-${Math.random().toString(36).substring(2, 7)}`;
@@ -79,6 +80,7 @@ export function createRun(params: {
     userScript: params.userScript || "",
     templateId: params.templateId || "hormoziPunch",
     mode: params.mode || "wonder-ai",
+    pacingProfile: params.pacingProfile || "snappy",
     stages: stagesMap as Record<PipelineBStage, StageRecord>,
     logs: [
       {

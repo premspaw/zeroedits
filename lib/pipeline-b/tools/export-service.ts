@@ -27,12 +27,17 @@ export async function exportFinalVideo(params: {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
+  const transcriptToUse =
+    editPlan.editedTranscript && editPlan.editedTranscript.length > 0
+      ? editPlan.editedTranscript
+      : transcript;
+
   // Create standard SRT subtitle file
   const srtPath = path.join(outputDir, "subtitles.srt");
   const srtLines: string[] = [];
 
   let entryIndex = 1;
-  for (const segment of transcript) {
+  for (const segment of transcriptToUse) {
     const sTime = formatSrtTimestamp(segment.start);
     const eTime = formatSrtTimestamp(segment.end);
     srtLines.push(`${entryIndex}`);
@@ -54,7 +59,7 @@ export async function exportFinalVideo(params: {
       `drawtext=text='[ ${badgeText} ]':fontsize=32:fontcolor=yellow:box=1:boxcolor=black@0.85:boxborderw=10:x=(w-text_w)/2:y=120:enable='between(t,0,3.5)'`
     );
 
-    // 2. Visual Badges & Image Overlay Callouts from visualPlan
+    // 2a. Visual Badges & Image Overlay Callouts from visualPlan
     for (const item of editPlan.visualPlan || []) {
       if (item.type === "icon_badge" || item.type === "image_overlay") {
         const itemText = item.content.replace(/%/g, "").replace(/['"\\:]/g, "").toUpperCase();
@@ -68,15 +73,42 @@ export async function exportFinalVideo(params: {
       }
     }
 
+    // 2b. Authoritative Visual Scenes & Animation Callouts from visualSegments
+    for (const seg of editPlan.visualSegments || []) {
+      if (seg.headlineText) {
+        const segText = seg.headlineText.replace(/%/g, "").replace(/['"\\:]/g, "").toUpperCase();
+        const start = Math.max(0, seg.start);
+        const end = Math.min(editPlan.cleanDuration, seg.end);
+        if (end > start) {
+          const isHighlight =
+            seg.technique === "kinetic_typography" ||
+            seg.technique === "sam_cutout_pop" ||
+            seg.layoutType === "sam_cutout";
+          const boxColor = isHighlight ? "red@0.85" : "black@0.85";
+          const fontColor = isHighlight ? "yellow" : "white";
+          filters.push(
+            `drawtext=text='★ ${segText} ★':fontsize=36:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=12:x=(w-text_w)/2:y=210:enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'`
+          );
+        }
+      }
+    }
+
     // 3. Dynamic Subtitles mapped to the clean cut timeline
-    for (const segment of transcript) {
+    for (const segment of transcriptToUse) {
       const cleanText = segment.text.replace(/%/g, "").replace(/['"\\:]/g, "").toUpperCase();
       if (!cleanText.trim()) continue;
 
-      let sStart = mapRawTimeToCleanTime(segment.start, keepSegments);
-      let sEnd = mapRawTimeToCleanTime(segment.end, keepSegments);
+      let sStart = segment.start;
+      let sEnd = segment.end;
 
-      if (sStart === null || sEnd === null) continue;
+      if (!editPlan.editedTranscript || editPlan.editedTranscript.length === 0) {
+        const mappedS = mapRawTimeToCleanTime(segment.start, keepSegments);
+        const mappedE = mapRawTimeToCleanTime(segment.end, keepSegments);
+        if (mappedS === null || mappedE === null) continue;
+        sStart = mappedS;
+        sEnd = mappedE;
+      }
+
       if (sEnd <= sStart) {
         sEnd = sStart + 0.8;
       }

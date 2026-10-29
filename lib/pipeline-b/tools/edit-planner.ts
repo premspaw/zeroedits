@@ -58,8 +58,31 @@ const INTENTIONAL_EMPHASIS_WORDS = new Set([
   "true",
 ]);
 
-const FILLER_SOUND_REGEX = /^(ah+|um+|uh+|er+|hmm+|erm+|umm+|ahh+|ooh+|aah+)$/i;
-const ISOLATED_FILLERS = new Set(["um", "uh", "er", "hmm", "erm", "ahh", "umm", "ooh"]);
+const FILLER_SOUND_REGEX = /^(ah+|um+|uh+|er+|hmm+|erm+|umm+|ahh+|ooh+|aah+|okay+|ok+)$/i;
+const ISOLATED_FILLERS = new Set([
+  "um",
+  "uh",
+  "er",
+  "hmm",
+  "erm",
+  "ahh",
+  "umm",
+  "ooh",
+  "okay",
+  "ok",
+]);
+const CONVERSATIONAL_FILLERS = new Set(["like", "so", "yeah", "actually", "basically"]);
+
+function isPhraseSimilar(words1: string[], words2: string[]): boolean {
+  if (words1.length !== words2.length) return false;
+  if (words1.join(" ") === words2.join(" ")) return true;
+  if (words1.length < 3) return false;
+  let matches = 0;
+  for (let k = 0; k < words1.length; k++) {
+    if (words1[k] === words2[k]) matches++;
+  }
+  return matches / words1.length >= 0.65;
+}
 
 export interface PlanTalkingHeadEditParams {
   transcript: TranscriptSegment[];
@@ -256,37 +279,59 @@ export function generateCandidateCuts(params: {
     }
   }
 
-  // 3b. Multi-word phrase retakes (length 2 to 5 words)
-  for (let L = 5; L >= 2; L--) {
+  // 3b. Multi-word phrase retakes (length 2 to 6 words, with optional small gap/filler)
+  for (let L = 6; L >= 2; L--) {
     for (let i = 0; i <= normalizedWords.length - 2 * L; i++) {
-      const p1 = normalizedWords.slice(i, i + L).join(" ");
-      const p2 = normalizedWords.slice(i + L, i + 2 * L).join(" ");
+      for (let gap = 0; gap <= 2; gap++) {
+        const j = i + L + gap;
+        if (j + L > normalizedWords.length) continue;
 
-      if (p1.length > 3 && p1 === p2) {
-        const cStart = Math.max(0, +allWords[i].start.toFixed(2));
-        const cEnd = Math.min(totalDuration, +(allWords[i + L].start - 0.02).toFixed(2));
-        if (cEnd > cStart && (cEnd - cStart) >= 0.20) {
-          candidates.push({
-            id: `cand-phrase-retake-${i + 1}`,
-            start: cStart,
-            end: cEnd,
-            type: "phrase_retake",
-            classification: "accidental_stutter",
-            confidence: 0.94,
-            affectedText: allWords.slice(i, i + L).map((w) => w.word).join(" "),
-            reason: `Trim first take of repeated phrase: '${allWords.slice(i, i + L).map((w) => w.word).join(" ")}'`,
-          });
-          i += 2 * L - 1;
+        const words1 = normalizedWords.slice(i, i + L);
+        const words2 = normalizedWords.slice(j, j + L);
+
+        if (isPhraseSimilar(words1, words2)) {
+          const cStart = Math.max(0, +allWords[i].start.toFixed(2));
+          const cEnd = Math.min(totalDuration, +(allWords[j].start - 0.02).toFixed(2));
+          if (cEnd > cStart && (cEnd - cStart) >= 0.18) {
+            candidates.push({
+              id: `cand-phrase-retake-${i + 1}`,
+              start: cStart,
+              end: cEnd,
+              type: "phrase_retake",
+              classification: "accidental_stutter",
+              confidence: 0.94,
+              affectedText: allWords.slice(i, j).map((w) => w.word).join(" "),
+              reason: `Trim false start of repeated phrase: '${allWords.slice(i, j).map((w) => w.word).join(" ")}'`,
+            });
+            i = j + L - 1;
+            break;
+          }
         }
       }
     }
   }
 
-  // 4. Vocal Fillers
+  // 4. Vocal Fillers & Hesitation Markers
   for (let i = 0; i < allWords.length; i++) {
     const w = allWords[i];
     const clean = normalizedWords[i];
-    if (ISOLATED_FILLERS.has(clean) || FILLER_SOUND_REGEX.test(clean)) {
+
+    const isExplicitFiller = ISOLATED_FILLERS.has(clean) || FILLER_SOUND_REGEX.test(clean);
+    const isConversational = CONVERSATIONAL_FILLERS.has(clean);
+
+    let isFiller = isExplicitFiller;
+    if (isConversational) {
+      // Conversational fillers ("like", "so", "yeah") count as fillers if preceded or followed by pause >= 0.2s or at start
+      const prevWord = i > 0 ? allWords[i - 1] : null;
+      const nextWord = i < allWords.length - 1 ? allWords[i + 1] : null;
+      const prevGap = prevWord ? w.start - prevWord.end : 1.0;
+      const nextGap = nextWord ? nextWord.start - w.end : 1.0;
+      if (prevGap >= 0.20 || nextGap >= 0.20 || i === 0) {
+        isFiller = true;
+      }
+    }
+
+    if (isFiller) {
       const cStart = Math.max(0, +w.start.toFixed(2));
       const cEnd = Math.min(totalDuration, +w.end.toFixed(2));
       if (cEnd > cStart) {
