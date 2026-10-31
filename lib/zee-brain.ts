@@ -186,7 +186,7 @@ export interface ZeeBrainState {
   lastUpdated: string;
 }
 
-const STORAGE_KEY = "muse_zee_overall_brain_prem_v4";
+const STORAGE_KEY = "muse_zee_overall_brain_live_clean_v6";
 const BRAIN_EVENT = "zee-overall-brain-sync";
 
 export const CATEGORY_META: Record<
@@ -294,242 +294,7 @@ export const INITIAL_ZEE_BRAIN: ZeeBrainState = {
       "That single moment rewired how I build...",
     ],
   },
-  memories: [
-    {
-      id: "mem-insight-1",
-      category: "insight",
-      title: "Originality has a pulse — autopilot never does",
-      story:
-        "Today I realized that audiences don't fall in love with polished perfection; they feel the pulse of someone speaking from lived truth. Even when a thought starts rough, the honesty inside it is what people remember.",
-      zeeAnalysis:
-        "I wove this into your Digital Brain's core instinct: every digital asset now distills Prem's raw, unscripted conviction.",
-      date: "2026-10-31",
-      emotionTone: "Electric & Grounded",
-      tags: ["Originality", "Digital Brain", "Prem's Lens"],
-      variableKey: "user.todayInsight",
-      reelHookIdea:
-        "People can spot autopilot from a mile away — here is how to build with a real pulse.",
-      source: "voice_mic",
-      metaPowered: true,
-      durationLabel: "2:00",
-      waveform: [32, 68, 84, 42, 91, 56, 73, 38, 89, 64, 47, 94, 61, 35, 82, 77, 49, 88, 53, 71, 39, 85, 62, 44, 79, 58, 90, 46, 67, 52],
-      quoteAsset: {
-        quote: "Perfection is easy to manufacture. What the world is starving for is the pulse of someone who actually lived the sentence they are speaking.",
-        subtext: "Distilled from Prem's spoken reflection on originality vs. autopilot",
-        styleTag: "Philosophy & Craft",
-      },
-      bookAsset: {
-        title: "The Pulse Beneath the Polish",
-        subtitle: "Notes on Building & Speaking Without Autopilot",
-        wordCount: 165,
-        chapters: [
-          "There is a quiet moment right before you speak or build where you have to choose between sounding safe and sounding alive. Most of the modern world chooses the template because templates never risk being misunderstood. Yet the very friction we try to sand away is the only proof that a human being was in the room.",
-          "When I stopped trying to polish every rough edge out of my ideas, something unexpected shifted. Conversations got deeper. The work started carrying a distinct signature—like ink pressed into warm cotton paper rather than pixels flickering on a cold feed.",
-          "Originality is not about inventing something nobody has ever seen; it is about refusing to mute the lived truth of how you saw it. Keep the pulse in the work, and the right people will feel it before you even finish the first sentence.",
-        ],
-      },
-      businessAsset: {
-        headline: "Voice-to-Asset Personal Studio for Founders & Thinkers",
-        marketAngle: "Turn 2 minutes of casual friend-talk into signature essays, quotes, and product blueprints.",
-        ideas: [
-          {
-            name: "Unscripted Founder Monograph",
-            pitch: "A weekly tactile digital/print dispatch built entirely from 2-minute voice walks—zero ghostwriter slop.",
-            firstStep: "Publish 5 daily voice-distilled Quote Cards from your stream to test audience saves.",
-          },
-          {
-            name: "Personal Taste API & Chief-of-Staff",
-            pitch: "An assistant that learns a creator's reading notes, quotes, and visual taste to co-architect products and books.",
-            firstStep: "Feed 10 favorite quotes and 3 studio references into your Personal Taste drawer.",
-          },
-          {
-            name: "Tactile Paper Edition Deck",
-            pitch: "Collect your top 30 spoken quotes of the quarter into a physical #FAF8F3 desk deck for builders.",
-            firstStep: "Tag your highest-signal spoken insights under 'Spark' and 'Workplace'.",
-          },
-        ],
-      },
-      assistantAsset: {
-        friendReply: "Prem, talking to you on this one felt electric. You didn't just share a random thought—you named your entire creative moat. I turned your raw words into a signature Quote Card, a 3-chapter essay, and 3 venture angles.",
-        nextMoves: [
-          "Pin the Quote Card 'Perfection is easy to manufacture...' as your week's anchor.",
-          "Expand Chapter 2 of 'The Pulse Beneath the Polish' with one example from today's studio build.",
-          "When you're ready to shoot a reel from this, hop over to the Scripting tab where I've queued the hook.",
-        ],
-        tasteConnection: "Matches your warm editorial paper taste (#FAF8F3) and high-signal philosophical cadence (148 WPM).",
-      },
-    },
-    {
-      id: "mem-work-1",
-      category: "work",
-      title: "Midnight Studio Blueprint & Workplace Flow",
-      story:
-        "In the workplace today, we stripped away clunky menus and turned the entire creative workflow into a single living brain that remembers everything you care about.",
-      zeeAnalysis:
-        "Your Digital Brain indexed your workplace builder ethos — pairing high-focus studio architecture with zero-friction tools.",
-      date: "2026-10-30",
-      emotionTone: "Laser-Focused Craft",
-      tags: ["Workplace", "Studio Craft", "Builder Flow"],
-      variableKey: "user.workplaceStory",
-      reelHookIdea:
-        "What 4 hours of deep workplace flow taught me about designing things that feel alive.",
-      source: "voice_mic",
-      metaPowered: true,
-      durationLabel: "1:52",
-      waveform: [45, 78, 62, 88, 51, 93, 40, 74, 66, 85, 49, 71, 58, 90, 43, 76, 61, 84, 37, 69, 79, 54, 87, 48, 65, 92, 41, 73, 59, 68],
-      quoteAsset: {
-        quote: "Simplicity is not the absence of depth—it is what happens when a tool finally remembers who you are.",
-        subtext: "Distilled from Prem's studio workplace session",
-        styleTag: "Builder Ethos",
-      },
-      bookAsset: {
-        title: "Architecture of the Quiet Studio",
-        subtitle: "Why Great Tools Feel Like a Trusted Friend",
-        wordCount: 154,
-        chapters: [
-          "Walk into any great craftsperson's studio at midnight and you will notice how little stands between their hand and the material. In software, we spent a decade building dashboards instead of companions—forcing creators to manage menus when they just wanted to think out loud.",
-          "Today in the workplace, we tore down the walls between memory, taste, and creation. Instead of starting from a blank cursor every morning, the studio remembers your rhythm, your favorite sentences, and the exact projects you are shaping.",
-          "When your tools think alongside you like a close friend, work stops feeling like administration and returns to what it was always meant to be: pure creative alchemy.",
-        ],
-      },
-      businessAsset: {
-        headline: "Context-First Creative OS & Workplace Companion",
-        marketAngle: "Replace fragmented note apps and prompt boxes with a persistent personal assistant that compounds taste over time.",
-        ideas: [
-          {
-            name: "Living Studio Blueprint Kit",
-            pitch: "A modular personal brain template for solo founders and design engineers to turn daily voice logs into specs.",
-            firstStep: "Document the 3 core variables that connect your voice stream to daily execution.",
-          },
-          {
-            name: "Zero-Menu Voice Workspace",
-            pitch: "A voice-first product workflow where speaking for 90 seconds updates your product roadmap, docs, and investor memo.",
-            firstStep: "Use Zee's voice dial after every sprint review to auto-capture architecture insights.",
-          },
-        ],
-      },
-      assistantAsset: {
-        friendReply: "Prem, I love how your workplace instinct always comes back to removing friction. I distilled that midnight session into a clean Builder Quote and a 3-part chapter on studio architecture.",
-        nextMoves: [
-          "Save the 'Simplicity is not the absence of depth' quote for your product launch deck.",
-          "Pair this workplace insight with your Studio Desk photo from the Creative Gallery Wallet.",
-        ],
-        tasteConnection: "Aligned with your Builder Logs reading pattern and tactile studio aesthetic.",
-      },
-    },
-    {
-      id: "mem-travel-1",
-      category: "travel",
-      title: "6 AM Mountain Mist & Coastal Horizons in Gokarna & Kyoto",
-      story:
-        "Walking quiet lanes and coastal cliffs at dawn with a camera and espresso — stepping into new horizons always unlocks the sharpest ideas I couldn't see from my desk.",
-      zeeAnalysis:
-        "Stored in your Horizons vault. Connects travel clarity to your personal philosophy and book chapters.",
-      date: "2026-10-24",
-      emotionTone: "Cinematic Wonder",
-      tags: ["Horizons", "Gokarna & Kyoto", "Visual Reset"],
-      variableKey: "user.travelMemory",
-      reelHookIdea:
-        "I left my workspace for 72 hours — and found the exact clarity I was chasing for months.",
-      source: "gallery_vision",
-      metaPowered: true,
-      durationLabel: "1:45",
-      waveform: [28, 54, 72, 61, 83, 47, 69, 39, 77, 88, 52, 64, 41, 79, 58, 86, 45, 71, 63, 36, 74, 82, 49, 67, 53, 81, 44, 62, 57, 48],
-      quoteAsset: {
-        quote: "You rarely solve a stalled problem by staring harder at the same desk. Change the horizon, and the answer walks up to you at dawn.",
-        subtext: "Distilled from Prem's dawn travel notes",
-        styleTag: "Horizons & Perspective",
-      },
-      bookAsset: {
-        title: "6 AM on an Unfamiliar Road",
-        subtitle: "On Distance, Espresso, and Creative Clarity",
-        wordCount: 148,
-        chapters: [
-          "At 6 AM in an unfamiliar town, before the shutters lift and the streets fill with noise, your mind operates on a completely different frequency. With a warm espresso in one hand and a camera in the other, the problems that felt heavy back home suddenly shrink to their true proportions.",
-          "Whether standing on the golden cliffs of Gokarna or walking quiet lantern alleys in Kyoto, movement across physical space creates room inside mental space. We are not built to think inside four static walls forever.",
-          "Every trip is really an edit on your own life—showing you what is essential, what was just noise, and which idea deserves your full fire when you return.",
-        ],
-      },
-      businessAsset: {
-        headline: "Horizon Retreats & Field-Note Essay Series",
-        marketAngle: "Blend travel photography, location metadata, and founder philosophy into high-value creative assets.",
-        ideas: [
-          {
-            name: "Field Notes from the Coast (Photo-Essay Book)",
-            pitch: "Pair your GPS-tagged Gokarna & Kyoto frames from the Gallery Wallet with 2-minute spoken dawn essays.",
-            firstStep: "Link your Travel • Gokarna folder directly to Chapter 2 of this mini-book.",
-          },
-          {
-            name: "72-Hour Builder Reset Sprint",
-            pitch: "A curated off-grid micro-retreat format for creative engineers to ship one breakthrough idea by the sea.",
-            firstStep: "Outline the 3 morning prompts you ask yourself when traveling.",
-          },
-        ],
-      },
-      assistantAsset: {
-        friendReply: "Whenever you talk about travel, Prem, your metaphors get super visual. I linked this directly with your Gokarna & Kyoto folders in the Gallery Wallet and turned your dawn walk into a quote + travel chapter.",
-        nextMoves: [
-          "Export the '6 AM on an Unfamiliar Road' chapter to your personal book manuscript.",
-          "Check your Travel • Gokarna folder in the Gallery Wallet for matching golden-hour frames.",
-        ],
-        tasteConnection: "Connects with your Cinematic Horizon Storyteller reference and X100V/iPhone GPS photography.",
-      },
-    },
-    {
-      id: "mem-personal-1",
-      category: "personal",
-      title: "First 45 Minutes: Analog Ink Before Digital Noise",
-      story:
-        "Every morning starts with pour-over coffee and three raw lines in a physical notebook before touching a single notification.",
-      zeeAnalysis:
-        "Defines Prem's signature calm-to-punchy pacing and anchors the warm paper texture across your studio.",
-      date: "2026-10-28",
-      emotionTone: "Intentional & Calm",
-      tags: ["Morning Ritual", "Analog Ink", "Clarity"],
-      variableKey: "user.personalLife",
-      reelHookIdea:
-        "The 45-minute analog ritual that protects my creative brain every morning.",
-      source: "voice_mic",
-      durationLabel: "1:34",
-      waveform: [34, 52, 68, 45, 76, 59, 41, 82, 63, 48, 71, 55, 38, 79, 64, 51, 73, 46, 62, 84, 49, 67, 53, 75, 42, 69, 58, 44, 61, 50],
-    },
-    {
-      id: "mem-family-1",
-      category: "family",
-      title: "Evening Laughter Around the Family Table",
-      story:
-        "No matter how ambitious the workplace vision gets, sitting with family at the end of the day reminds me why we build in the first place.",
-      zeeAnalysis:
-        "Your emotional north star. Infuses genuine warmth into every story conclusion.",
-      date: "2026-10-25",
-      emotionTone: "Soulful Warmth",
-      tags: ["Roots", "Family Table", "Gratitude"],
-      variableKey: "user.familyMoment",
-      reelHookIdea:
-        "One quiet truth from my family table that no business book could ever teach.",
-      source: "voice_mic",
-      durationLabel: "1:48",
-      waveform: [42, 65, 79, 53, 86, 61, 47, 74, 68, 55, 81, 49, 63, 77, 52, 84, 59, 71, 46, 78, 64, 51, 83, 57, 69, 48, 75, 62, 54, 66],
-    },
-    {
-      id: "mem-rel-1",
-      category: "relationships",
-      title: "High-Trust Circles & Unfiltered Late-Night Talks",
-      story:
-        "The best bonds in life don't need small talk — you sit down, pick up the thread, and push each other to grow.",
-      zeeAnalysis:
-        "Shapes your voice: you never lecture, you talk like a trusted friend.",
-      date: "2026-10-22",
-      emotionTone: "Magnetic & Real",
-      tags: ["Human Bonds", "Trust", "Real Talk"],
-      variableKey: "user.relationshipView",
-      reelHookIdea:
-        "How your inner circle quietly shapes the ceiling of everything you create.",
-      source: "text_chat",
-      durationLabel: "1:28",
-      waveform: [38, 61, 74, 49, 85, 57, 66, 43, 79, 62, 51, 88, 54, 72, 46, 81, 65, 58, 76, 44, 69, 83, 52, 71, 60, 47, 78, 63, 55, 67],
-    },
-  ],
+  memories: [],
   gallery: [
     {
       id: "gal-gokarna-1",
@@ -1666,6 +1431,28 @@ export function useZeeBrain() {
     [updateBrain]
   );
 
+  const clearAllMemories = useCallback(async () => {
+    try {
+      await fetch("/api/story/memory", { method: "DELETE" });
+    } catch (err) {
+      console.warn("Could not delete disk memories:", err);
+    }
+    updateBrain((prev) => {
+      const nextLog: CrossPageActivityLog = {
+        id: `act-${Date.now()}`,
+        page: "u",
+        pageLabel: "You • Memory Reset",
+        action: "Erased all memories for clean live testing",
+        timestamp: "Just now",
+      };
+      return {
+        ...prev,
+        memories: [],
+        activityLogs: [nextLog, ...prev.activityLogs].slice(0, 20),
+      };
+    });
+  }, [updateBrain]);
+
   return {
     brain,
     hydrated,
@@ -1675,5 +1462,6 @@ export function useZeeBrain() {
     toggleSourceConnection,
     scanLikedReel,
     recordPageActivity,
+    clearAllMemories,
   };
 }

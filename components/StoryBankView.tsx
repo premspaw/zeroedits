@@ -137,7 +137,23 @@ const DEFAULT_BEATS: ScriptBeatCard[] = [
   },
 ];
 
-const CURATED_MEMORY_LOGS: CompactMemoryLog[] = [
+const CURATED_MEMORY_LOGS: CompactMemoryLog[] = [];
+
+const FALLBACK_EMPTY_MEMORY: CompactMemoryLog = {
+  id: "clean-slate",
+  title: "Live Story Studio",
+  time: "0:00",
+  emotion: "creative",
+  color: "#F5D6A8",
+  note: "Ready for live input",
+  category: "insight",
+  story: "Speak your story in the You tab or write a line below to begin live generation.",
+  suggestionTitle: "Make reel: Live unscripted story",
+  suggestionSub: "Your spoken voice note will automatically shape 4 video beats.",
+  beats: DEFAULT_BEATS,
+};
+
+const OLD_CURATED_MEMORY_LOGS: CompactMemoryLog[] = [
   {
     id: "curated-pitch",
     title: "Client pitch anxiety",
@@ -574,7 +590,7 @@ export default function StoryBankView({
   }, [brain.memories, brain.gallery, userName]);
 
   const [selectedMemoryId, setSelectedMemoryId] = useState<string>(
-    () => memoryBankList[0]?.id || "curated-pitch"
+    () => memoryBankList[0]?.id || "clean-slate"
   );
   const [activeBeatId, setActiveBeatId] = useState<number>(1);
   const [editingBeatId, setEditingBeatId] = useState<number | null>(null);
@@ -614,12 +630,13 @@ export default function StoryBankView({
   const activeMemory = useMemo(
     () =>
       memoryBankList.find((m) => m.id === selectedMemoryId) ||
-      memoryBankList[0],
+      memoryBankList[0] ||
+      FALLBACK_EMPTY_MEMORY,
     [memoryBankList, selectedMemoryId]
   );
 
   const activeBeats = useMemo(
-    () => beatsByMemoryId[activeMemory.id] || activeMemory.beats || DEFAULT_BEATS,
+    () => beatsByMemoryId[activeMemory.id] || activeMemory?.beats || DEFAULT_BEATS,
     [beatsByMemoryId, activeMemory]
   );
 
@@ -1195,7 +1212,16 @@ export default function StoryBankView({
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {memoryBankList.map((mem, idx) => {
+            {memoryBankList.length === 0 ? (
+              <div className="rounded-[16px] border border-dashed border-[#D5D2C8] p-5 text-center bg-white/70">
+                <Sparkles size={20} className="mx-auto text-[#E4491B] mb-2" />
+                <p className="text-[13px] font-semibold text-[#111111]">No memories recorded yet</p>
+                <p className="text-[11px] text-[#8A8784] mt-1 leading-relaxed">
+                  Head to the <strong>You</strong> tab to speak 1–3 live thoughts, or co-write below.
+                </p>
+              </div>
+            ) : (
+              memoryBankList.map((mem, idx) => {
               const isSelected = mem.id === activeMemory.id;
               return (
                 <div
@@ -1267,7 +1293,7 @@ export default function StoryBankView({
                   </p>
                 </div>
               );
-            })}
+            }))}
 
             {/* Bottom Dark Personalization Signal Box */}
             <div className="rounded-[16px] bg-[#111] text-white p-4 mt-2">

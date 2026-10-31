@@ -48,6 +48,7 @@ import {
   Bot,
   Plus,
   Clapperboard,
+  Trash2,
 } from "lucide-react";
 import Pip, { type PipMood } from "./Pip";
 import type { HeaderTab } from "./AppleDockNav";
@@ -109,6 +110,7 @@ export default function YouView({
     addGalleryItems,
     toggleSourceConnection,
     scanLikedReel,
+    clearAllMemories,
   } = useZeeBrain();
 
   // Sub-Tab: Personalize Mind vs Creative Gallery (Gallery puts visual canvas FIRST at top, connections at bottom)
@@ -1403,6 +1405,21 @@ export default function YouView({
             </button>
           </div>
 
+          {/* Reset All Memories for Clean Live Testing */}
+          <button
+            type="button"
+            onClick={async () => {
+              if (window.confirm("Erase all recorded memories and start fresh with a clean slate?")) {
+                await clearAllMemories();
+              }
+            }}
+            title="Erase all memories and start completely fresh"
+            className="px-3 py-1.5 rounded-full border-2 border-dashed border-[#D5D2C8] bg-white/70 hover:bg-rose-50 hover:border-rose-300 text-[#6B6A64] hover:text-rose-600 mono text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <Trash2 size={12} />
+            <span>Reset Memory</span>
+          </button>
+
           {/* Admin-Only Toggle for Variables */}
           <button
             type="button"
@@ -1513,7 +1530,16 @@ export default function YouView({
 
                 {/* Colorful Differentiated Story Cards with Category Waveforms */}
                 <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
-                  {filteredMemories.map((mem) => {
+                  {filteredMemories.length === 0 ? (
+                    <div className="p-8 text-center bg-white/70 border border-dashed border-[#D5D2C8] rounded-2xl my-4">
+                      <Mic size={24} className="mx-auto text-[#E4491B] mb-2 animate-bounce" />
+                      <h4 className="font-bold text-[14px] text-[#141414]">Memory Stream is Clean</h4>
+                      <p className="text-[12px] text-[#6B6A64] mt-1 max-w-[28ch] mx-auto leading-relaxed">
+                        Speak into the radial mic in the center column. Your spoken words will form your first digital memory!
+                      </p>
+                    </div>
+                  ) : (
+                    filteredMemories.map((mem) => {
                     const meta = CATEGORY_META[mem.category];
                     const isSelected = activeStreamItem?.id === mem.id;
                     const pillarBadge =
@@ -1626,7 +1652,7 @@ export default function YouView({
                         </div>
                       </button>
                     );
-                  })}
+                  }))}
                 </div>
               </aside>
 
@@ -2137,7 +2163,15 @@ export default function YouView({
                       </div>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="flex-1 p-6 flex flex-col items-center justify-center text-center">
+                    <Sparkles size={28} className="text-[#E4491B] mb-2" />
+                    <h4 className="font-bold text-[14px] text-[#141414]">Ready for Your First Story</h4>
+                    <p className="text-[12px] text-[#6B6A64] mt-1 max-w-[28ch] leading-relaxed">
+                      Record a live thought in the center mic to unlock Zee’s follow-up questions, quotes, and scripts.
+                    </p>
+                  </div>
+                )}
               </aside>
             </div>
           </div>
