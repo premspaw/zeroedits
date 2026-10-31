@@ -68,7 +68,7 @@ export interface CompactMemoryLog {
 }
 
 interface StoryBankViewProps {
-  onSwitchToStudio?: () => void;
+  onSwitchToStudio?: (scriptText?: string, title?: string) => void;
   onCompleteRecordingToStudio?: (
     videoFile: File,
     fullScriptText: string,
@@ -635,6 +635,12 @@ export default function StoryBankView({
   const [isListeningCoWrite, setIsListeningCoWrite] = useState(false);
   const [isRefiningWithMeta, setIsRefiningWithMeta] = useState(false);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (initialTopicFromYou) {
+      setCoWriteInput(initialTopicFromYou);
+    }
+  }, [initialTopicFromYou]);
 
   // Teleprompter & Mobile QR Recording Stage State
   const [isRecordStageOpen, setIsRecordStageOpen] = useState(false);
@@ -1563,18 +1569,20 @@ export default function StoryBankView({
               <button
                 type="button"
                 onClick={() => {
+                  const fullScriptText = activeBeats.map((b) => b.text).join(" ");
+                  const scriptTitle = activeMemory?.title || initialTopicFromYou || "Story Script";
                   setIsGeneratingVideo(true);
                   setVideoReady(false);
                   setTimeout(() => {
                     setIsGeneratingVideo(false);
                     setVideoReady(true);
                     setToastMessage(
-                      "Draft video queued — 11 min edit preview ready in studio"
+                      "Script loaded into Studio — switching to Video Creation!"
                     );
                     if (onSwitchToStudio) {
-                      setTimeout(() => onSwitchToStudio(), 900);
+                      setTimeout(() => onSwitchToStudio(fullScriptText, scriptTitle), 600);
                     }
-                  }, 900);
+                  }, 600);
                 }}
                 className="h-11 px-6 rounded-full bg-[#111111] text-white text-[13px] font-semibold inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.18)] hover:translate-y-[-1px] transition cursor-pointer"
               >

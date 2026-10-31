@@ -119,7 +119,9 @@ export async function POST(req: NextRequest) {
       const form = await req.formData();
       const file = form.get("audio");
       preferredCategory = String(form.get("category") || "");
-      const fallbackTranscript = String(form.get("fallbackTranscript") || "").trim();
+      const fallbackTranscript = String(
+        form.get("fallbackTranscript") || form.get("rawTranscript") || ""
+      ).trim();
 
       if (file && typeof file !== "string") {
         const blob = file as unknown as File;
@@ -138,7 +140,7 @@ export async function POST(req: NextRequest) {
         try {
           const { stdout } = await runCmd(
             resolveStoryPython(),
-            [path.join(process.cwd(), "lib", "story-transcribe.py"), absFile, "base"],
+            [path.join(process.cwd(), "lib", "story-transcribe.py"), absFile, "tiny"],
             { maxBuffer: 32 * 1024 * 1024 }
           );
           const lastLine = stdout.trim().split("\n").pop() || "{}";
