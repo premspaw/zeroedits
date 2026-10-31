@@ -22,25 +22,6 @@ export function ensureBankDir(): void {
   }
 }
 
-export function resetAllBankData(): void {
-  ensureBankDir();
-  fs.writeFileSync(RAW_BANK_MD, `# Raw Bank — daily check-ins\n`, "utf-8");
-  fs.writeFileSync(
-    PERSONAL_MD,
-    `# Personal Memory — Story Bank\n\n## Profile\n- Name: \n- Goal: personal-brand\n- Niche: \n- Voice notes: \n\n## Stories\n\n(none yet — check in daily and real moments will stack up here.)\n`,
-    "utf-8"
-  );
-  const audioDir = path.join(BANK_DIR, "audio");
-  if (fs.existsSync(audioDir)) {
-    const files = fs.readdirSync(audioDir);
-    for (const file of files) {
-      try {
-        fs.unlinkSync(path.join(audioDir, file));
-      } catch {}
-    }
-  }
-}
-
 /** Project-local interpreter (.venv) first, system python as fallback. */
 export function resolveStoryPython(): string {
   const venvPython =

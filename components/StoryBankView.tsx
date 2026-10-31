@@ -68,7 +68,7 @@ export interface CompactMemoryLog {
 }
 
 interface StoryBankViewProps {
-  onSwitchToStudio?: (scriptText?: string, title?: string) => void;
+  onSwitchToStudio?: () => void;
   onCompleteRecordingToStudio?: (
     videoFile: File,
     fullScriptText: string,
@@ -137,23 +137,7 @@ const DEFAULT_BEATS: ScriptBeatCard[] = [
   },
 ];
 
-const CURATED_MEMORY_LOGS: CompactMemoryLog[] = [];
-
-const FALLBACK_EMPTY_MEMORY: CompactMemoryLog = {
-  id: "clean-slate",
-  title: "Live Story Studio",
-  time: "0:00",
-  emotion: "creative",
-  color: "#F5D6A8",
-  note: "Ready for live input",
-  category: "insight",
-  story: "Speak your story in the You tab or write a line below to begin live generation.",
-  suggestionTitle: "Make reel: Live unscripted story",
-  suggestionSub: "Your spoken voice note will automatically shape 4 video beats.",
-  beats: DEFAULT_BEATS,
-};
-
-const OLD_CURATED_MEMORY_LOGS: CompactMemoryLog[] = [
+const CURATED_MEMORY_LOGS: CompactMemoryLog[] = [
   {
     id: "curated-pitch",
     title: "Client pitch anxiety",
@@ -481,7 +465,7 @@ export default function StoryBankView({
     ];
 
     const dynamicFromBrain: CompactMemoryLog[] = brain.memories
-      .slice(0, 15)
+      .slice(0, 3)
       .map((m, idx) => {
         const isTravel = m.category === "travel";
         const isWork = m.category === "work";
@@ -579,18 +563,18 @@ export default function StoryBankView({
         };
       });
 
-    // Combine dynamic brain memories first + curated signature logs so Prem's spoken stories are instantly visible
-    const combined: CompactMemoryLog[] = [...dynamicFromBrain];
-    CURATED_MEMORY_LOGS.forEach((cur) => {
-      if (!combined.some((c) => c.title.toLowerCase() === cur.title.toLowerCase())) {
-        combined.push(cur);
+    // Combine curated signature logs + live brain memories so Prem sees the exact 5 compact cards + any new memories
+    const combined = [...CURATED_MEMORY_LOGS];
+    dynamicFromBrain.forEach((dyn) => {
+      if (!combined.some((c) => c.title.toLowerCase() === dyn.title.toLowerCase())) {
+        combined.push(dyn);
       }
     });
-    return combined.slice(0, 20);
+    return combined.slice(0, 7);
   }, [brain.memories, brain.gallery, userName]);
 
   const [selectedMemoryId, setSelectedMemoryId] = useState<string>(
-    () => memoryBankList[0]?.id || "clean-slate"
+    () => memoryBankList[0]?.id || "curated-pitch"
   );
   const [activeBeatId, setActiveBeatId] = useState<number>(1);
   const [editingBeatId, setEditingBeatId] = useState<number | null>(null);
@@ -631,12 +615,15 @@ export default function StoryBankView({
     () =>
       memoryBankList.find((m) => m.id === selectedMemoryId) ||
       memoryBankList[0] ||
-      FALLBACK_EMPTY_MEMORY,
+      CURATED_MEMORY_LOGS[0],
     [memoryBankList, selectedMemoryId]
   );
 
   const activeBeats = useMemo(
-    () => beatsByMemoryId[activeMemory.id] || activeMemory?.beats || DEFAULT_BEATS,
+    () =>
+      (activeMemory ? beatsByMemoryId[activeMemory.id] : null) ||
+      activeMemory?.beats ||
+      DEFAULT_BEATS,
     [beatsByMemoryId, activeMemory]
   );
 
@@ -652,23 +639,6 @@ export default function StoryBankView({
   const [isListeningCoWrite, setIsListeningCoWrite] = useState(false);
   const [isRefiningWithMeta, setIsRefiningWithMeta] = useState(false);
   const recognitionRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (initialTopicFromYou) {
-      setCoWriteInput(initialTopicFromYou);
-      const cleanTarget = initialTopicFromYou.toLowerCase().trim();
-      const matched = memoryBankList.find(
-        (m) =>
-          cleanTarget.includes(m.title.toLowerCase()) ||
-          m.title.toLowerCase().includes(cleanTarget) ||
-          cleanTarget.includes((m.story || "").toLowerCase().slice(0, 30)) ||
-          (m.suggestionTitle && cleanTarget.includes(m.suggestionTitle.toLowerCase().slice(0, 30)))
-      );
-      if (matched) {
-        setSelectedMemoryId(matched.id);
-      }
-    }
-  }, [initialTopicFromYou, memoryBankList]);
 
   // Teleprompter & Mobile QR Recording Stage State
   const [isRecordStageOpen, setIsRecordStageOpen] = useState(false);
@@ -1212,16 +1182,7 @@ export default function StoryBankView({
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {memoryBankList.length === 0 ? (
-              <div className="rounded-[16px] border border-dashed border-[#D5D2C8] p-5 text-center bg-white/70">
-                <Sparkles size={20} className="mx-auto text-[#E4491B] mb-2" />
-                <p className="text-[13px] font-semibold text-[#111111]">No memories recorded yet</p>
-                <p className="text-[11px] text-[#8A8784] mt-1 leading-relaxed">
-                  Head to the <strong>You</strong> tab to speak 1–3 live thoughts, or co-write below.
-                </p>
-              </div>
-            ) : (
-              memoryBankList.map((mem, idx) => {
+            {memoryBankList.map((mem, idx) => {
               const isSelected = mem.id === activeMemory.id;
               return (
                 <div
@@ -1293,7 +1254,7 @@ export default function StoryBankView({
                   </p>
                 </div>
               );
-            }))}
+            })}
 
             {/* Bottom Dark Personalization Signal Box */}
             <div className="rounded-[16px] bg-[#111] text-white p-4 mt-2">
@@ -1606,20 +1567,18 @@ export default function StoryBankView({
               <button
                 type="button"
                 onClick={() => {
-                  const fullScriptText = activeBeats.map((b) => b.text).join(" ");
-                  const scriptTitle = activeMemory?.title || initialTopicFromYou || "Story Script";
                   setIsGeneratingVideo(true);
                   setVideoReady(false);
                   setTimeout(() => {
                     setIsGeneratingVideo(false);
                     setVideoReady(true);
                     setToastMessage(
-                      "Script loaded into Studio — switching to Video Creation!"
+                      "Draft video queued — 11 min edit preview ready in studio"
                     );
                     if (onSwitchToStudio) {
-                      setTimeout(() => onSwitchToStudio(fullScriptText, scriptTitle), 600);
+                      setTimeout(() => onSwitchToStudio(), 900);
                     }
-                  }, 600);
+                  }, 900);
                 }}
                 className="h-11 px-6 rounded-full bg-[#111111] text-white text-[13px] font-semibold inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.18)] hover:translate-y-[-1px] transition cursor-pointer"
               >

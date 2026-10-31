@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
-import { ensureBankDir, STORY_GOALS, resetAllBankData } from "@/lib/story-bank";
+import { ensureBankDir, STORY_GOALS } from "@/lib/story-bank";
 
 export const dynamic = "force-dynamic";
 
@@ -53,21 +53,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: { saved: true } });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: "Could not save memory." }, { status: 500 });
-  }
-}
-
-/** Erase all memories and reset the story bank. */
-export async function DELETE() {
-  try {
-    resetAllBankData();
-    return NextResponse.json({
-      success: true,
-      message: "All memory files erased cleanly. Ready for live testing.",
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err?.message || "Could not reset memory." },
-      { status: 500 }
-    );
   }
 }

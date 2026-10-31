@@ -47,8 +47,6 @@ import {
   Rocket,
   Bot,
   Plus,
-  Clapperboard,
-  Trash2,
 } from "lucide-react";
 import Pip, { type PipMood } from "./Pip";
 import type { HeaderTab } from "./AppleDockNav";
@@ -110,7 +108,6 @@ export default function YouView({
     addGalleryItems,
     toggleSourceConnection,
     scanLikedReel,
-    clearAllMemories,
   } = useZeeBrain();
 
   // Sub-Tab: Personalize Mind vs Creative Gallery (Gallery puts visual canvas FIRST at top, connections at bottom)
@@ -196,7 +193,6 @@ export default function YouView({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<any>(null);
-  const isListeningMicRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -206,11 +202,8 @@ export default function YouView({
   const resolveRecordingFinishedRef = useRef<(() => void) | null>(null);
 
   const finishMicrophoneCapture = async () => {
-    isListeningMicRef.current = false;
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.onend = null;
-        recognitionRef.current.onerror = null;
         recognitionRef.current.stop();
       } catch {}
       recognitionRef.current = null;
@@ -234,7 +227,6 @@ export default function YouView({
 
   useEffect(() => {
     return () => {
-      isListeningMicRef.current = false;
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
@@ -261,35 +253,8 @@ export default function YouView({
   // Start / Stop Real Microphone Recording + Meta Speech-to-Text
   const handleToggleMic = async () => {
     if (isListeningMic) {
-      isListeningMicRef.current = false;
-      setIsListeningMic(false);
-      setPipMood("reading");
-      setMetaVoiceStatus("Finishing recording & transcribing audio with local Whisper...");
-
       await finishMicrophoneCapture();
-
-      // Immediately transcribe the captured audio using local Whisper so speech is 100% accurate
-      const audioBlob = recordedBlobRef.current;
-      if (audioBlob && audioBlob.size > 0) {
-        try {
-          const form = new FormData();
-          form.append("audio", audioBlob, "voice-input.webm");
-          const trRes = await fetch("/api/transcribe-audio", {
-            method: "POST",
-            body: form,
-          });
-          const trData = await trRes.json();
-          if (trData.success && trData.transcript && trData.transcript.trim()) {
-            setSpokenOrTypedInput(trData.transcript.trim());
-            setMetaVoiceStatus("Voice transcribed perfectly with local Whisper • Ready to analyze!");
-            setPipMood("happy");
-            return;
-          }
-        } catch (sttErr) {
-          console.warn("Local Whisper transcription fallback:", sttErr);
-        }
-      }
-
+      setIsListeningMic(false);
       setPipMood("thinking");
       setMetaVoiceStatus("Voice captured • Ready to sync with Meta Digital Brain");
       return;
@@ -298,11 +263,10 @@ export default function YouView({
     // Start recording
     recordedBlobRef.current = null;
     audioChunksRef.current = [];
-    isListeningMicRef.current = true;
     setRecordingSec(0);
     setIsListeningMic(true);
     setPipMood("listening");
-    setMetaVoiceStatus("Listening to your voice (Live Speech Recognition + Local Whisper)...");
+    setMetaVoiceStatus("Listening to Prem's voice (Meta STT + Live Stream)...");
 
     recordTimerRef.current = setInterval(() => {
       setRecordingSec((s) => s + 1);
@@ -313,13 +277,7 @@ export default function YouView({
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStreamRef.current = stream;
-        const mimeType =
-          typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-            ? "audio/webm;codecs=opus"
-            : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
-            ? "audio/webm"
-            : "";
-        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        const recorder = new MediaRecorder(stream);
         mediaRecorderRef.current = recorder;
         recordingFinishedRef.current = new Promise<void>((resolve) => {
           resolveRecordingFinishedRef.current = resolve;
@@ -332,18 +290,16 @@ export default function YouView({
         recorder.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
           if (audioChunksRef.current.length > 0) {
-            const blob = new Blob(audioChunksRef.current, {
-              type: recorder.mimeType || "audio/webm",
-            });
+            const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
             recordedBlobRef.current = blob;
           }
           resolveRecordingFinishedRef.current?.();
           resolveRecordingFinishedRef.current = null;
           recordingFinishedRef.current = null;
         };
-        recorder.start(250);
-      } catch (err) {
-        console.warn("Microphone access error:", err);
+        recorder.start();
+      } catch {
+        // Fallback if mic permission denied in browser
       }
     }
 
@@ -357,56 +313,29 @@ export default function YouView({
     if (SpeechRecognition) {
       try {
         const recognition = new SpeechRecognition();
-        recognition.lang =
-          typeof navigator !== "undefined" && navigator.language
-            ? navigator.language
-            : "en-IN";
+        recognition.lang = "en-IN";
         recognition.interimResults = true;
         recognition.continuous = true;
 
         recognition.onresult = (event: any) => {
-          let finalTranscript = "";
-          let interimTranscript = "";
+          let transcript = "";
           for (let i = 0; i < event.results.length; i++) {
-            const res = event.results[i];
-            if (res.isFinal) {
-              finalTranscript += res[0].transcript + " ";
-            } else {
-              interimTranscript += res[0].transcript;
-            }
+            transcript += event.results[i][0].transcript;
           }
-          const fullText = (finalTranscript + interimTranscript).trim();
-          if (fullText) {
-            setSpokenOrTypedInput(fullText);
+          if (transcript.trim()) {
+            setSpokenOrTypedInput(transcript);
           }
         };
 
-        recognition.onerror = (e: any) => {
-          console.warn("SpeechRecognition error:", e);
-          if (isListeningMicRef.current && e?.error !== "not-allowed") {
-            setTimeout(() => {
-              if (isListeningMicRef.current) {
-                try {
-                  recognition.start();
-                } catch {}
-              }
-            }, 300);
-          }
-        };
-
-        recognition.onend = () => {
-          // Keep listening continuously until user presses Pause/Stop
-          if (isListeningMicRef.current) {
-            try {
-              recognition.start();
-            } catch {}
-          }
+        recognition.onerror = () => {
+          // Keep MediaRecorder or fallback running smoothly
         };
 
         recognitionRef.current = recognition;
         recognition.start();
-      } catch (sttErr) {
-        console.warn("Web Speech API error, will fallback to local Whisper:", sttErr);
+        return;
+      } catch {
+        // Continue to interactive voice stream fallback if needed
       }
     }
   };
@@ -442,7 +371,6 @@ export default function YouView({
         form.append("category", selectedPromptCategory);
         if (trimmed) {
           form.append("fallbackTranscript", trimmed);
-          form.append("rawTranscript", trimmed);
         }
         res = await fetch("/api/you/voice-brain", {
           method: "POST",
@@ -1405,21 +1333,6 @@ export default function YouView({
             </button>
           </div>
 
-          {/* Reset All Memories for Clean Live Testing */}
-          <button
-            type="button"
-            onClick={async () => {
-              if (window.confirm("Erase all recorded memories and start fresh with a clean slate?")) {
-                await clearAllMemories();
-              }
-            }}
-            title="Erase all memories and start completely fresh"
-            className="px-3 py-1.5 rounded-full border-2 border-dashed border-[#D5D2C8] bg-white/70 hover:bg-rose-50 hover:border-rose-300 text-[#6B6A64] hover:text-rose-600 mono text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <Trash2 size={12} />
-            <span>Reset Memory</span>
-          </button>
-
           {/* Admin-Only Toggle for Variables */}
           <button
             type="button"
@@ -1530,16 +1443,7 @@ export default function YouView({
 
                 {/* Colorful Differentiated Story Cards with Category Waveforms */}
                 <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
-                  {filteredMemories.length === 0 ? (
-                    <div className="p-8 text-center bg-white/70 border border-dashed border-[#D5D2C8] rounded-2xl my-4">
-                      <Mic size={24} className="mx-auto text-[#E4491B] mb-2 animate-bounce" />
-                      <h4 className="font-bold text-[14px] text-[#141414]">Memory Stream is Clean</h4>
-                      <p className="text-[12px] text-[#6B6A64] mt-1 max-w-[28ch] mx-auto leading-relaxed">
-                        Speak into the radial mic in the center column. Your spoken words will form your first digital memory!
-                      </p>
-                    </div>
-                  ) : (
-                    filteredMemories.map((mem) => {
+                  {filteredMemories.map((mem) => {
                     const meta = CATEGORY_META[mem.category];
                     const isSelected = activeStreamItem?.id === mem.id;
                     const pillarBadge =
@@ -1629,30 +1533,9 @@ export default function YouView({
                         <p className="text-xs text-[#4A4842] line-clamp-2 leading-relaxed mt-1">
                           &ldquo;{mem.story}&rdquo;
                         </p>
-
-                        <div className="mt-2.5 pt-2 border-t border-[#141414]/10 flex items-center justify-between">
-                          <span className="mono text-[9px] font-bold text-[#E4491B] uppercase tracking-wider truncate max-w-[130px]">
-                            {mem.category === "work" ? "💼 Business Hook" : "✨ Life Hook"}
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (onSelectTopicForScript) {
-                                onSelectTopicForScript(
-                                  mem.reelHookIdea || mem.story,
-                                  mem.category === "work" ? "storyExplainer" : "paperCard"
-                                );
-                              }
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-[#141414] hover:bg-[#E4491B] text-white mono text-[9.5px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
-                          >
-                            <Clapperboard size={10} />
-                            <span>Script this &rarr;</span>
-                          </span>
-                        </div>
                       </button>
                     );
-                  }))}
+                  })}
                 </div>
               </aside>
 
@@ -1887,16 +1770,12 @@ export default function YouView({
                       <button
                         type="button"
                         disabled={
-                          (!spokenOrTypedInput.trim() &&
-                            !isListeningMic &&
-                            !recordedBlobRef.current) ||
+                          (!spokenOrTypedInput.trim() && !isListeningMic) ||
                           isAnalyzingBrain
                         }
                         onClick={handleAnalyzeAndSaveToMemory}
                         className={`px-4 py-2 rounded-xl text-xs font-bold mono uppercase tracking-wider inline-flex items-center gap-1.5 transition-all cursor-pointer border-2 border-[#141414] ${
-                          (spokenOrTypedInput.trim() ||
-                            isListeningMic ||
-                            Boolean(recordedBlobRef.current)) &&
+                          (spokenOrTypedInput.trim() || isListeningMic) &&
                           !isAnalyzingBrain
                             ? "bg-[#FFE17D] text-[#141414] hover:bg-[#FFD447] shadow-[3px_3px_0px_#141414]"
                             : "bg-[#ECEAE3] text-[#8E8B82] border-[#D5D2C8] cursor-not-allowed"
@@ -2126,22 +2005,6 @@ export default function YouView({
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onSelectTopicForScript) {
-                            onSelectTopicForScript(
-                              activeStreamItem.reelHookIdea || activeStreamItem.story,
-                              activeStreamItem.category === "work" ? "storyExplainer" : "paperCard"
-                            );
-                          }
-                        }}
-                        className="w-full mt-2 py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-[#E4491B] to-[#C93D14] text-white font-bold text-xs uppercase tracking-wider shadow-[3px_3px_0px_#141414] hover:brightness-110 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Clapperboard size={14} />
-                        <span>Turn this into a Script &amp; Shoot (&rarr; Script Studio)</span>
-                      </button>
-
                       <div className="space-y-1.5 pt-1">
                         <div className="mono text-[10px] font-bold uppercase text-[#6E6A63]">
                           What Zee Unlocks Below from This Story:
@@ -2163,15 +2026,7 @@ export default function YouView({
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex-1 p-6 flex flex-col items-center justify-center text-center">
-                    <Sparkles size={28} className="text-[#E4491B] mb-2" />
-                    <h4 className="font-bold text-[14px] text-[#141414]">Ready for Your First Story</h4>
-                    <p className="text-[12px] text-[#6B6A64] mt-1 max-w-[28ch] leading-relaxed">
-                      Record a live thought in the center mic to unlock Zee’s follow-up questions, quotes, and scripts.
-                    </p>
-                  </div>
-                )}
+                ) : null}
               </aside>
             </div>
           </div>

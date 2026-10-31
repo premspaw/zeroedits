@@ -2908,14 +2908,7 @@ export default function ProperMobileResponsiveChat() {
           <StoryBankView
             hideHeader={true}
             initialTopicFromYou={input}
-            onSwitchToStudio={(scriptText?: string, title?: string) => {
-              if (scriptText) {
-                setInput(title || scriptText);
-                setEditScript(scriptText);
-                setShowEditScript(true);
-              }
-              setActiveHeaderTab("edit");
-            }}
+            onSwitchToStudio={() => setActiveHeaderTab("edit")}
             onCompleteRecordingToStudio={(videoFile, fullScriptText, title) => {
               editVideoFileRef.current = videoFile;
               setEditVideoName(videoFile.name);
