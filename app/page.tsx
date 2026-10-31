@@ -2912,6 +2912,7 @@ export default function ProperMobileResponsiveChat() {
               if (scriptText) {
                 setInput(title || scriptText);
                 setEditScript(scriptText);
+                setShowEditScript(true);
               }
               setActiveHeaderTab("edit");
             }}

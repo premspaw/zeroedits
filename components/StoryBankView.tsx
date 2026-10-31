@@ -465,7 +465,7 @@ export default function StoryBankView({
     ];
 
     const dynamicFromBrain: CompactMemoryLog[] = brain.memories
-      .slice(0, 3)
+      .slice(0, 15)
       .map((m, idx) => {
         const isTravel = m.category === "travel";
         const isWork = m.category === "work";
@@ -563,14 +563,14 @@ export default function StoryBankView({
         };
       });
 
-    // Combine curated signature logs + live brain memories so Prem sees the exact 5 compact cards + any new memories
-    const combined = [...CURATED_MEMORY_LOGS];
-    dynamicFromBrain.forEach((dyn) => {
-      if (!combined.some((c) => c.title.toLowerCase() === dyn.title.toLowerCase())) {
-        combined.push(dyn);
+    // Combine dynamic brain memories first + curated signature logs so Prem's spoken stories are instantly visible
+    const combined: CompactMemoryLog[] = [...dynamicFromBrain];
+    CURATED_MEMORY_LOGS.forEach((cur) => {
+      if (!combined.some((c) => c.title.toLowerCase() === cur.title.toLowerCase())) {
+        combined.push(cur);
       }
     });
-    return combined.slice(0, 7);
+    return combined.slice(0, 20);
   }, [brain.memories, brain.gallery, userName]);
 
   const [selectedMemoryId, setSelectedMemoryId] = useState<string>(
@@ -639,8 +639,19 @@ export default function StoryBankView({
   useEffect(() => {
     if (initialTopicFromYou) {
       setCoWriteInput(initialTopicFromYou);
+      const cleanTarget = initialTopicFromYou.toLowerCase().trim();
+      const matched = memoryBankList.find(
+        (m) =>
+          cleanTarget.includes(m.title.toLowerCase()) ||
+          m.title.toLowerCase().includes(cleanTarget) ||
+          cleanTarget.includes((m.story || "").toLowerCase().slice(0, 30)) ||
+          (m.suggestionTitle && cleanTarget.includes(m.suggestionTitle.toLowerCase().slice(0, 30)))
+      );
+      if (matched) {
+        setSelectedMemoryId(matched.id);
+      }
     }
-  }, [initialTopicFromYou]);
+  }, [initialTopicFromYou, memoryBankList]);
 
   // Teleprompter & Mobile QR Recording Stage State
   const [isRecordStageOpen, setIsRecordStageOpen] = useState(false);
