@@ -571,6 +571,7 @@ function PreviewCard({
   onReady,
   onError,
   onExportMP4,
+  onRecreateScene,
 }: {
   format: FormatType | string;
   beats: Beat[];
@@ -598,6 +599,7 @@ function PreviewCard({
   onReady?: () => void;
   onError?: (message: string) => void;
   onExportMP4?: () => void;
+  onRecreateScene?: (sceneIndex: number, instruction: string) => Promise<void> | void;
 }) {
   const beatsDuration = beats.reduce(
     (m, b) => Math.max(m, typeof b.end === "number" ? b.end : 0),
@@ -798,6 +800,7 @@ function PreviewCard({
         beats={beats}
         topic={topic}
         compact={compact}
+        onRecreateScene={onRecreateScene}
       />
     );
   }
@@ -4385,6 +4388,11 @@ export default function ProperMobileResponsiveChat() {
               onReady={handlePreviewReady}
               onError={handlePreviewError}
               onExportMP4={() => setIsExportModalOpen(true)}
+              onRecreateScene={(sceneIdx, instruction) =>
+                activeMessage
+                  ? handleRecreateSingleScene(activeMessage, sceneIdx, instruction)
+                  : Promise.resolve()
+              }
             />
 
           </div>
@@ -4460,6 +4468,11 @@ export default function ProperMobileResponsiveChat() {
                       onReady={handlePreviewReady}
                       onError={handlePreviewError}
                       onExportMP4={() => setIsExportModalOpen(true)}
+                      onRecreateScene={(sceneIdx, instruction) =>
+                        activeMessage
+                          ? handleRecreateSingleScene(activeMessage, sceneIdx, instruction)
+                          : Promise.resolve()
+                      }
                     />
                   )}
                 </div>

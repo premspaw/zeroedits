@@ -1001,6 +1001,10 @@ export interface RenderExplainerFrameOptions {
   palette: VisualPalette;
   layoutMode: ExplainerLayoutMode;
   brollImages?: Record<string, HTMLImageElement>;
+  captionPosition?: "bottom" | "center" | "top";
+  captionYOffset?: number;
+  hideCaptions?: boolean;
+  hiddenCalloutIds?: string[] | Set<string>;
 }
 
 /**
@@ -1020,6 +1024,13 @@ export function renderExplainerFrameToCanvas(
 
   ctx.save();
   ctx.clearRect(0, 0, W, H);
+
+  const isHidden = (id?: string) => {
+    if (!id || !options.hiddenCalloutIds) return false;
+    if (Array.isArray(options.hiddenCalloutIds)) return options.hiddenCalloutIds.includes(id);
+    if (options.hiddenCalloutIds instanceof Set) return options.hiddenCalloutIds.has(id);
+    return false;
+  };
 
   // 1. Resolve Active Scene (robust contiguous boundary matching without random fallback jumps)
   let resolvedIdx = scenes.findIndex(
@@ -1095,9 +1106,9 @@ export function renderExplainerFrameToCanvas(
       const isSpeakerMultiStep =
         activeScene.visualKind === "step_stack" && activeScene.steps.length >= 2;
 
-      if (isSpeakerMultiStep) {
+      if (isSpeakerMultiStep && !isHidden(`${activeScene.id}-steps`)) {
         const triggeredSteps = activeScene.steps.filter(
-          (st) => currentTime >= st.triggerTime - 0.08
+          (st) => !isHidden(st.id) && currentTime >= st.triggerTime - 0.08
         );
         if (triggeredSteps.length > 0) {
           const rowH = 92;
@@ -1229,16 +1240,17 @@ export function renderExplainerFrameToCanvas(
 
           ctx.restore();
         }
-      } else if (activeScene.faceCallouts && activeScene.faceCallouts.length > 0) {
+      } else if (activeScene.faceCallouts && activeScene.faceCallouts.length > 0 && !isHidden(`${activeScene.id}-callouts`)) {
+        const visibleCallouts = activeScene.faceCallouts.filter((c) => !isHidden(c.id));
         let activeFaceCallout: FaceSpaceCallout | null = null;
-        for (const c of activeScene.faceCallouts) {
+        for (const c of visibleCallouts) {
           if (currentTime >= c.triggerTime - 0.08) {
             activeFaceCallout = c;
           }
         }
-        if (!activeFaceCallout) activeFaceCallout = activeScene.faceCallouts[0];
+        if (!activeFaceCallout && visibleCallouts.length > 0) activeFaceCallout = visibleCallouts[0];
 
-        if (activeFaceCallout) {
+        if (activeFaceCallout && !isHidden(activeFaceCallout.id)) {
           const dt = Math.max(0, currentTime - (activeFaceCallout.triggerTime - 0.08));
           const popScale = 0.88 + 0.12 * easeOutBack(dt / 0.3);
           const popAlpha = clamp01(dt / 0.18);
@@ -1415,7 +1427,12 @@ export function renderExplainerFrameToCanvas(
     // -----------------------------------------------------------------------
     // ARCHETYPE A: WORD-SYNCED CONTRAST COMPARISON
     // -----------------------------------------------------------------------
-    if (activeScene.visualKind === "contrast_comparison" && activeScene.contrast) {
+    if (
+      activeScene.visualKind === "contrast_comparison" &&
+      activeScene.contrast &&
+      !isHidden((activeScene.contrast as any).id) &&
+      !isHidden(`${activeScene.id}-contrast`)
+    ) {
       const c = activeScene.contrast;
       const cardW = 910;
       const cardH = 820;
@@ -1604,7 +1621,11 @@ export function renderExplainerFrameToCanvas(
 
       ctx.restore();
       ctx.restore();
-    } else if (activeScene.visualKind === "step_stack" && activeScene.steps.length > 0) {
+    } else if (
+      activeScene.visualKind === "step_stack" &&
+      activeScene.steps.length > 0 &&
+      !isHidden(`${activeScene.id}-steps`)
+    ) {
       // -----------------------------------------------------------------------
       // ARCHETYPE B: WORD-SYNCED MULTI-BEAT ACTION LIST
       // -----------------------------------------------------------------------
@@ -1852,7 +1873,7 @@ export function renderExplainerFrameToCanvas(
   // =========================================================================
   // LAYER 4: CONTINUOUS UNINTERRUPTED LOWER-THIRD CAPTIONS (3-WORD CHUNK)
   // =========================================================================
-  if (currentChunk.length > 0) {
+  if (currentChunk.length > 0 && !options.hideCaptions && !isHidden("captions") && !isHidden("cc")) {
     ctx.save();
     ctx.font = "900 42px 'Plus Jakarta Sans', 'Montserrat', 'Inter', sans-serif";
     ctx.textBaseline = "middle";
@@ -1862,7 +1883,17 @@ export function renderExplainerFrameToCanvas(
     const wordPadY = 14;
     const pillPadX = 38;
     const pillH = 98;
-    const pillY = 1625;
+    
+    // Shiftable CC title positions: bottom (default 1625), center (960), top (280)
+    let pillY = 1625;
+    if (options.captionPosition === "top") {
+      pillY = 280;
+    } else if (options.captionPosition === "center") {
+      pillY = 960;
+    }
+    if (typeof options.captionYOffset === "number") {
+      pillY += options.captionYOffset;
+    }
 
     const measured = currentChunk.map((w) => {
       const upper = w.word.toUpperCase();
@@ -2031,6 +2062,10 @@ export async function exportExactExplainerMp4(params: {
   palette: VisualPalette;
   layoutMode: ExplainerLayoutMode;
   brollImages?: Record<string, HTMLImageElement>;
+  captionPosition?: "bottom" | "center" | "top";
+  captionYOffset?: number;
+  hideCaptions?: boolean;
+  hiddenCalloutIds?: string[] | Set<string>;
   onProgress?: (pct: number) => void;
 }): Promise<Blob> {
   const {
@@ -2041,6 +2076,10 @@ export async function exportExactExplainerMp4(params: {
     duration,
     palette,
     layoutMode,
+    captionPosition,
+    captionYOffset,
+    hideCaptions,
+    hiddenCalloutIds,
     onProgress,
   } = params;
 
@@ -2167,6 +2206,10 @@ export async function exportExactExplainerMp4(params: {
         palette,
         layoutMode,
         brollImages,
+        captionPosition,
+        captionYOffset,
+        hideCaptions,
+        hiddenCalloutIds,
       });
 
       if (hasWebCodecs && encoder && encoder.state === "configured") {
