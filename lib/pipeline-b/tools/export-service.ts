@@ -1,6 +1,7 @@
 /**
  * Meta Muse — Pipeline B Tool: Export Service
- * Deterministically renders final composite MP4 (clean footage + kinetic subtitles + visual badges).
+ * Deterministically renders final composite MP4 (clean footage + word-synced story cutaways +
+ * lower-face floating callouts + continuous lower-third kinetic subtitles).
  */
 
 import { execFile } from "child_process";
@@ -12,6 +13,93 @@ import { getPipelineBTemplate } from "../templates/registry.ts";
 
 const execFileAsync = util.promisify(execFile);
 
+interface ExportWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+const STOP_WORDS = new Set([
+  "the", "and", "that", "this", "with", "from", "your", "have", "just",
+  "like", "uh", "uhhh", "um", "umm", "okay", "so", "when", "what", "into",
+  "only", "very", "really", "about", "going", "were", "they", "them", "let",
+  "me", "tell", "you", "why", "are", "we", "it", "is", "in", "on", "to", "of",
+  "for", "a", "an", "then", "there",
+]);
+
+function normalizeAssText(raw: string): string {
+  return raw
+    .replace(/[%{}]/g, "")
+    .replace(/\bsinking\s+sound/gi, "Syncing Sound")
+    .replace(/\bsinking\b/gi, "Syncing")
+    .replace(/\ba\s+hour\b/gi, "1 Hour")
+    .replace(/\ban\s+hour\b/gi, "1 Hour")
+    .replace(/\ba\s+minute\b/gi, "1 Minute")
+    .replace(/\bzero\s+edits?\b/gi, "Zero Edits")
+    .trim();
+}
+
+function cleanShortTitle(raw: string, fallback = "KEY INSIGHT"): string {
+  const norm = normalizeAssText(raw);
+  const tokens = norm
+    .replace(/[^a-zA-Z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !STOP_WORDS.has(t.toLowerCase()));
+  if (tokens.length === 0) return fallback.toUpperCase();
+  return tokens.slice(0, 3).join(" ").toUpperCase();
+}
+
+function extractClauseMetric(clause: string, fallback: string): {
+  metric: string;
+  label: string;
+} {
+  const norm = normalizeAssText(clause);
+  const numUnitMatch = norm.match(
+    /\b(1|2|3|4|5|10|30|60|one|two|three|four|five|ten|thirty|a|an)\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|clicks?|steps?|x)\b/i
+  );
+  if (numUnitMatch) {
+    const map: Record<string, string> = {
+      a: "1",
+      an: "1",
+      one: "1",
+      two: "2",
+      three: "3",
+      four: "4",
+      five: "5",
+      ten: "10",
+      thirty: "30",
+    };
+    const num = map[numUnitMatch[1].toLowerCase()] || numUnitMatch[1].toUpperCase();
+    const unit = numUnitMatch[2]
+      .toUpperCase()
+      .replace(/^MINUTES?$/, "MIN")
+      .replace(/^SECONDS?$/, "SEC")
+      .replace(/^HOURS?$/, "HOUR");
+    const rest = norm
+      .replace(numUnitMatch[0], "")
+      .replace(/\b(so|but|takes?|took|it|is|in|a|an|the)\b/gi, " ")
+      .trim();
+    return {
+      metric: `${num} ${unit}`,
+      label: cleanShortTitle(rest || fallback, fallback),
+    };
+  }
+  if (/\bmore\s+time\b/i.test(norm)) {
+    const focus = cleanShortTitle(
+      norm.replace(/\b(creators?|spend|more|time|in)\b/gi, " "),
+      "EDITING"
+    );
+    return {
+      metric: `85% ${focus}`,
+      label: "MORE TIME SPENT",
+    };
+  }
+  return {
+    metric: cleanShortTitle(norm, fallback),
+    label: fallback,
+  };
+}
+
 export async function exportFinalVideo(params: {
   cleanVideoPath: string;
   editPlan: EditPlan;
@@ -20,7 +108,7 @@ export async function exportFinalVideo(params: {
   templateId?: string;
 }): Promise<string> {
   const { cleanVideoPath, editPlan, transcript, outputPath, templateId } = params;
-  const template = getPipelineBTemplate(templateId);
+  const _template = getPipelineBTemplate(templateId);
 
   const outputDir = path.dirname(outputPath);
   if (!fs.existsSync(outputDir)) {
@@ -47,53 +135,8 @@ export async function exportFinalVideo(params: {
   }
   fs.writeFileSync(srtPath, srtLines.join("\n"), "utf-8");
 
-  // 2. Create High-Retention Advanced SubStation Alpha (.ass) Subtitles (Hormozi / MrBeast pop typography)
-  const assPath = path.join(outputDir, "subtitles.ass");
-  const assLines: string[] = [
-    "[Script Info]",
-    "Title: Meta Muse Kinetic Pop Subtitles",
-    "ScriptType: v4.00+",
-    "WrapStyle: 0",
-    "ScaledBorderAndShadow: yes",
-    "YCbCr Matrix: TV.601",
-    "PlayResX: 1080",
-    "PlayResY: 1920",
-    "",
-    "[V4+ Styles]",
-    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    "Style: PopActive,Montserrat,58,&H0000E6FF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,210,1",
-    "Style: PopIdle,Montserrat,46,&H00FFFFFF,&H000000FF,&H00000000,&H66000000,1,0,0,0,96,96,0,0,1,2.5,0.8,2,40,40,210,1",
-    "Style: Emoji,Apple Color Emoji,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,0,0,2,40,40,320,1",
-    "Style: PopMain,Montserrat,58,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,3.5,1.5,2,40,40,210,1",
-    "Style: HookBadge,Montserrat,40,&H0000E6FF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,100,1",
-    "Style: SceneBadge,Montserrat,44,&H00FFF000,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.5,2.5,8,40,40,200,1",
-    "",
-    "[Events]",
-    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-  ];
-
-  // Top Hook Badge (0.0s to 3.5s)
-  const badgeText = (editPlan.hookLine || "KEY INSIGHT").replace(/[%{}]/g, "").slice(0, 32).toUpperCase();
-  assLines.push(
-    `Dialogue: 1,0:00:00.00,0:00:03.50,HookBadge,,0,0,0,,{\\an8\\b1\\fscx106\\fscy106\\c&H0000E6FF&\\3c&H00000000&\\bord4.5\\shad2.5}[ 🔥 ${badgeText} 🔥 ]`
-  );
-
-  // Authoritative Visual Scenes & Animation Callouts
-  for (const seg of editPlan.visualSegments || []) {
-    if (seg.headlineText) {
-      const segText = seg.headlineText.replace(/[%{}]/g, "").toUpperCase();
-      const sTime = formatAssTimestamp(Math.max(0, seg.start));
-      const eTime = formatAssTimestamp(Math.min(editPlan.cleanDuration, seg.end));
-      if (seg.end > seg.start) {
-        assLines.push(
-          `Dialogue: 1,${sTime},${eTime},SceneBadge,,0,0,0,,{\\an8\\b1\\fscx108\\fscy108\\c&H00FFF000&\\3c&H00000000&\\bord4.5\\shad2.5}★ ${segText} ★`
-        );
-      }
-    }
-  }
-
-  // Extract individual words for frame-accurate kinetic highlighting & emoji bursts
-  const wordsToRender: { word: string; start: number; end: number }[] = [];
+  // Extract individual words mapped to the edited timeline
+  const wordsToRender: ExportWord[] = [];
   for (const seg of transcriptToUse) {
     if (seg.words && seg.words.length > 0) {
       for (const w of seg.words) {
@@ -107,7 +150,7 @@ export async function exportFinalVideo(params: {
     } else {
       const splitWords = seg.text.split(/\s+/).filter(Boolean);
       const segDur = Math.max(0.2, seg.end - seg.start);
-      const wordDur = segDur / splitWords.length;
+      const wordDur = segDur / Math.max(1, splitWords.length);
       splitWords.forEach((word, idx) => {
         wordsToRender.push({
           word,
@@ -118,20 +161,257 @@ export async function exportFinalVideo(params: {
     }
   }
 
-  const EMOJI_KEYWORD_MAP: Record<string, string> = {
-    fire: "🔥 ", insane: "🔥 ", crazy: "🔥 ", epic: "🔥 ", hot: "🔥 ", cool: "🔥 ",
-    fast: "⚡ ", speed: "⚡ ", quick: "⚡ ", instant: "⚡ ", now: "⚡ ", click: "⚡ ",
-    growth: "🚀 ", scale: "🚀 ", rocket: "🚀 ", launch: "🚀 ", boost: "🚀 ", double: "🚀 ",
-    idea: "💡 ", smart: "💡 ", trick: "💡 ", secret: "💡 ", tip: "💡 ", insight: "💡 ",
-    target: "🎯 ", goal: "🎯 ", result: "🎯 ", exact: "🎯 ", metric: "🎯 ",
-    money: "💰 ", cash: "💰 ", revenue: "💰 ", dollar: "💰 ", profit: "💰 ", price: "💰 ",
-    look: "👀 ", see: "👀 ", watch: "👀 ", check: "👀 ", notice: "👀 ",
-    ai: "🧠 ", model: "🧠 ", code: "🧠 ", pipeline: "🧠 ", data: "🧠 ",
-    stop: "❌ ", cut: "❌ ", wrong: "❌ ", bad: "❌ ", mistake: "❌ ", dead: "❌ ",
-    clean: "✅ ", perfect: "✅ ", done: "✅ ", easy: "✅ ", approved: "✅ ", yes: "✅ ",
-  };
+  // 2. Create Pro Reel Editor SubStation Alpha (.ass):
+  //    - Layer 0 & 1: Word-Synced Full-Screen Story Cutaways (contrast bars & step stacks)
+  //    - Layer 1: On-Face-Value Floating Callout Cards (in open space below speaker's face, y=1390)
+  //    - Layer 2: Continuous, uninterrupted lower-third word-by-word captions (y=1700)
+  const assPath = path.join(outputDir, "subtitles.ass");
+  const assLines: string[] = [
+    "[Script Info]",
+    "Title: Meta Muse Dialogue-Synced Story Explainer",
+    "ScriptType: v4.00+",
+    "WrapStyle: 0",
+    "ScaledBorderAndShadow: yes",
+    "YCbCr Matrix: TV.601",
+    "PlayResX: 1080",
+    "PlayResY: 1920",
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    "Style: CutawayBg,Montserrat,20,&H00E8F1F5,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
+    "Style: CutawayCard,Montserrat,20,&H00FFFFFF,&H000000FF,&H00141414,&H22000000,0,0,0,0,100,100,0,0,1,4,8,7,0,0,0,1",
+    "Style: CutawayHeader,Montserrat,28,&H001B49E4,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,3,0,1,0,0,5,60,60,0,1",
+    "Style: CutawayTitle,Montserrat,68,&H00141414,&H000000FF,&H00141414,&H00000000,1,0,0,0,100,100,1,0,1,0,0,5,60,60,0,1",
+    "Style: CutawayAccent,Montserrat,72,&H001B49E4,&H000000FF,&H00141414,&H00000000,1,0,0,0,100,100,1,0,1,0,0,5,60,60,0,1",
+    "Style: CutawaySub,Montserrat,30,&H004A4842,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,1,0,0,5,60,60,0,1",
+    "Style: FaceCalloutBg,Montserrat,20,&H1816100F,&H000000FF,&H001B49E4,&H55000000,0,0,0,0,100,100,0,0,1,3,6,7,0,0,0,1",
+    "Style: FaceCalloutBadge,Montserrat,24,&H0000E6FF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,3,0,1,0,0,5,60,60,0,1",
+    "Style: FaceCalloutTitle,Montserrat,44,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,1,0,1,2,0,5,60,60,0,1",
+    "Style: PopMain,Montserrat,54,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,3.5,1.5,2,50,50,220,1",
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+  ];
 
-  // Group words into natural kinetic phrase chunks (3 to 4 words per chunk, breaking at pauses >= 0.45s)
+  const rawVisualSegs = editPlan.visualSegments || [];
+  let prevWasCutaway: boolean = false;
+
+  for (let idx = 0; idx < rawVisualSegs.length; idx++) {
+    const seg = rawVisualSegs[idx];
+    const sSec = Math.max(0, seg.start);
+    const eSec = Math.min(editPlan.cleanDuration, seg.end);
+    if (eSec - sSec < 0.6) continue;
+
+    const segWords = wordsToRender.filter(
+      (w) => w.start >= sSec - 0.12 && w.start < eSec + 0.05
+    );
+    const spokenText = normalizeAssText(
+      segWords.map((w) => w.word).join(" ") || seg.spokenReference || ""
+    );
+
+    const isFirst = idx === 0;
+    const isLast = idx === rawVisualSegs.length - 1 && rawVisualSegs.length >= 3;
+
+    // Detect whether this segment contains a contrast ("minute ... hour", "editing ... creating")
+    const pivotIdx = segWords.findIndex((w, wIdx) => {
+      if (wIdx < 2 || wIdx >= segWords.length - 1) return false;
+      const lw = w.word.toLowerCase().replace(/[^a-z]/g, "");
+      return lw === "but" || lw === "rather" || lw === "instead" || lw === "versus" || lw === "vs";
+    });
+    const hasContrast =
+      pivotIdx !== -1 ||
+      (/\b(minute|minutes|second|seconds)\b/i.test(spokenText) &&
+        /\b(hour|hours|day|days)\b/i.test(spokenText));
+
+    // Detect whether this segment contains multiple action verbs ("cutting ... adding ... creating")
+    const actionRegex =
+      /\b(cutting|adding|creating|syncing|sinking|trimming|removing|building|filming|editing)\b/i;
+    const actionIndices: number[] = [];
+    segWords.forEach((w, wIdx) => {
+      if (actionRegex.test(w.word)) {
+        if (actionIndices.length === 0 || wIdx - actionIndices[actionIndices.length - 1] >= 2) {
+          actionIndices.push(wIdx);
+        }
+      }
+    });
+
+    const isCutawayCandidate: boolean =
+      !isFirst &&
+      !isLast &&
+      !prevWasCutaway &&
+      (hasContrast ||
+        actionIndices.length >= 2 ||
+        seg.layoutType === "broll_takeover" ||
+        seg.layoutType === "split_screen" ||
+        seg.layoutType === "stacked_layout" ||
+        seg.technique === "animated_diagram" ||
+        seg.technique === "ui_mockup");
+
+    prevWasCutaway = isCutawayCandidate;
+
+    const sTime = formatAssTimestamp(sSec);
+    const eTime = formatAssTimestamp(eSec);
+
+    if (isCutawayCandidate) {
+      // =====================================================================
+      // FULL-SCREEN STORY ANIMATION CUTAWAY (Synced to exact spoken words!)
+      // =====================================================================
+      assLines.push(
+        `Dialogue: 0,${sTime},${eTime},CutawayBg,,0,0,0,,{\\an7\\pos(0,0)\\fad(150,150)\\1c&HE8F1F5&\\bord0\\shad0\\p1}m 0 0 l 1080 0 1080 1920 0 1920{\\p0}`
+      );
+
+      if (hasContrast && segWords.length >= 4) {
+        const splitAt = pivotIdx !== -1 ? pivotIdx : Math.floor(segWords.length / 2);
+        const partAWords = segWords.slice(0, splitAt);
+        const partBWords = segWords.slice(splitAt);
+        const partAText = partAWords.map((w) => w.word).join(" ");
+        const partBText = partBWords
+          .map((w) => w.word)
+          .join(" ")
+          .replace(/^(but|rather\s+than|instead\s+of|versus|vs)\s+/i, "");
+
+        const infoA = extractClauseMetric(partAText, "STEP 1");
+        const infoB = extractClauseMetric(partBText, "STEP 2");
+        const partBStartSec = Math.max(sSec + 0.3, partBWords[0]?.start ?? (sSec + eSec) / 2);
+        const partBTime = formatAssTimestamp(partBStartSec);
+
+        // Card A (appears at start of cutaway when speaker says first clause)
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawayCard,,0,0,0,,{\\an7\\pos(110,470)\\fad(150,150)\\1c&HFFFFFF&\\3c&H141414&\\bord4\\shad8\\p1}m 0 0 l 860 0 860 330 0 330{\\p0}`
+        );
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawaySub,,0,0,0,,{\\an5\\pos(540,555)\\fad(150,150)}${infoA.label}`
+        );
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawayTitle,,0,0,0,,{\\an5\\pos(540,665)\\fad(150,150)\\fscx90\\fscy90\\t(0,200,\\fscx100\\fscy100)}${infoA.metric}`
+        );
+
+        // Card B (slams in at exact `partBTime` when speaker says "But editing takes an hour" / "rather than creating"!)
+        assLines.push(
+          `Dialogue: 1,${partBTime},${eTime},CutawayCard,,0,0,0,,{\\an7\\pos(110,850)\\fad(120,150)\\1c&HEDFAFF&\\3c&H1B49E4&\\bord5\\shad8\\p1}m 0 0 l 860 0 860 360 0 360{\\p0}`
+        );
+        assLines.push(
+          `Dialogue: 1,${partBTime},${eTime},CutawayHeader,,0,0,0,,{\\an5\\pos(540,940)\\fad(120,150)}VS ${infoB.label}`
+        );
+        assLines.push(
+          `Dialogue: 1,${partBTime},${eTime},CutawayAccent,,0,0,0,,{\\an5\\pos(540,1060)\\fad(120,150)\\fscx85\\fscy85\\t(0,220,\\fscx105\\fscy105)}${infoB.metric}`
+        );
+      } else if (actionIndices.length >= 2) {
+        // Multi-Step Stack where each row pops in at the exact timestamp the speaker says it
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawayCard,,0,0,0,,{\\an7\\pos(100,450)\\fad(150,150)\\1c&HFFFFFF&\\3c&H141414&\\bord4\\shad8\\p1}m 0 0 l 880 0 880 760 0 760{\\p0}`
+        );
+        const header = cleanShortTitle(seg.headlineText || spokenText, "WORKFLOW STEPS");
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawayHeader,,0,0,0,,{\\an5\\pos(540,535)\\fad(150,150)}${header}`
+        );
+
+        const maxSteps = Math.min(4, actionIndices.length);
+        for (let sIdx = 0; sIdx < maxSteps; sIdx++) {
+          const wStartIdx = actionIndices[sIdx];
+          const wEndIdx =
+            sIdx < actionIndices.length - 1 ? actionIndices[sIdx + 1] : segWords.length;
+          const phrase = normalizeAssText(
+            segWords
+              .slice(wStartIdx, wEndIdx)
+              .map((w) => w.word)
+              .join(" ")
+          );
+          const stepTitle = `0${sIdx + 1}. ${cleanShortTitle(phrase, `STEP ${sIdx + 1}`)}`;
+          const stepTriggerSec = Math.max(sSec, segWords[wStartIdx]?.start ?? sSec);
+          const stepStartAss = formatAssTimestamp(stepTriggerSec);
+          const yPos = 650 + sIdx * 135;
+
+          assLines.push(
+            `Dialogue: 1,${stepStartAss},${eTime},CutawayTitle,,0,0,0,,{\\an5\\pos(540,${yPos})\\fad(120,150)\\fs48\\fscx88\\fscy88\\t(0,180,\\fscx100\\fscy100)}${stepTitle}`
+          );
+        }
+      } else {
+        // Single Clean Concept Card
+        const heroTitle = cleanShortTitle(seg.headlineText || spokenText, "KEY INSIGHT");
+        const subTitle = cleanShortTitle(spokenText, "STORY FOCUS");
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawayCard,,0,0,0,,{\\an7\\pos(110,620)\\fad(150,150)\\1c&HFFFFFF&\\3c&H141414&\\bord4\\shad8\\p1}m 0 0 l 860 0 860 500 0 500{\\p0}`
+        );
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawayAccent,,0,0,0,,{\\an5\\pos(540,825)\\fad(150,150)\\fscx90\\fscy90\\t(0,220,\\fscx100\\fscy100)}${heroTitle}`
+        );
+        assLines.push(
+          `Dialogue: 1,${sTime},${eTime},CutawaySub,,0,0,0,,{\\an5\\pos(540,945)\\fad(150,150)}${subTitle}`
+        );
+      }
+    } else {
+      // =====================================================================
+      // ON-FACE-VALUE FLOATING CALLOUT (Below speaker's chest, y=1320..1480)
+      // Synced to the key phrase timestamp while speaker is talking on camera!
+      // =====================================================================
+      if (actionIndices.length >= 2) {
+        // Show each spoken task popping into the floating card below the speaker's face!
+        for (let sIdx = 0; sIdx < actionIndices.length; sIdx++) {
+          const wStartIdx = actionIndices[sIdx];
+          const wEndIdx =
+            sIdx < actionIndices.length - 1 ? actionIndices[sIdx + 1] : segWords.length;
+          const phrase = normalizeAssText(
+            segWords
+              .slice(wStartIdx, wEndIdx)
+              .map((w) => w.word)
+              .join(" ")
+          );
+          const chipTitle = cleanShortTitle(phrase, `STEP ${sIdx + 1}`);
+          const chipStartSec = Math.max(sSec, segWords[wStartIdx]?.start ?? sSec);
+          const chipEndSec =
+            sIdx < actionIndices.length - 1
+              ? Math.min(eSec, segWords[actionIndices[sIdx + 1]]?.start ?? eSec)
+              : eSec;
+          if (chipEndSec - chipStartSec < 0.25) continue;
+
+          const cStart = formatAssTimestamp(chipStartSec);
+          const cEnd = formatAssTimestamp(chipEndSec);
+
+          assLines.push(
+            `Dialogue: 1,${cStart},${cEnd},FaceCalloutBg,,0,0,0,,{\\an7\\pos(140,1330)\\fad(100,100)\\1c&H161210&\\3c&H1B49E4&\\bord3\\shad6\\p1}m 0 0 l 800 0 800 155 0 155{\\p0}`
+          );
+          assLines.push(
+            `Dialogue: 1,${cStart},${cEnd},FaceCalloutBadge,,0,0,0,,{\\an5\\pos(540,1372)\\fad(100,100)}STEP 0${sIdx + 1} • ON CAMERA`
+          );
+          assLines.push(
+            `Dialogue: 1,${cStart},${cEnd},FaceCalloutTitle,,0,0,0,,{\\an5\\pos(540,1432)\\fad(100,100)\\fscx88\\fscy88\\t(0,160,\\fscx100\\fscy100)}${chipTitle}`
+          );
+        }
+      } else {
+        // Trigger floating lower-face callout on the punchline words of the speaker's sentence
+        const punchIdx = segWords.length >= 5 ? Math.max(1, segWords.length - 3) : 0;
+        const triggerSec = Math.max(sSec, segWords[punchIdx]?.start ?? sSec);
+        const punchWords = segWords
+          .slice(punchIdx)
+          .map((w) => w.word)
+          .join(" ");
+        const calloutTitle = cleanShortTitle(
+          punchWords || seg.headlineText || spokenText,
+          "KEY POINT"
+        );
+        const calloutBadge = cleanShortTitle(
+          seg.headlineText || spokenText,
+          "LIVE INSIGHT"
+        );
+
+        if (eSec - triggerSec >= 0.4) {
+          const cStart = formatAssTimestamp(triggerSec);
+          assLines.push(
+            `Dialogue: 1,${cStart},${eTime},FaceCalloutBg,,0,0,0,,{\\an7\\pos(140,1330)\\fad(120,120)\\1c&H161210&\\3c&H1B49E4&\\bord3\\shad6\\p1}m 0 0 l 800 0 800 155 0 155{\\p0}`
+          );
+          assLines.push(
+            `Dialogue: 1,${cStart},${eTime},FaceCalloutBadge,,0,0,0,,{\\an5\\pos(540,1372)\\fad(120,120)}${calloutBadge}`
+          );
+          assLines.push(
+            `Dialogue: 1,${cStart},${eTime},FaceCalloutTitle,,0,0,0,,{\\an5\\pos(540,1432)\\fad(120,120)\\fscx88\\fscy88\\t(0,180,\\fscx100\\fscy100)}${calloutTitle}`
+          );
+        }
+      }
+    }
+  }
+
+  // Group words into clean 3-word phrase chunks for effortless reading
   const chunks: { words: typeof wordsToRender; start: number; end: number }[] = [];
   let currentChunkWords: typeof wordsToRender = [];
 
@@ -140,7 +420,7 @@ export async function exportFinalVideo(params: {
     const prevW = currentChunkWords[currentChunkWords.length - 1];
 
     const isLongPause = prevW && curW.start - prevW.end >= 0.45;
-    const isChunkFull = currentChunkWords.length >= 4;
+    const isChunkFull = currentChunkWords.length >= 3;
 
     if (currentChunkWords.length > 0 && (isLongPause || isChunkFull)) {
       chunks.push({
@@ -160,54 +440,44 @@ export async function exportFinalVideo(params: {
     });
   }
 
-  // Generate Hormozi / MrBeast kinetic captions: phrase chunk displayed with active word popping
+  // Layer 2: Continuous, Uninterrupted Lower-Third Captions across Speaker & Animation Cutaways
   for (const chunk of chunks) {
     for (let k = 0; k < chunk.words.length; k++) {
       const activeW = chunk.words[k];
       const nextW = k < chunk.words.length - 1 ? chunk.words[k + 1] : null;
 
-      // Active timing starts when the word begins, lasts until next word begins or end of word + 0.08s
       const sTime = formatAssTimestamp(activeW.start);
       const rawETime = nextW ? nextW.start : Math.max(activeW.start + 0.14, activeW.end);
       const eTime = formatAssTimestamp(rawETime);
 
       const formattedWords = chunk.words.map((w, j) => {
-        const cleanToken = w.word.toLowerCase().replace(/[^a-z]/g, "");
         const safeWord = w.word.replace(/[%{}]/g, "").toUpperCase();
-
         if (j === k) {
-          // ACTIVE WORD: 125% scale bounce, vibrant electric color, 5.5px black outline, 2.5px shadow, emoji burst
-          const emojiPrefix = EMOJI_KEYWORD_MAP[cleanToken] || "";
-          let wordColor = "&H0000E6FF&"; // Electric yellow (&HAABBGGRR)
-          if (/^(clean|perfect|done|easy|yes|growth|boost|profit|retention)$/i.test(cleanToken)) {
-            wordColor = "&H0081B910&"; // Neon green
-          } else if (/^(ai|code|pipeline|wonder|spark|model|tech)$/i.test(cleanToken)) {
-            wordColor = "&H00FFF000&"; // Electric cyan
-          } else if (/^(stop|cut|dead|wrong|mistake|waste|bad)$/i.test(cleanToken)) {
-            wordColor = "&H004444FF&"; // Signal red
-          }
-
-          return `{\\b1\\fscx125\\fscy125\\c${wordColor}\\3c&H00000000&\\bord3.5\\shad1.5}${emojiPrefix}${safeWord}`;
+          // Clean active word highlight (#FFE600 in BGR is &H0000E6FF&)
+          return `{\\b1\\fscx112\\fscy112\\c&H0000E6FF&\\3c&H00000000&\\bord3.5\\shad1.5}${safeWord}`;
         } else {
-          // INACTIVE CONTEXT WORD: 100% scale, pure white, clean outline
           return `{\\b1\\fscx100\\fscy100\\c&H00FFFFFF&\\3c&H00000000&\\bord2.5\\shad0.8}${safeWord}`;
         }
       });
 
       const lineText = formattedWords.join(" ");
-      assLines.push(`Dialogue: 0,${sTime},${eTime},PopMain,,0,0,0,,${lineText}`);
+      assLines.push(`Dialogue: 2,${sTime},${eTime},PopMain,,0,0,0,,${lineText}`);
     }
   }
 
   fs.writeFileSync(assPath, assLines.join("\n"), "utf-8");
 
   try {
-    const fontsDir = path.resolve(process.cwd(), "public/fonts").replace(/\\/g, "/").replace(/:/g, "\\:");
+    const fontsDir = path
+      .resolve(process.cwd(), "public/fonts")
+      .replace(/\\/g, "/")
+      .replace(/:/g, "\\:");
     const escapedAssPath = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
     const filters: string[] = [`ass='${escapedAssPath}':fontsdir='${fontsDir}'`];
 
-    if (filters.length > 0) {
-      await execFileAsync("ffmpeg", [
+    await execFileAsync(
+      "ffmpeg",
+      [
         "-y",
         "-i",
         cleanVideoPath,
@@ -215,15 +485,32 @@ export async function exportFinalVideo(params: {
         filters.join(","),
         "-c:v",
         "libx264",
+        "-profile:v",
+        "high",
+        "-level",
+        "4.1",
+        "-pix_fmt",
+        "yuv420p",
         "-preset",
-        "ultrafast",
+        "veryfast",
+        "-crf",
+        "20",
+        "-threads",
+        "4",
         "-c:a",
-        "copy",
+        "aac",
+        "-b:a",
+        "192k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-movflags",
+        "+faststart",
         outputPath,
-      ]);
-    } else {
-      fs.copyFileSync(cleanVideoPath, outputPath);
-    }
+      ],
+      { maxBuffer: 20 * 1024 * 1024 }
+    );
 
     return outputPath;
   } catch (err) {
@@ -242,7 +529,7 @@ function formatAssTimestamp(seconds: number): string {
   return `${hrs}:${pad(mins)}:${pad(secs)}.${pad(csecs)}`;
 }
 
-function mapRawTimeToCleanTime(rawTime: number, keepSegments: KeepSegment[]): number | null {
+export function mapRawTimeToCleanTime(rawTime: number, keepSegments: KeepSegment[]): number | null {
   if (!keepSegments || keepSegments.length === 0) return rawTime;
   let cleanTime = 0;
   for (const seg of keepSegments) {

@@ -21,6 +21,38 @@ export interface PipelineBTemplate {
 }
 
 export const PIPELINE_B_TEMPLATES: Record<string, PipelineBTemplate> = {
+  storyExplainer: {
+    id: "storyExplainer",
+    name: "Story Explainer (Pro Reel Cutaways)",
+    tagline: "Full-frame speaker face value alternating with clean 100% full-screen visual animation cutaways & continuous captions",
+    fontFamily: "Montserrat, Anton, sans-serif",
+    primaryColor: "#E4491B",
+    highlightColor: "#FFE600",
+    textColor: "#FFFFFF",
+    cardBg: "#FFFFFF",
+    punchInFrequency: "high",
+    captionStyle: "word_by_word",
+    enableSfx: true,
+    enableProgressBar: false,
+    enablePaperBadge: true,
+    aspectRatio: "9:16",
+  },
+  samCutoutExplainer: {
+    id: "samCutoutExplainer",
+    name: "SAM Cutout Explainer",
+    tagline: "Full-frame story animation background with speaker cutout in bottom-left/right corner & word-by-word sync",
+    fontFamily: "Montserrat, Anton, sans-serif",
+    primaryColor: "#00D9FF",
+    highlightColor: "#FFE600",
+    textColor: "#FFFFFF",
+    cardBg: "rgba(10, 14, 24, 0.94)",
+    punchInFrequency: "high",
+    captionStyle: "word_by_word",
+    enableSfx: true,
+    enableProgressBar: true,
+    enablePaperBadge: true,
+    aspectRatio: "9:16",
+  },
   dynamicDirector: {
     id: "dynamicDirector",
     name: "Dynamic Director",

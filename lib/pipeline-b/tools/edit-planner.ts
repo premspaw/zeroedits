@@ -59,25 +59,35 @@ const INTENTIONAL_EMPHASIS_WORDS = new Set([
   "true",
 ]);
 
-const FILLER_SOUND_REGEX =
-  /^(a+h+|u+m+|u+h+|e+r+|h+m+|e+r+m+|o+h+|m+h+m+|okay+|ok+|huh+|ur+|aah+|umm+|ahh+)$/i;
+export const FILLER_SOUND_REGEX =
+  /^(a+h+|u+m+|u+h+|e+h+|e+r+|h+m+|m+m+|e+r+m+|o+h+|m+h+m+|u+h+m+|u+m+h+|okay+|ok+|huh+|ur+|aah+|umm+|ahh+|uhh+)$/i;
 
-const ISOLATED_FILLERS = new Set([
+export const ISOLATED_FILLERS = new Set([
   "ah",
   "ahh",
+  "ahhh",
   "aah",
   "aaah",
   "um",
   "umm",
   "ummm",
+  "ummmm",
   "uhm",
+  "umh",
   "uh",
   "uhh",
   "uhhh",
+  "uhhhh",
+  "eh",
+  "ehh",
+  "ehhh",
   "er",
   "err",
   "hmm",
   "hmmm",
+  "hm",
+  "mm",
+  "mmm",
   "erm",
   "ooh",
   "oh",
@@ -86,6 +96,14 @@ const ISOLATED_FILLERS = new Set([
   "mhm",
   "huh",
   "ur",
+]);
+
+export const RETAKE_CUE_WORDS = new Set([
+  "wait",
+  "sorry",
+  "oops",
+  "restart",
+  "retake",
 ]);
 
 const CONVERSATIONAL_FILLERS = new Set([
@@ -102,12 +120,16 @@ const CONVERSATIONAL_FILLERS = new Set([
 function isPhraseSimilar(words1: string[], words2: string[]): boolean {
   if (words1.length !== words2.length) return false;
   if (words1.join(" ") === words2.join(" ")) return true;
-  if (words1.length < 3) return false;
+  if (words1.length < 4) return false;
+  // Both phrases must begin and end with the same words so a sliding window never swallows words from adjacent clauses
+  if (words1[0] !== words2[0] || words1[words1.length - 1] !== words2[words2.length - 1]) {
+    return false;
+  }
   let matches = 0;
   for (let k = 0; k < words1.length; k++) {
     if (words1[k] === words2[k]) matches++;
   }
-  return matches / words1.length >= 0.65;
+  return matches / words1.length >= 0.75;
 }
 
 export interface PlanTalkingHeadEditParams {
@@ -185,6 +207,27 @@ export function generateCandidateCuts(params: {
     }
   }
 
+  // 0a-2. Trailing Dead Air After Final Spoken Word (cuts dead air >= 0.35s at end of video)
+  if (validWords.length > 0) {
+    const lastWord = validWords[validWords.length - 1];
+    const trailGap = +(totalDuration - lastWord.end).toFixed(2);
+    if (trailGap >= 0.35) {
+      const trailCutStart = Math.min(totalDuration, +(lastWord.end + 0.06).toFixed(2));
+      if (totalDuration - trailCutStart >= 0.15) {
+        candidates.push({
+          id: "cand-trail-silence",
+          start: trailCutStart,
+          end: +totalDuration.toFixed(2),
+          type: "silence",
+          classification: "dead_air",
+          confidence: 0.99,
+          affectedText: `[Trailing Dead Air ${trailGap.toFixed(2)}s]`,
+          reason: `Trim trailing dead air after speaker finishes talking`,
+        });
+      }
+    }
+  }
+
   // 0b. Starting Vocal Fillers ("ah", "um", "uh", "okay", "so") before actual speech content
   if (validWords.length > 1) {
     const firstClean = validWords[0].word.toLowerCase().replace(/[^\w]/g, "");
@@ -232,16 +275,26 @@ export function generateCandidateCuts(params: {
         });
       }
     } else if (pacing.profile === "natural" && s.duration >= 0.35 && s.duration < pacing.minSilenceDuration) {
-      candidates.push({
-        id: `cand-pause-natural-${i + 1}`,
-        start: s.start,
-        end: s.end,
-        type: "silence",
-        classification: "natural_pause",
-        confidence: 0.90,
-        affectedText: `[Natural Pause ${s.duration.toFixed(2)}s]`,
-        reason: `Natural breathing pause (${s.duration.toFixed(2)}s) preserved for conversational pacing`,
-      });
+      // Only treat as a natural breathing pause if it is not part of a longer word-to-word dead air gap (>= minSilenceDuration)
+      const insideLongWordGap = validWords.some(
+        (w, wi) =>
+          wi < validWords.length - 1 &&
+          validWords[wi + 1].start - w.end >= pacing.minSilenceDuration &&
+          s.start >= w.end - 0.08 &&
+          s.end <= validWords[wi + 1].start + 0.08
+      );
+      if (!insideLongWordGap) {
+        candidates.push({
+          id: `cand-pause-natural-${i + 1}`,
+          start: s.start,
+          end: s.end,
+          type: "silence",
+          classification: "natural_pause",
+          confidence: 0.90,
+          affectedText: `[Natural Pause ${s.duration.toFixed(2)}s]`,
+          reason: `Natural breathing pause (${s.duration.toFixed(2)}s) preserved for conversational pacing`,
+        });
+      }
     }
   }
   // 0c. Ground-Truth Script Alignment (Cut off-script fillers & redundant stutters)
@@ -412,48 +465,239 @@ export function generateCandidateCuts(params: {
     }
   }
 
-  // 3b. Multi-word phrase retakes (detects repeated n-grams and trims the false start completely)
+  // 3b-0. Lingua-Style Utterance / Clause Retake Detector
+  // Compares consecutive spoken utterances (segments) to catch full-clause retakes and repeated takes,
+  // keeping ONLY the final/best take of each script line.
   const seenRetakeStarts = new Set<number>();
-  for (let L = 5; L >= 2; L--) {
+  const stripStarterWords = (wordsArr: string[]) => {
+    let idx = 0;
+    while (
+      idx < wordsArr.length &&
+      (ISOLATED_FILLERS.has(wordsArr[idx]) ||
+        FILLER_SOUND_REGEX.test(wordsArr[idx]) ||
+        RETAKE_CUE_WORDS.has(wordsArr[idx]) ||
+        ["so", "and", "but", "well", "now", "like", "yeah"].includes(wordsArr[idx]))
+    ) {
+      idx++;
+    }
+    return wordsArr.slice(idx);
+  };
+
+  if (transcript.length >= 2) {
+    let segIdx = 0;
+    while (segIdx < transcript.length - 1) {
+      const seg1 = transcript[segIdx];
+      const seg2 = transcript[segIdx + 1];
+      if (!seg1.words?.length || !seg2.words?.length) {
+        segIdx++;
+        continue;
+      }
+
+      const rawW1 = seg1.words.map((w) => w.word.toLowerCase().replace(/[^\w]/g, "")).filter(Boolean);
+      const rawW2 = seg2.words.map((w) => w.word.toLowerCase().replace(/[^\w]/g, "")).filter(Boolean);
+      const core1 = stripStarterWords(rawW1);
+      const core2 = stripStarterWords(rawW2);
+
+      // Step 0: Check if seg1 + seg2 (a hesitant 2-part take split by a pause) is repeated cleanly in seg3
+      if (segIdx + 2 < transcript.length && transcript[segIdx + 2].words?.length) {
+        const seg3 = transcript[segIdx + 2];
+        const rawW3 = seg3.words.map((w) => w.word.toLowerCase().replace(/[^\w]/g, "")).filter(Boolean);
+        const core3 = stripStarterWords(rawW3);
+        const core12 = [...core1, ...core2];
+        if (core1.length >= 1 && core2.length >= 1 && core3.length >= 3) {
+          const set3 = new Set(core3.map((w) => w.replace(/s$/, "")));
+          const match12In3 = core12.filter((w) => set3.has(w.replace(/s$/, ""))).length / core12.length;
+          const sameOpen13 = core1[0].replace(/s$/, "") === core3[0].replace(/s$/, "");
+          if (sameOpen13 && match12In3 >= 0.7 && core3.length >= core12.length - 1) {
+            const cStart =
+              segIdx > 0
+                ? Math.max(0, +(transcript[segIdx - 1].end + 0.04).toFixed(2))
+                : Math.max(0, +seg1.start.toFixed(2));
+            const cEnd = Math.min(totalDuration, +(seg3.start - 0.03).toFixed(2));
+            if (cEnd > cStart && cEnd - cStart >= 0.2) {
+              for (let wi = 0; wi < validWords.length; wi++) {
+                if (validWords[wi].start >= seg1.start - 0.02 && validWords[wi].end <= seg2.end + 0.02) {
+                  seenRetakeStarts.add(wi);
+                }
+              }
+              candidates.push({
+                id: `cand-utterance-retake-${segIdx + 1}`,
+                start: cStart,
+                end: cEnd,
+                type: "phrase_retake",
+                classification: "accidental_stutter",
+                confidence: 0.99,
+                affectedText: `${seg1.text} ${seg2.text}`,
+                reason: `Trim hesitant 2-part take '${seg1.text} ${seg2.text}' and pauses, keeping fluent final take '${seg3.text}'`,
+              });
+              segIdx += 2;
+              continue;
+            }
+          }
+        }
+      }
+
+      if (core1.length >= 1 && core2.length >= 2) {
+        const set2 = new Set(core2.map((w) => w.replace(/s$/, "")));
+        const matchCount = core1.filter((w) => set2.has(w.replace(/s$/, ""))).length;
+        const overlap1In2 = matchCount / core1.length;
+
+        const sameOpening =
+          core1[0].replace(/s$/, "") === core2[0].replace(/s$/, "") ||
+          (core1.length >= 2 && core2.length >= 2 && core1[1].replace(/s$/, "") === core2[1].replace(/s$/, ""));
+
+        // Case A: seg1 is an aborted prefix or duplicate take of seg2 (keep seg2, cut seg1 + surrounding pauses)
+        if (sameOpening && overlap1In2 >= 0.65 && core2.length >= core1.length) {
+          const cStart =
+            segIdx > 0
+              ? Math.max(0, +(transcript[segIdx - 1].end + 0.04).toFixed(2))
+              : Math.max(0, +seg1.start.toFixed(2));
+          const cEnd = Math.min(totalDuration, +(seg2.start - 0.03).toFixed(2));
+          if (cEnd > cStart && cEnd - cStart >= 0.15) {
+            for (let wi = 0; wi < validWords.length; wi++) {
+              if (validWords[wi].start >= seg1.start - 0.02 && validWords[wi].end <= seg1.end + 0.02) {
+                seenRetakeStarts.add(wi);
+              }
+            }
+            candidates.push({
+              id: `cand-utterance-retake-${segIdx + 1}`,
+              start: cStart,
+              end: cEnd,
+              type: "phrase_retake",
+              classification: "accidental_stutter",
+              confidence: 0.99,
+              affectedText: seg1.text,
+              reason: `Trim aborted/repeated take '${seg1.text}' and pause, keeping clean take '${seg2.text}'`,
+            });
+            segIdx++;
+            continue;
+          }
+        }
+
+        // Case B: seg2 is a short trailing stumble (<= 3 words, e.g. "Takes it hours") repeating the tail of a longer complete sentence seg1 (or prevSeg + seg1 >= 4 words)
+        const prevRawW =
+          segIdx > 0 && transcript[segIdx - 1].words?.length
+            ? transcript[segIdx - 1].words.map((w) => w.word.toLowerCase().replace(/[^\w]/g, "")).filter(Boolean)
+            : [];
+        const combinedPriorRaw = [...prevRawW, ...rawW1];
+        const combinedPriorCore = stripStarterWords(combinedPriorRaw);
+        const set1 = new Set(combinedPriorCore.map((w) => w.replace(/s$/, "")));
+        const match2In1 = core2.filter((w) => set1.has(w.replace(/s$/, ""))).length / core2.length;
+        if (
+          combinedPriorRaw.length >= 4 &&
+          rawW2.length <= 3 &&
+          match2In1 >= 0.66 &&
+          segIdx + 2 < transcript.length &&
+          transcript[segIdx + 2].start - seg2.end >= 0.45
+        ) {
+          const nextSeg = transcript[segIdx + 2];
+          const cStart = Math.max(0, +(seg1.end + 0.04).toFixed(2));
+          const cEnd = Math.min(totalDuration, +(nextSeg.start - 0.03).toFixed(2));
+          if (cEnd > cStart && cEnd - cStart >= 0.2) {
+            for (let wi = 0; wi < validWords.length; wi++) {
+              if (validWords[wi].start >= seg2.start - 0.02 && validWords[wi].end <= seg2.end + 0.02) {
+                seenRetakeStarts.add(wi);
+              }
+            }
+            candidates.push({
+              id: `cand-utterance-stumble-${segIdx + 2}`,
+              start: cStart,
+              end: cEnd,
+              type: "phrase_retake",
+              classification: "accidental_stutter",
+              confidence: 0.97,
+              affectedText: seg2.text,
+              reason: `Trim redundant trailing stumble '${seg2.text}' after complete sentence '${seg1.text}'`,
+            });
+            segIdx++;
+            continue;
+          }
+        }
+      }
+      segIdx++;
+    }
+  }
+
+  // 3b. Multi-word phrase & sentence retakes within or across adjacent clauses
+  const STOP_FUNCTION_WORDS = new Set([
+    "a", "an", "the", "to", "in", "of", "for", "and", "or", "but", "so", "it", "is", "are", "was", "we", "you", "i", "that", "this", "on", "at", "by", "with"
+  ]);
+  for (let L = 8; L >= 2; L--) {
     for (let i = 0; i <= normalizedWords.length - 2 * L; i++) {
-      if (seenRetakeStarts.has(i)) continue;
-      const phrase1 = normalizedWords.slice(i, i + L).join(" ");
+      let overlapsSeen = false;
+      for (let k = i; k < i + L; k++) {
+        if (seenRetakeStarts.has(k)) {
+          overlapsSeen = true;
+          break;
+        }
+      }
+      if (overlapsSeen) continue;
+      // Do not allow phrase1 to span across a long inter-sentence pause (>= 0.45s)
+      let spansSentenceBreak = false;
+      for (let k = i; k < i + L - 1; k++) {
+        if (validWords[k + 1].start - validWords[k].end >= 0.45) {
+          spansSentenceBreak = true;
+          break;
+        }
+      }
+      if (spansSentenceBreak) continue;
+      const words1 = normalizedWords.slice(i, i + L);
+      const phrase1 = words1.join(" ");
       if (!phrase1.trim()) continue;
 
-      for (let j = i + L; j <= Math.min(normalizedWords.length - L, i + L + 12); j++) {
-        const phrase2 = normalizedWords.slice(j, j + L).join(" ");
-        if (phrase1 === phrase2) {
+      // For 2-word phrases, require at least one content word so common pairs ("so we", "in a", "to the") don't match across sentences
+      if (L === 2 && words1.every((w) => STOP_FUNCTION_WORDS.has(w))) {
+        continue;
+      }
+
+      // Tight search window: a genuine phrase retake restarts within 3 intermediate words (for L=2) or 5 words (for L>=3)
+      const maxIntermediate = L === 2 ? 3 : 5;
+      for (let j = i + L; j <= Math.min(normalizedWords.length - L, i + L + maxIntermediate); j++) {
+        const words2 = normalizedWords.slice(j, j + L);
+        if (isPhraseSimilar(words1, words2)) {
           const intermediateWords = normalizedWords.slice(i + L, j);
-          const hasParallelConjunction = intermediateWords.includes("and") || intermediateWords.includes("or");
-          if (hasParallelConjunction && intermediateWords.length >= 4) {
-            continue; // Intentional rhetorical parallel, e.g. "it adds animations effects like this and it adds typography like this"
+          const hasParallelConjunction =
+            intermediateWords.includes("and") ||
+            intermediateWords.includes("or") ||
+            intermediateWords.includes("but") ||
+            intermediateWords.includes("while");
+          const hasRetakeCueOrFiller = intermediateWords.some(
+            (iw) => ISOLATED_FILLERS.has(iw) || FILLER_SOUND_REGEX.test(iw) || RETAKE_CUE_WORDS.has(iw)
+          );
+          if (hasParallelConjunction && intermediateWords.length >= 2 && !hasRetakeCueOrFiller) {
+            continue; // Intentional rhetorical parallel/contrast, e.g. "takes a minute, but editing takes a hour"
           }
 
           let take1StartIdx = i;
-          while (take1StartIdx > 0 && take1StartIdx > i - 3) {
-            const prevGap = validWords[take1StartIdx].start - validWords[take1StartIdx - 1].end;
-            if (prevGap >= 0.35) break;
-            const pClean = normalizedWords[take1StartIdx - 1];
-            if (["a", "an", "the", "used", "it", "so", "just"].includes(pClean)) {
-              take1StartIdx--;
-            } else {
-              break;
-            }
+          if (
+            take1StartIdx > 0 &&
+            validWords[take1StartIdx].start - validWords[take1StartIdx - 1].end < 0.25 &&
+            ["so", "um", "uh"].includes(normalizedWords[take1StartIdx - 1])
+          ) {
+            take1StartIdx--;
           }
 
+          // Cut all the way up to the clean second take at j
           let take2StartIdx = j;
-          for (let m = i + L - 1; m < j; m++) {
-            const gap = validWords[m + 1].start - validWords[m].end;
-            if (gap >= 0.30) {
-              take2StartIdx = m + 1;
-              break;
+          if (j - 1 >= i + L) {
+            const preJWord = normalizedWords[j - 1];
+            const gapBeforePreJ = validWords[j - 1].start - validWords[j - 2].end;
+            if (
+              ["so", "and", "now", "but"].includes(preJWord) &&
+              !ISOLATED_FILLERS.has(preJWord) &&
+              gapBeforePreJ >= 0.22
+            ) {
+              take2StartIdx = j - 1;
             }
           }
 
           const cStart = Math.max(0, +validWords[take1StartIdx].start.toFixed(2));
-          const cEnd = Math.min(totalDuration, +(validWords[take2StartIdx].start - 0.04).toFixed(2));
+          const cEnd = Math.min(totalDuration, +(validWords[take2StartIdx].start - 0.03).toFixed(2));
 
-          if (cEnd > cStart && (cEnd - cStart) >= 0.15) {
+          if (cEnd > cStart && (cEnd - cStart) >= 0.12) {
+            for (let k = take1StartIdx; k < take2StartIdx; k++) {
+              seenRetakeStarts.add(k);
+            }
             candidates.push({
               id: `cand-phrase-retake-${take1StartIdx + 1}`,
               start: cStart,
@@ -462,9 +706,8 @@ export function generateCandidateCuts(params: {
               classification: "accidental_stutter",
               confidence: 0.98,
               affectedText: validWords.slice(take1StartIdx, take2StartIdx).map((w) => w.word).join(" "),
-              reason: `Trim false start of repeated phrase: '${validWords.slice(take1StartIdx, take2StartIdx).map((w) => w.word).join(" ")}' keeping clean take '${validWords.slice(take2StartIdx, j + L).map((w) => w.word).join(" ")}'`,
+              reason: `Trim false start of repeated phrase/sentence: '${validWords.slice(take1StartIdx, take2StartIdx).map((w) => w.word).join(" ")}' keeping clean take '${validWords.slice(take2StartIdx, j + L).map((w) => w.word).join(" ")}'`,
             });
-            seenRetakeStarts.add(take1StartIdx);
             i = j + L - 1;
             break;
           }
@@ -473,8 +716,105 @@ export function generateCandidateCuts(params: {
     }
   }
 
-  // 3c. Single-word false starts, abandoned statement restarts & stuttered determiners
+  // 3b-2. Sentence / Clause Retake Point Detector ("cut like a sentence" at a retake point: uhhh, wait, sorry, or empty space)
+  for (let cStartIdx = 0; cStartIdx < validWords.length - 2; cStartIdx++) {
+    if (seenRetakeStarts.has(cStartIdx)) continue;
+    const starterClean = normalizedWords[cStartIdx];
+    if (!starterClean || ISOLATED_FILLERS.has(starterClean) || FILLER_SOUND_REGEX.test(starterClean)) {
+      continue;
+    }
+
+    // Must be at start of video, after a pause >= 0.22s, or after sentence-ending punctuation
+    const isClauseBoundary =
+      cStartIdx === 0 ||
+      validWords[cStartIdx].start - validWords[cStartIdx - 1].end >= 0.22 ||
+      /[.?!,;—\-]$/.test(validWords[cStartIdx - 1].word);
+    if (!isClauseBoundary) continue;
+
+    // Look ahead 1 to 6 words for a retake point (filler like "uhhh", retake cue like "wait"/"sorry", or hesitation empty space >= 0.35s)
+    for (let clauseLen = 1; clauseLen <= 6 && cStartIdx + clauseLen < validWords.length; clauseLen++) {
+      const breakIdx = cStartIdx + clauseLen - 1;
+      let resumeIdx = breakIdx + 1;
+      let hadFillerOrCue = false;
+      let hadExplicitRetakeCue = false;
+
+      while (resumeIdx < validWords.length) {
+        const wClean = normalizedWords[resumeIdx];
+        if (RETAKE_CUE_WORDS.has(wClean)) {
+          hadFillerOrCue = true;
+          hadExplicitRetakeCue = true;
+          resumeIdx++;
+        } else if (ISOLATED_FILLERS.has(wClean) || FILLER_SOUND_REGEX.test(wClean)) {
+          hadFillerOrCue = true;
+          resumeIdx++;
+        } else {
+          break;
+        }
+      }
+
+      if (resumeIdx >= validWords.length) break;
+
+      const gapAcrossBreak = validWords[resumeIdx].start - validWords[breakIdx].end;
+      const isRetakePoint = hadFillerOrCue || gapAcrossBreak >= 0.35;
+      if (!isRetakePoint) continue;
+
+      const resumeClean = normalizedWords[resumeIdx];
+      if (!resumeClean || INTENTIONAL_EMPHASIS_WORDS.has(starterClean)) continue;
+
+      const abortedContentWords = normalizedWords
+        .slice(cStartIdx, breakIdx + 1)
+        .filter((w) => w.length > 0 && !ISOLATED_FILLERS.has(w) && !STOP_FUNCTION_WORDS.has(w));
+      const abortedWords =
+        abortedContentWords.length > 0
+          ? abortedContentWords
+          : normalizedWords.slice(cStartIdx, breakIdx + 1).filter((w) => w.length > 0 && !ISOLATED_FILLERS.has(w));
+      const restartedWindow = normalizedWords.slice(
+        resumeIdx,
+        Math.min(normalizedWords.length, resumeIdx + clauseLen + 3)
+      );
+      const overlapCount = abortedWords.filter((aw) => restartedWindow.includes(aw)).length;
+      const overlapRatio = abortedWords.length > 0 ? overlapCount / abortedWords.length : 0;
+
+      const sameStarterRestart =
+        resumeClean === starterClean &&
+        !STOP_FUNCTION_WORDS.has(starterClean) &&
+        (hadFillerOrCue || overlapRatio >= 0.6);
+      const isClauseRestart =
+        sameStarterRestart ||
+        hadExplicitRetakeCue ||
+        (abortedWords.length >= 2 && overlapRatio >= 0.6 && hadFillerOrCue);
+
+      if (isClauseRestart) {
+        const cStart = Math.max(0, +validWords[cStartIdx].start.toFixed(2));
+        const cEnd = Math.min(totalDuration, +(validWords[resumeIdx].start - 0.03).toFixed(2));
+        if (cEnd > cStart && (cEnd - cStart) >= 0.15) {
+          for (let k = cStartIdx; k < resumeIdx; k++) {
+            seenRetakeStarts.add(k);
+          }
+          const cutText = validWords.slice(cStartIdx, resumeIdx).map((w) => w.word).join(" ");
+          const keepPreview = validWords
+            .slice(resumeIdx, Math.min(validWords.length, resumeIdx + 5))
+            .map((w) => w.word)
+            .join(" ");
+          candidates.push({
+            id: `cand-sentence-retake-${cStartIdx + 1}`,
+            start: cStart,
+            end: cEnd,
+            type: "phrase_retake",
+            classification: "accidental_stutter",
+            confidence: 0.98,
+            affectedText: cutText,
+            reason: `Trim aborted sentence/clause retake '${cutText}' at retake point, keeping clean sentence '${keepPreview}'`,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // 3c. Abandoned statement restarts (e.g. "every all", "in only in")
   for (let i = 0; i < validWords.length - 1; i++) {
+    if (seenRetakeStarts.has(i)) continue;
     const wCurrent = validWords[i];
     const wNext = validWords[i + 1];
     const curClean = normalizedWords[i];
@@ -482,11 +822,15 @@ export function generateCandidateCuts(params: {
 
     if (!curClean || INTENTIONAL_EMPHASIS_WORDS.has(curClean)) continue;
 
-    const isRepeatedShortly = i < validWords.length - 2 && (curClean === normalizedWords[i + 2] || curClean === normalizedWords[i + 3]);
-    const isAbandonedWord = (curClean === "every" && nextClean === "all") ||
-                            (curClean === "in" && (nextClean === "only" || nextClean === "just") && i < validWords.length - 2 && normalizedWords[i + 2] === "in");
+    // Never mark common words ("a", "to", "takes", "like", "no") as single-word false starts mid-sentence
+    const isAbandonedWord =
+      (curClean === "every" && nextClean === "all") ||
+      (curClean === "in" &&
+        (nextClean === "only" || nextClean === "just") &&
+        i < validWords.length - 2 &&
+        normalizedWords[i + 2] === "in");
 
-    if (isRepeatedShortly || isAbandonedWord) {
+    if (isAbandonedWord) {
       const cStart = Math.max(0, +wCurrent.start.toFixed(2));
       const cEnd = Math.min(totalDuration, +(wNext.start - 0.02).toFixed(2));
       if (cEnd > cStart && (cEnd - cStart) >= 0.08) {
@@ -504,52 +848,80 @@ export function generateCandidateCuts(params: {
     }
   }
 
-  // 4. Vocal Fillers & Hesitation Markers ("ah", "um", "uh", "er", "hmm", "like")
-  for (let i = 0; i < validWords.length; i++) {
-    const w = validWords[i];
-    const clean = normalizedWords[i];
+  // 4. Vocal Fillers & Hesitation Markers ("ah", "um", "uh", "uhhh", "er", "hmm", "like") + Adjacent Empty Space
+  let fi = 0;
+  while (fi < validWords.length) {
+    const w = validWords[fi];
+    const clean = normalizedWords[fi];
 
-    const isExplicitFiller = ISOLATED_FILLERS.has(clean) || FILLER_SOUND_REGEX.test(clean);
+    const isExplicitFiller =
+      ISOLATED_FILLERS.has(clean) || FILLER_SOUND_REGEX.test(clean) || RETAKE_CUE_WORDS.has(clean);
     const isConversational = CONVERSATIONAL_FILLERS.has(clean);
 
     let isFiller = isExplicitFiller;
     if (isConversational) {
-      // Conversational fillers ("like", "so", "yeah") count as fillers if preceded or followed by pause >= 0.12s, at clause start, or repeated
-      const prevWord = i > 0 ? validWords[i - 1] : null;
-      const nextWord = i < validWords.length - 1 ? validWords[i + 1] : null;
+      // Conversational words ("like", "so", "yeah") ONLY count as fillers when isolated by pauses on BOTH sides (>= 0.18s)
+      // or repeated back-to-back ("like like", "so so"). Never clip sentence-starting "So" ("So we thought...") or "like" ("effects like this")!
+      const prevWord = fi > 0 ? validWords[fi - 1] : null;
+      const nextWord = fi < validWords.length - 1 ? validWords[fi + 1] : null;
       const prevGap = prevWord ? w.start - prevWord.end : 1.0;
       const nextGap = nextWord ? nextWord.start - w.end : 1.0;
-      const isRepeatedNear = (prevWord && normalizedWords[i - 1] === clean) || (nextWord && normalizedWords[i + 1] === clean);
-      if (prevGap >= 0.12 || nextGap >= 0.12 || i === 0 || isRepeatedNear) {
+      const isRepeatedNear =
+        (prevWord && normalizedWords[fi - 1] === clean) ||
+        (nextWord && normalizedWords[fi + 1] === clean);
+      if ((prevGap >= 0.18 && nextGap >= 0.18) || isRepeatedNear) {
         isFiller = true;
       }
     }
 
     if (isFiller) {
-      const prevWord = i > 0 ? validWords[i - 1] : null;
-      const nextWord = i < validWords.length - 1 ? validWords[i + 1] : null;
+      // Group consecutive filler tokens so "uhhh ... ummm" + all surrounding empty space is cut in one block
+      let fEndIdx = fi;
+      while (fEndIdx + 1 < validWords.length) {
+        const nextClean = normalizedWords[fEndIdx + 1];
+        if (
+          ISOLATED_FILLERS.has(nextClean) ||
+          FILLER_SOUND_REGEX.test(nextClean) ||
+          RETAKE_CUE_WORDS.has(nextClean)
+        ) {
+          fEndIdx++;
+        } else {
+          break;
+        }
+      }
 
-      // Expand cut to swallow adjacent dead pauses around the filler sound
+      const prevWord = fi > 0 ? validWords[fi - 1] : null;
+      const nextWord = fEndIdx < validWords.length - 1 ? validWords[fEndIdx + 1] : null;
+
+      // Expand cut to swallow all empty space before, between, and after the filler sound(s)
       const cStart = prevWord
         ? Math.max(0, +(prevWord.end + pacing.minSpeechMargin).toFixed(2))
-        : Math.max(0, +w.start.toFixed(2));
+        : 0;
 
       const cEnd = nextWord
         ? Math.min(totalDuration, +(nextWord.start - pacing.minSpeechMargin).toFixed(2))
-        : Math.min(totalDuration, +w.end.toFixed(2));
+        : Math.min(totalDuration, +validWords[fEndIdx].end.toFixed(2));
+
+      const fillerText = validWords
+        .slice(fi, fEndIdx + 1)
+        .map((fw) => fw.word)
+        .join(" ");
 
       if (cEnd > cStart && (cEnd - cStart) >= 0.05) {
         candidates.push({
-          id: `cand-filler-${i + 1}`,
+          id: `cand-filler-${fi + 1}`,
           start: cStart,
           end: cEnd,
           type: "filler",
           classification: "filler_pause",
           confidence: 0.98,
-          affectedText: w.word,
-          reason: `Trim vocal filler hesitation sound: '${w.word}' and adjacent silence`,
+          affectedText: fillerText,
+          reason: `Trim vocal filler hesitation sound '${fillerText}' and adjacent empty space`,
         });
       }
+      fi = fEndIdx + 1;
+    } else {
+      fi++;
     }
   }
 
@@ -582,14 +954,27 @@ export function wonderMuseEditorialDirector(params: {
   const approvedCuts: EditCut[] = [];
   const protectedRanges: ProtectedRange[] = [];
 
-  // 1. Establish Protected Ranges
+  // 1. Establish Protected Ranges (natural pauses never block retake or filler cuts)
   for (const cand of candidates) {
-    if (cand.classification === "intentional_emphasis" || cand.classification === "natural_pause") {
+    if (cand.classification === "intentional_emphasis") {
       protectedRanges.push({
         start: cand.start,
         end: cand.end,
         reason: cand.reason,
       });
+    } else if (cand.classification === "natural_pause") {
+      const overlapsRetakeOrFiller = candidates.some(
+        (other) =>
+          (other.classification === "accidental_stutter" || other.classification === "filler_pause") &&
+          Math.max(cand.start, other.start) < Math.min(cand.end, other.end)
+      );
+      if (!overlapsRetakeOrFiller) {
+        protectedRanges.push({
+          start: cand.start,
+          end: cand.end,
+          reason: cand.reason,
+        });
+      }
     }
   }
 

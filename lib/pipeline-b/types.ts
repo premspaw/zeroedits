@@ -114,6 +114,7 @@ export type VisualTechnique =
   | "kinetic_typography"
   | "dynamic_captions"
   | "animated_diagram"
+  | "procedural_graphic"
   | "ui_mockup"
   | "broll_clip"
   | "generated_image"
@@ -187,6 +188,7 @@ export interface EditedTranscriptSegment {
 }
 
 export interface EditPlan {
+  runId?: string;
   title: string;
   hookLine: string;
   cuts: EditCut[];

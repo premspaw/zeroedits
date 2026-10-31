@@ -2,24 +2,24 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
-import { createRun, loadState, recordStageSuccess, recordStageFailure } from "./state.ts";
-import { validateCuts, validateApprovedCutsSemantic } from "./tools/cuts-validator.ts";
+import { createRun, loadState, saveState, recordStageSuccess, recordStageFailure } from "../lib/pipeline-b/state.ts";
+import { validateCuts, validateApprovedCutsSemantic } from "../lib/pipeline-b/tools/cuts-validator.ts";
 import {
   planTalkingHeadEdit,
   mapSourceTimeToEditedTime,
   mergeOverlappingCuts,
   assembleFinalEditPlan,
-} from "./tools/edit-planner.ts";
+} from "../lib/pipeline-b/tools/edit-planner.ts";
 import {
   callWonderEditorialCleanup,
   callWonderCreativeDirector,
   buildEditedTranscript,
-} from "./tools/wonder-director.ts";
-import type { TranscriptSegment } from "./types.ts";
-import { executePipelineB } from "./orchestrator.ts";
-import { validateMedia } from "./tools/media-validator.ts";
-import { alignTranscriptWithScript } from "./tools/transcript-aligner.ts";
-import { getPipelineBTemplate, PIPELINE_B_TEMPLATES } from "./templates/registry.ts";
+} from "../lib/pipeline-b/tools/wonder-director.ts";
+import type { TranscriptSegment } from "../lib/pipeline-b/types.ts";
+import { executePipelineB } from "../lib/pipeline-b/orchestrator.ts";
+import { validateMedia } from "../lib/pipeline-b/tools/media-validator.ts";
+import { alignTranscriptWithScript } from "../lib/pipeline-b/tools/transcript-aligner.ts";
+import { getPipelineBTemplate, PIPELINE_B_TEMPLATES } from "../lib/pipeline-b/templates/registry.ts";
 
 describe("Pipeline B — Template Registry", () => {
   it("provides registered talking-head templates with 9:16 aspect ratio", () => {
@@ -509,6 +509,45 @@ describe("Pipeline B — Code Review Automated Verification Suite (10 Target Cas
         }),
       /Cut validation failed: AI-approved cuts deleted excessive dialogue/
     );
+  });
+
+  it("Case 11: Sentence-level retake across 'uhhh' and empty space — cuts aborted sentence, filler, and dead air so words never appear twice", () => {
+    const transcript = [
+      {
+        id: 1,
+        start: 0.2,
+        end: 6.8,
+        text: "When we first started uhhh When I built this tool it was fast",
+        words: [
+          { word: "When", start: 0.2, end: 0.45, confidence: 0.95 },
+          { word: "we", start: 0.45, end: 0.65, confidence: 0.95 },
+          { word: "first", start: 0.65, end: 0.95, confidence: 0.95 },
+          { word: "started", start: 0.95, end: 1.35, confidence: 0.95 },
+          { word: "uhhh", start: 1.5, end: 2.0, confidence: 0.9 },
+          // 0.6s empty space before retake point at 2.6s
+          { word: "When", start: 2.6, end: 2.85, confidence: 0.95 },
+          { word: "I", start: 2.85, end: 3.0, confidence: 0.95 },
+          { word: "built", start: 3.0, end: 3.4, confidence: 0.95 },
+          { word: "this", start: 3.4, end: 3.7, confidence: 0.95 },
+          { word: "tool", start: 3.7, end: 4.1, confidence: 0.95 },
+          { word: "it", start: 4.1, end: 4.3, confidence: 0.95 },
+          { word: "was", start: 4.3, end: 4.6, confidence: 0.95 },
+          { word: "fast", start: 4.6, end: 5.1, confidence: 0.95 },
+        ],
+      },
+    ];
+
+    const plan = planTalkingHeadEdit({
+      transcript,
+      totalDuration: 5.3,
+    });
+
+    const edited = buildEditedTranscript(transcript, plan.keepSegments);
+    const finalText = edited.map((s) => s.text).join(" ");
+
+    assert.ok(!finalText.toLowerCase().includes("uhhh"), "Must remove 'uhhh' from edited transcript");
+    assert.ok(!finalText.toLowerCase().includes("started"), "Must trim aborted first sentence 'When we first started'");
+    assert.equal(finalText, "When I built this tool it was fast", "Must retain only the clean second sentence take");
   });
 });
 
@@ -1095,7 +1134,6 @@ describe("Pipeline B — Full Verification Talking-Head Scenario", () => {
     runState.silences = [{ start: 1.0, end: 2.0, duration: 1.0 }];
 
     // Save state so executePipelineB loads it
-    const { saveState } = await import("./state.ts");
     saveState(runState);
 
     // Call Stage A directly with mockFetch and verify order
@@ -1220,7 +1258,6 @@ describe("Pipeline B — Real Media End-to-End Execution & Audio/Visual Verifica
     runState.stages.TRANSCRIBED.status = "completed";
     runState.stages.TRANSCRIPT_ALIGNED.status = "completed";
 
-    const { saveState } = await import("./state.ts");
     saveState(runState);
 
     // Execute through pipeline

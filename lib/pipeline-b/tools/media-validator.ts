@@ -61,10 +61,10 @@ export async function validateMedia(videoPath: string): Promise<MediaMetadata> {
       throw new Error("Unable to determine video duration from media stream.");
     }
 
-    // Constraint from prompt: "talking-head video of up to 60 seconds"
-    if (duration > 61) {
+    // Allow raw unedited talking-head uploads up to 300 seconds (5 minutes) so retake-heavy footage can be trimmed down
+    if (duration > 300) {
       throw new Error(
-        `Video duration (${duration.toFixed(1)}s) exceeds the 60-second limit for Pipeline B. Please provide a clip under 60 seconds.`
+        `Video duration (${duration.toFixed(1)}s) exceeds the 300-second limit for Pipeline B. Please provide a clip under 5 minutes.`
       );
     }
 

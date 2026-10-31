@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import Pip from "@/components/Pip";
+import Pip, { PIP_MOOD_META } from "@/components/Pip";
+import { buildSceneDialoguePlan, type WordItem } from "@/components/TalkingHeadExplainerStage";
 import {
   AlertTriangle,
   ArrowRight,
@@ -53,11 +54,17 @@ interface WonderStoryboardProps {
   onPlay: () => void;
   onRetry?: () => void;
   onApproveCuts?: () => void;
-  onRebuildCuts?: (customCuts: any[]) => void;
+  onRebuildCuts?: (customCuts: any[], updatedState?: any) => void;
   onSeekTime?: (timeSec: number) => void;
   disabled?: boolean;
   timing?: string;
   onEdit?: (scene: number) => void;
+  onRecreateScene?: (
+    sceneIndex: number,
+    instruction: string,
+    customStart?: number,
+    customEnd?: number
+  ) => Promise<void>;
   unifiedMode?: boolean;
 }
 
@@ -90,6 +97,7 @@ export default function WonderStoryboard({
   disabled = false,
   timing,
   onEdit,
+  onRecreateScene,
   unifiedMode = true,
 }: WonderStoryboardProps) {
   const isPipelineB = pipeline === "pipeline-b" || !!editPlan;
@@ -99,15 +107,26 @@ export default function WonderStoryboard({
   const candidateCuts = editPlan?.candidateCuts || [];
   const transcriptSegments = editPlan?.transcript || [];
 
-  // Determine initial tab: prefer cuts view if cuts exist in pipeline B
+  // Determine initial tab: when video is ready, show Visual Scenes first so user sees dialogue-synced animations
   const [activeBoardTab, setActiveBoardTab] = useState<"cuts" | "protected" | "transcript" | "scenes">(
-    isPipelineB && cuts.length > 0 ? "cuts" : "scenes"
+    isPipelineB && status !== "ready" && cuts.length > 0 ? "cuts" : "scenes"
   );
 
   const [userCuts, setUserCuts] = useState<any[]>(cuts);
   const [captionTexts, setCaptionTexts] = useState<Record<number, string>>({});
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [rebuildSuccess, setRebuildSuccess] = useState(false);
+
+  // Single-Scene Recreate & Scissor Point Recreate states
+  const [recreateOpenForScene, setRecreateOpenForScene] = useState<number | null>(null);
+  const [recreatePrompt, setRecreatePrompt] = useState("");
+  const [recreateStartSec, setRecreateStartSec] = useState("");
+  const [recreateEndSec, setRecreateEndSec] = useState("");
+  const [isRecreatingScene, setIsRecreatingScene] = useState(false);
+
+  const [editingCutIdx, setEditingCutIdx] = useState<number | null>(null);
+  const [cutStartInput, setCutStartInput] = useState("");
+  const [cutEndInput, setCutEndInput] = useState("");
 
   useEffect(() => {
     if (cuts && cuts.length > 0) {
@@ -205,7 +224,30 @@ export default function WonderStoryboard({
             <div className="flex items-center gap-2.5">
               <div className="shrink-0">
                 <Pip
-                  mood={cuts.length > 0 ? "idea" : "thinking"}
+                  mood={
+                    status === "error"
+                      ? "concerned"
+                      : isBuilding || isRebuilding
+                      ? "writing"
+                      : rebuildSuccess
+                      ? "excited"
+                    : activeBoardTab === "cuts"
+                      ? cuts.length > 0
+                        ? "reading"
+                        : "happy"
+                      : activeBoardTab === "protected"
+                      ? "reading"
+                      : activeBoardTab === "transcript"
+                      ? Object.keys(captionTexts).length > 0 || userCuts.length !== cuts.length
+                        ? "writing"
+                        : "listening"
+                      : activeScene
+                      ? cycling
+                        ? "idea"
+                        : "thinking"
+                      : "thinking"
+                  }
+                  spin={activeBoardTab === "scenes" && cycling && !isBuilding && !isRebuilding}
                   size={36}
                   interactive={true}
                 />
@@ -213,7 +255,7 @@ export default function WonderStoryboard({
               <div>
                 <div className="flex items-center gap-1.5">
                   <span className="mono text-[9px] font-bold uppercase tracking-wider text-[#E4491B]">
-                    Pip & Wonder Stage A & B
+                    Zee & Wonder Stage A & B
                   </span>
                   <span className="mono text-[8px] bg-[#141414] text-white px-1.5 py-0.2 rounded-full font-semibold">
                     muse-wonder-1.0
@@ -403,9 +445,10 @@ export default function WonderStoryboard({
               <p className="mono text-[9px] font-bold uppercase tracking-widest text-[#6B6A64] px-1">
                 Wonder AI Approved Reductions ({cuts.length})
               </p>
-              {cuts.map((cut: any, idx: number) => {
+              {userCuts.map((cut: any, idx: number) => {
                 const cutDur = Math.max(0.01, (cut.end || 0) - (cut.start || 0));
                 const cutWord = cut.affectedText || cut.cutWord || "Detected Pause / Stutter";
+                const isEditingThisCut = editingCutIdx === idx;
                 return (
                   <div
                     key={cut.id || idx}
@@ -420,10 +463,124 @@ export default function WonderStoryboard({
                           {String(cut.type).toUpperCase()}
                         </span>
                       </div>
-                      <span className="mono text-[10.5px] font-bold text-[#E4491B]">
-                        -{cutDur.toFixed(2)}s removed
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="mono text-[10.5px] font-bold text-[#E4491B]">
+                          -{cutDur.toFixed(2)}s removed
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isEditingThisCut) {
+                              setEditingCutIdx(null);
+                            } else {
+                              setEditingCutIdx(idx);
+                              setCutStartInput(String(Number(cut.start).toFixed(2)));
+                              setCutEndInput(String(Number(cut.end).toFixed(2)));
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border border-[#141414] bg-[#F7F5EF] hover:bg-[#E4491B] hover:text-white px-2.5 py-0.5 mono text-[9.5px] font-bold text-[#141414] transition cursor-pointer"
+                        >
+                          <RefreshCw size={10} />
+                          <span>{isEditingThisCut ? "Close" : "Recreate Cut"}</span>
+                        </button>
+                      </div>
                     </div>
+
+                    {isEditingThisCut && (
+                      <div className="mt-2.5 rounded-lg border-2 border-[#E4491B] bg-[#FFF8F5] p-2.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="mono text-[9.5px] font-bold uppercase tracking-wider text-[#E4491B]">
+                            Edit Scissor Point #{idx + 1} Time Range
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const nextCuts = userCuts.filter((_, i) => i !== idx);
+                              setUserCuts(nextCuts);
+                              setEditingCutIdx(null);
+                              if (pipelineBRunId) {
+                                setIsRebuilding(true);
+                                try {
+                                  const res = await fetch("/api/pipeline-b/resume", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      runId: pipelineBRunId,
+                                      customApprovedCuts: nextCuts,
+                                    }),
+                                  });
+                                  const data = await res.json();
+                                  if (data.success) onRebuildCuts?.(nextCuts, data.state);
+                                } finally {
+                                  setIsRebuilding(false);
+                                }
+                              }
+                            }}
+                            className="mono text-[9.5px] font-bold text-[#03543F] bg-[#DEF7EC] border border-[#86EFAC] px-2 py-0.5 rounded-full hover:brightness-95 cursor-pointer"
+                          >
+                            Undo Cut (Keep Speech)
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="mono text-[10px] text-[#52504A] flex items-center gap-1">
+                            <span>Start (s):</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={cutStartInput}
+                              onChange={(e) => setCutStartInput(e.target.value)}
+                              className="w-16 rounded border border-[#D5D2C8] bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#141414]"
+                            />
+                          </label>
+                          <label className="mono text-[10px] text-[#52504A] flex items-center gap-1">
+                            <span>End (s):</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={cutEndInput}
+                              onChange={(e) => setCutEndInput(e.target.value)}
+                              className="w-16 rounded border border-[#D5D2C8] bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#141414]"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={isRebuilding}
+                            onClick={async () => {
+                              const sVal = parseFloat(cutStartInput);
+                              const eVal = parseFloat(cutEndInput);
+                              if (!Number.isFinite(sVal) || !Number.isFinite(eVal) || eVal <= sVal) return;
+                              const nextCuts = userCuts.map((c, i) =>
+                                i === idx ? { ...c, start: +sVal.toFixed(2), end: +eVal.toFixed(2) } : c
+                              );
+                              setUserCuts(nextCuts);
+                              setEditingCutIdx(null);
+                              if (pipelineBRunId) {
+                                setIsRebuilding(true);
+                                try {
+                                  const res = await fetch("/api/pipeline-b/resume", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      runId: pipelineBRunId,
+                                      customApprovedCuts: nextCuts,
+                                    }),
+                                  });
+                                  const data = await res.json();
+                                  if (data.success) onRebuildCuts?.(nextCuts, data.state);
+                                } finally {
+                                  setIsRebuilding(false);
+                                }
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white px-3 py-1 mono text-[10px] font-bold shadow-2xs cursor-pointer"
+                          >
+                            {isRebuilding ? <Loader2 size={10} className="animate-spin" /> : <Scissors size={10} />}
+                            <span>Apply Scissor Point</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="pt-2">
                       <div className="flex items-start gap-1.5">
@@ -438,10 +595,20 @@ export default function WonderStoryboard({
                       {cut.reason && (
                         <div className="mt-2 flex items-start gap-2 bg-[#F7F5EF] p-2 rounded-lg border border-[#EBE7DF]">
                           <div className="shrink-0 mt-0.5">
-                            <Pip mood="idea" size={26} interactive={false} />
+                            <Pip
+                              mood={
+                                /stutter|repetition|retake|false/i.test(String(cut.type))
+                                  ? "concerned"
+                                  : /filler/i.test(String(cut.type))
+                                  ? "thinking"
+                                  : "idea"
+                              }
+                              size={26}
+                              interactive={false}
+                            />
                           </div>
                           <div className="min-w-0 text-[11px] leading-relaxed text-[#52504A]">
-                            <span className="font-semibold text-[#141414]">Pip's Editorial Rationale: </span>
+                            <span className="font-semibold text-[#141414]">Zee&apos;s Editorial Rationale: </span>
                             {cut.reason}
                           </div>
                         </div>
@@ -523,7 +690,7 @@ export default function WonderStoryboard({
                       </p>
                     )}
                     <p className="text-[11px] text-[#52504A] leading-relaxed">
-                      <span className="font-semibold text-[#141414]">Pip's Shield Reason: </span>
+                      <span className="font-semibold text-[#141414]">Zee&apos;s Shield Reason: </span>
                       {range.reason}
                     </p>
                   </div>
@@ -567,7 +734,7 @@ export default function WonderStoryboard({
                         const data = await res.json();
                         if (data.success) {
                           setRebuildSuccess(true);
-                          onRebuildCuts?.(userCuts);
+                          onRebuildCuts?.(userCuts, data.state);
                           setTimeout(() => setRebuildSuccess(false), 3000);
                         }
                       } catch (err) {
@@ -799,19 +966,35 @@ export default function WonderStoryboard({
               >
                 {cycling ? "Pause scenes" : "Play scenes"}
               </button>
-              {onEdit && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={disabled}
+                  disabled={disabled || isRecreatingScene}
                   onClick={() => {
                     setCycling(false);
-                    onEdit(activeIndex + 1);
+                    if (recreateOpenForScene === activeIndex) {
+                      setRecreateOpenForScene(null);
+                    } else {
+                      setRecreateOpenForScene(activeIndex);
+                      setRecreatePrompt("");
+                      setRecreateStartSec(
+                        typeof activeScene.start === "number" ? String(activeScene.start) : ""
+                      );
+                      setRecreateEndSec(
+                        typeof activeScene.end === "number" ? String(activeScene.end) : ""
+                      );
+                    }
                   }}
-                  className="hover:underline"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#141414] bg-[#E4491B] text-white px-2.5 py-0.5 text-[10px] font-bold shadow-[1px_1px_0px_#141414] hover:bg-[#C93D14] transition cursor-pointer disabled:opacity-50"
                 >
-                  Edit scene {activeIndex + 1}
+                  <RefreshCw size={10} className={isRecreatingScene ? "animate-spin" : ""} />
+                  <span>
+                    {recreateOpenForScene === activeIndex
+                      ? "Close Recreate"
+                      : `Recreate Scene ${activeIndex + 1}`}
+                  </span>
                 </button>
-              )}
+              </div>
             </div>
             <motion.article
               key={activeIndex}
@@ -822,19 +1005,187 @@ export default function WonderStoryboard({
               className="overflow-hidden rounded-xl border-2 border-[#141414] bg-[#FFFFFF] shadow-[3px_3px_0px_#141414]"
             >
               <div className="px-3.5 py-3 sm:px-4">
-                <div className="flex items-center justify-between gap-2 mono text-[8.5px] uppercase tracking-[0.12em] text-[#52504A]">
+                <div className="flex flex-wrap items-center justify-between gap-2 mono text-[8.5px] uppercase tracking-[0.12em] text-[#52504A]">
                   <span>
                     Scene {String(activeIndex + 1).padStart(2, "0")} /{" "}
                     {String(beats.length).padStart(2, "0")}
                   </span>
-                  <span>{sceneTiming(activeScene)}</span>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const sceneMood = activeIndex === beats.length - 1 ? "happy" : "thinking";
+                      return (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] px-2 py-0.5 text-[8.5px] font-bold text-[#141414]">
+                          <Pip mood={sceneMood} size={16} interactive={false} />
+                          <span>Zee: {PIP_MOOD_META[sceneMood]?.label}</span>
+                        </span>
+                      );
+                    })()}
+                    <span>{sceneTiming(activeScene)}</span>
+                    <button
+                      type="button"
+                      disabled={disabled || isRecreatingScene}
+                      onClick={() => {
+                        setCycling(false);
+                        if (recreateOpenForScene === activeIndex) {
+                          setRecreateOpenForScene(null);
+                        } else {
+                          setRecreateOpenForScene(activeIndex);
+                          setRecreatePrompt("");
+                          setRecreateStartSec(
+                            typeof activeScene.start === "number" ? String(activeScene.start) : ""
+                          );
+                          setRecreateEndSec(
+                            typeof activeScene.end === "number" ? String(activeScene.end) : ""
+                          );
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-[#141414] bg-[#F7F5EF] hover:bg-[#E4491B] hover:text-white px-2 py-0.5 mono text-[8.5px] font-bold text-[#141414] transition cursor-pointer"
+                    >
+                      <RefreshCw size={9} />
+                      <span>Recreate</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Inline Single-Scene Recreate Composer */}
+                {recreateOpenForScene === activeIndex && (
+                  <div className="mt-2.5 mb-2 rounded-xl border-2 border-[#E4491B] bg-[#FFF8F5] p-3 space-y-2.5 shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <RefreshCw size={12} className="text-[#E4491B]" />
+                        <span className="mono text-[10px] font-bold uppercase tracking-wider text-[#141414]">
+                          Recreate Scene {activeIndex + 1} ({sceneTiming(activeScene)})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mono text-[9.5px] text-[#52504A]">
+                        <label className="flex items-center gap-1">
+                          <span>From (s):</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={recreateStartSec}
+                            onChange={(e) => setRecreateStartSec(e.target.value)}
+                            placeholder="0.0"
+                            className="w-14 rounded border border-[#D5D2C8] bg-white px-1.5 py-0.5 text-[10.5px] font-bold text-[#141414]"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <span>To (s):</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={recreateEndSec}
+                            onChange={(e) => setRecreateEndSec(e.target.value)}
+                            placeholder="4.0"
+                            className="w-14 rounded border border-[#D5D2C8] bg-white px-1.5 py-0.5 text-[10.5px] font-bold text-[#141414]"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Quick Suggestion Chips */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {(isPipelineB
+                        ? [
+                            "Switch to Full-Screen Animation Cutaway",
+                            "Switch to Full-Screen Speaker Face",
+                            "Add comparison chart visual",
+                            "Zoom in 1.15x on speaker",
+                          ]
+                        : [
+                            "Fix character consistency & pose",
+                            "Add dramatic zoom & lightning VFX",
+                            "Close-up emotional anime shot",
+                            "Make scene more vibrant & dynamic",
+                          ]
+                      ).map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setRecreatePrompt(chip)}
+                          className="rounded-full border border-[#D5D2C8] bg-white hover:border-[#E4491B] hover:text-[#E4491B] px-2 py-0.5 text-[9.5px] font-semibold text-[#52504A] transition cursor-pointer"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={recreatePrompt}
+                        onChange={(e) => setRecreatePrompt(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter" && onRecreateScene && !isRecreatingScene) {
+                            e.preventDefault();
+                            setIsRecreatingScene(true);
+                            try {
+                              const sNum = parseFloat(recreateStartSec);
+                              const eNum = parseFloat(recreateEndSec);
+                              await onRecreateScene(
+                                activeIndex,
+                                recreatePrompt.trim(),
+                                Number.isFinite(sNum) ? sNum : undefined,
+                                Number.isFinite(eNum) ? eNum : undefined
+                              );
+                              setRecreateOpenForScene(null);
+                              setRecreatePrompt("");
+                            } finally {
+                              setIsRecreatingScene(false);
+                            }
+                          }
+                        }}
+                        placeholder={`What should Zee change or recreate in Scene ${activeIndex + 1} (${sceneTiming(activeScene)})?`}
+                        className="flex-1 rounded-lg border border-[#D5D2C8] bg-white px-2.5 py-1.5 text-[12px] text-[#141414] placeholder:text-[#6B6A64]/70 focus:border-[#E4491B] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={isRecreatingScene || disabled}
+                        onClick={async () => {
+                          if (onRecreateScene) {
+                            setIsRecreatingScene(true);
+                            try {
+                              const sNum = parseFloat(recreateStartSec);
+                              const eNum = parseFloat(recreateEndSec);
+                              await onRecreateScene(
+                                activeIndex,
+                                recreatePrompt.trim(),
+                                Number.isFinite(sNum) ? sNum : undefined,
+                                Number.isFinite(eNum) ? eNum : undefined
+                              );
+                              setRecreateOpenForScene(null);
+                              setRecreatePrompt("");
+                            } finally {
+                              setIsRecreatingScene(false);
+                            }
+                          } else if (onEdit) {
+                            onEdit(activeIndex + 1);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] text-white px-3 py-1.5 text-[11px] font-bold shadow-[2px_2px_0px_#141414] transition active:scale-95 cursor-pointer disabled:opacity-50 shrink-0"
+                      >
+                        {isRecreatingScene ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>Recreating...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw size={12} />
+                            <span>Recreate Scene {activeIndex + 1}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <h4 className="mt-2 text-[10px] font-bold uppercase tracking-widest text-[#E4491B]">
                   {activeScene.label}
                 </h4>
                 <div className="mt-1.5 border-l-2 border-[#E4491B] pl-2.5">
                   <p className="mb-0.5 mono text-[8px] uppercase tracking-widest text-[#52504A]">
-                    {script ? "On-screen words" : "Visual storytelling"}
+                    {script ? "Spoken Dialogue (Synced)" : "Visual storytelling"}
                   </p>
                   <p
                     className={`whitespace-pre-wrap break-words ${
@@ -846,6 +1197,127 @@ export default function WonderStoryboard({
                     {script || "This scene is led by visuals, with no on-screen text specified."}
                   </p>
                 </div>
+
+                {/* Dialogue-Synced Animation Triggers for this Scene */}
+                {(() => {
+                  const sStart = typeof activeScene?.start === "number" ? activeScene.start : activeIndex * 3.5;
+                  const sEnd = typeof activeScene?.end === "number" ? activeScene.end : sStart + 3.5;
+                  const editedWords: WordItem[] = [];
+                  const segSource =
+                    editPlan?.editedTranscript && editPlan.editedTranscript.length > 0
+                      ? editPlan.editedTranscript
+                      : editPlan?.transcript || [];
+                  for (const seg of segSource) {
+                    for (const w of seg.words || []) {
+                      const ws = typeof w.editedStart === "number" ? w.editedStart : w.start ?? 0;
+                      const we = typeof w.editedEnd === "number" ? w.editedEnd : w.end ?? ws + 0.2;
+                      if (ws >= sStart - 0.12 && ws < sEnd + 0.05) {
+                        editedWords.push({ word: w.word, start: ws, end: we });
+                      }
+                    }
+                  }
+                  const syncPlan = buildSceneDialoguePlan(
+                    editedWords,
+                    script || activeScene?.label || "",
+                    activeScene?.label,
+                    sStart,
+                    sEnd
+                  );
+                  const isEdgeScene =
+                    activeIndex === 0 || (activeIndex === beats.length - 1 && beats.length >= 3);
+                  const isCutaway =
+                    !isEdgeScene &&
+                    (syncPlan.visualKind === "contrast_comparison" ||
+                      syncPlan.visualKind === "step_stack" ||
+                      activeIndex % 2 === 1);
+
+                  return (
+                    <div className="mt-3 rounded-xl bg-[#FAF8F3] border border-[#D5D2C8] p-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <span className="mono text-[8.5px] font-bold uppercase tracking-wider text-[#E4491B] flex items-center gap-1">
+                          <Sparkles size={11} />
+                          <span>
+                            {isCutaway
+                              ? "Full-Screen Story Animation Cutaway"
+                              : "Full-Screen Speaker + Lower-Face Floating Animation"}
+                          </span>
+                        </span>
+                        <span className="mono text-[8px] px-2 py-0.5 rounded-full bg-[#141414] text-white font-semibold">
+                          {syncPlan.visualKind.replace(/_/g, " ").toUpperCase()}
+                        </span>
+                      </div>
+
+                      {syncPlan.contrast ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSeekTime?.(syncPlan.contrast!.partATime);
+                              window.dispatchEvent(
+                                new CustomEvent("seek-pipeline-b", {
+                                  detail: { time: syncPlan.contrast!.partATime },
+                                })
+                              );
+                            }}
+                            className="text-left rounded-lg bg-white border border-[#D5D2C8] hover:border-[#E4491B] p-2 transition cursor-pointer"
+                          >
+                            <div className="mono text-[8px] text-[#6B6A64] uppercase">
+                              {syncPlan.contrast.partATime.toFixed(2)}s • {syncPlan.contrast.partALabel}
+                            </div>
+                            <div className="serif text-[15px] font-bold text-[#141414]">
+                              {syncPlan.contrast.partAMetric}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSeekTime?.(syncPlan.contrast!.partBTime);
+                              window.dispatchEvent(
+                                new CustomEvent("seek-pipeline-b", {
+                                  detail: { time: syncPlan.contrast!.partBTime },
+                                })
+                              );
+                            }}
+                            className="text-left rounded-lg bg-[#FFF3ED] border border-[#E4491B] p-2 transition cursor-pointer"
+                          >
+                            <div className="mono text-[8px] text-[#E4491B] font-bold uppercase">
+                              {syncPlan.contrast.partBTime.toFixed(2)}s • {syncPlan.contrast.partBLabel} ⚡
+                            </div>
+                            <div className="serif text-[15px] font-bold text-[#E4491B]">
+                              {syncPlan.contrast.partBMetric}
+                            </div>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {(syncPlan.steps.length > 0 ? syncPlan.steps : syncPlan.faceCallouts).map(
+                            (item: any, idx: number) => (
+                              <button
+                                key={item.id || idx}
+                                type="button"
+                                onClick={() => {
+                                  onSeekTime?.(item.triggerTime);
+                                  window.dispatchEvent(
+                                    new CustomEvent("seek-pipeline-b", {
+                                      detail: { time: item.triggerTime },
+                                    })
+                                  );
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D5D2C8] hover:border-[#E4491B] px-2.5 py-1 text-[10.5px] font-bold text-[#141414] transition cursor-pointer shadow-2xs"
+                                title={`Click to seek video to ${item.triggerTime.toFixed(2)}s`}
+                              >
+                                <span className="mono text-[8.5px] px-1.5 py-0.2 rounded bg-[#F6D9CC] text-[#E4491B]">
+                                  {Number(item.triggerTime).toFixed(2)}s
+                                </span>
+                                <span>{item.label || item.title}</span>
+                              </button>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {(voiceover || visual) && (

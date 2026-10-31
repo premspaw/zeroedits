@@ -138,6 +138,103 @@ window.addEventListener('unhandledrejection', function(event) { failPreview(even
   window.addEventListener('resize', updateScale);
   updateScale();
 
+  let layerEditMode = false;
+  let layerOffsets = {};
+  let activeLayerDrag = null;
+  let wasPlayingBeforeLayerEdit = false;
+  function getLayerPath(element) {
+    const path = [];
+    let node = element;
+    while (node && node !== rootEl) {
+      const parent = node.parentNode;
+      if (!parent) return null;
+      path.unshift(Array.prototype.indexOf.call(parent.childNodes, node));
+      node = parent;
+    }
+    return node === rootEl ? path : null;
+  }
+  function applyLayerOffsets() {
+    rootEl.querySelectorAll('*').forEach(function(node) {
+      node.style.cursor = layerEditMode ? 'move' : '';
+    });
+    Object.keys(layerOffsets).forEach(function(key) {
+      let node = rootEl;
+      key.split('.').map(Number).forEach(function(index) { node = node && node.childNodes[index]; });
+      if (node && node.style) {
+        const offset = layerOffsets[key];
+        node.style.translate = offset.x + 'px ' + offset.y + 'px';
+      }
+    });
+  }
+  function findEditableLayer(target) {
+    let node = target instanceof Element ? target : target && target.parentElement;
+    while (node && node !== rootEl) {
+      if (node instanceof HTMLElement) {
+        const hasText = (node.innerText || '').trim().length > 0;
+        const hasImage = node.tagName === 'IMG' || node.querySelector('img,svg,canvas,video') ||
+          (node.style.backgroundImage && node.style.backgroundImage !== 'none');
+        if (hasText || hasImage) return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+  document.addEventListener('pointerdown', function(event) {
+    if (!layerEditMode || event.button !== 0) return;
+    const node = findEditableLayer(event.target);
+    const path = node && getLayerPath(node);
+    if (!node || !path || !path.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = path.join('.');
+    const base = layerOffsets[key] || { x: 0, y: 0 };
+    activeLayerDrag = {
+      node: node, key: key, startX: event.clientX, startY: event.clientY,
+      baseX: base.x, baseY: base.y,
+      scale: rootEl.getBoundingClientRect().width / COMP_WIDTH || 1
+    };
+    node.style.outline = '2px solid #E4491B';
+    node.style.outlineOffset = '3px';
+  }, true);
+  document.addEventListener('pointermove', function(event) {
+    if (!activeLayerDrag) return;
+    event.preventDefault();
+    const drag = activeLayerDrag;
+    const offset = {
+      x: Math.round(drag.baseX + (event.clientX - drag.startX) / drag.scale),
+      y: Math.round(drag.baseY + (event.clientY - drag.startY) / drag.scale)
+    };
+    layerOffsets[drag.key] = offset;
+    drag.node.style.translate = offset.x + 'px ' + offset.y + 'px';
+  }, true);
+  document.addEventListener('pointerup', function() {
+    if (!activeLayerDrag) return;
+    activeLayerDrag.node.style.outline = '';
+    activeLayerDrag.node.style.outlineOffset = '';
+    activeLayerDrag = null;
+    sendPreviewMessage('SPARK_LAYER_POSITIONS', { positions: layerOffsets });
+  }, true);
+  window.addEventListener('message', function(event) {
+    if (!event.data || event.data.previewId !== PREVIEW_ID) return;
+    if (event.data.type === 'EDIT_LAYERS') {
+      const enabled = Boolean(event.data.enabled);
+      if (enabled && !layerEditMode) {
+        wasPlayingBeforeLayerEdit = isPlaying;
+        isPlaying = false;
+        sendTime();
+      } else if (!enabled && layerEditMode) {
+        isPlaying = wasPlayingBeforeLayerEdit;
+        sendTime();
+      }
+      layerEditMode = enabled;
+      document.body.style.cursor = layerEditMode ? 'move' : '';
+      applyLayerOffsets();
+    } else if (event.data.type === 'SET_LAYER_POSITIONS' && event.data.positions) {
+      layerOffsets = event.data.positions;
+      applyLayerOffsets();
+    }
+  });
+
   let currentTime = 0;
   let isPlaying = true;
   let lastTime = performance.now();
@@ -176,6 +273,7 @@ window.addEventListener('unhandledrejection', function(event) { failPreview(even
           })
         ));
       });
+      applyLayerOffsets();
     } catch (error) { failPreview(error); }
   }
 

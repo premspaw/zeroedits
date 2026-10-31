@@ -171,30 +171,39 @@ export const TalkingHeadReel: React.FC = () => {
     transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
   };
 
-  if (layoutType === "picture_in_picture") {
+  if (layoutType === "picture_in_picture" || layoutType === "sam_cutout") {
     videoContainerStyle = {
       position: "absolute",
       right: 36,
       bottom: 240,
-      width: 320,
-      height: 480,
-      borderRadius: 28,
+      width: 340,
+      height: 460,
+      borderRadius: layoutType === "sam_cutout" ? "42% 42% 36% 36% / 34% 34% 44% 44%" : 28,
       border: "4px solid ${template.primaryColor}",
-      boxShadow: "0 24px 64px rgba(0,0,0,0.85)",
+      boxShadow: "0 24px 64px rgba(0,0,0,0.85), 0 0 24px rgba(0,217,255,0.4)",
       overflow: "hidden",
       zIndex: 50,
       transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
     };
-  } else if (layoutType === "split_screen") {
+  } else if (layoutType === "split_screen" || layoutType === "stacked_layout") {
     videoContainerStyle = {
       position: "absolute",
-      top: 0,
+      bottom: 0,
       left: 0,
-      width: "50%",
-      height: "100%",
+      width: "100%",
+      height: "48%",
       zIndex: 20,
       overflow: "hidden",
-      borderRight: "3px solid ${template.primaryColor}",
+      borderTop: "4px solid ${template.primaryColor}",
+    };
+  } else if (layoutType === "broll_takeover") {
+    videoContainerStyle = {
+      position: "absolute",
+      width: 1,
+      height: 1,
+      opacity: 0,
+      pointerEvents: "none",
+      overflow: "hidden",
     };
   }
 

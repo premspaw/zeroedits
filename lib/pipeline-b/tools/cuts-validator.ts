@@ -150,11 +150,20 @@ export function validateApprovedCutsSemantic(
     // 5. Spoken-word boundary defense & accidental speech clipping protection
     let clipsSpeech = false;
     for (const w of allWords) {
-      // If this cut is specifically intended to remove this word (stutter/filler), skip boundary defense for it
-      const isTargetCutWord = rawCut.cutWord && (
-        w.word.toLowerCase() === rawCut.cutWord.toLowerCase() ||
-        rawCut.reason.toLowerCase().includes(w.word.toLowerCase())
-      );
+      const cleanW = w.word.toLowerCase().replace(/[^\w]/g, "");
+      const cutWordLower = (rawCut.cutWord || "").toLowerCase();
+      const reasonLower = (rawCut.reason || "").toLowerCase();
+      const wordMid = (w.start + w.end) / 2;
+
+      // If this cut is specifically intended to remove this word/phrase (stutter, sentence retake, filler), skip boundary defense for it
+      const isIntentionalSpeechCut =
+        rawCut.type === "retake" || rawCut.type === "filler" || rawCut.type === "off_script";
+      const isTargetCutWord =
+        (isIntentionalSpeechCut && wordMid >= start - 0.02 && wordMid <= end + 0.02) ||
+        (cleanW.length > 0 &&
+          (cutWordLower === cleanW ||
+            cutWordLower.split(/\s+/).some((tok) => tok.replace(/[^\w]/g, "") === cleanW) ||
+            reasonLower.includes(cleanW)));
       if (isTargetCutWord) continue;
 
       // Does the cut completely engulf this non-target spoken word?

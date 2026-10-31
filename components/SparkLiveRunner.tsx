@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useId } from "react";
-import { Play, Pause, RotateCcw, Maximize2, Minimize2, Download, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Play, Pause, RotateCcw, Maximize2, Minimize2, Download, Loader2, AlertCircle, RefreshCw, Move } from "lucide-react";
 import { createSparkPreviewDocument } from "./spark-preview-document";
 import Pip from "./Pip";
 
@@ -35,6 +35,7 @@ export default function SparkLiveRunner({
   generatingStep = "",
   theme,
   storyboard,
+  topic = "",
   showControls = true,
   onRetry,
   errorMessage = null,
@@ -53,6 +54,9 @@ export default function SparkLiveRunner({
   const [currentTime, setCurrentTime] = useState(0);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLayerEditMode, setIsLayerEditMode] = useState(false);
+  const layerEditModeRef = useRef(false);
+  const layerPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
   const [reloadKey, setReloadKey] = useState(0);
   const totalVideoDuration = Number.isFinite(duration) && duration > 0 ? duration : 10;
   const background = String(theme?.bg || storyboard?.theme?.bg || "#FFF8F0");
@@ -62,6 +66,11 @@ export default function SparkLiveRunner({
     for (const character of code) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
     return `${instanceId}-${hash >>> 0}-${replayKey}-${reloadKey}-${totalVideoDuration}`;
   }, [instanceId, code, replayKey, reloadKey, totalVideoDuration]);
+  const layerEditKey = useMemo(() => {
+    let hash = 2166136261;
+    for (const character of code) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+    return `muse-spark-layer-positions-${hash >>> 0}`;
+  }, [code]);
   const srcDoc = useMemo(() => createSparkPreviewDocument({
     code, duration: totalVideoDuration, background, ink, previewId, fps: 60,
   }), [code, totalVideoDuration, background, ink, previewId]);
@@ -91,6 +100,17 @@ export default function SparkLiveRunner({
         mounted = true;
         window.clearTimeout(timeout);
         setIsLoaded(true);
+        try {
+          const stored = sessionStorage.getItem(layerEditKey);
+          if (stored) layerPositionsRef.current = JSON.parse(stored);
+        } catch {}
+        iframeRef.current?.contentWindow?.postMessage({
+          type: "SET_LAYER_POSITIONS", previewId,
+          positions: layerPositionsRef.current,
+        }, "*");
+        iframeRef.current?.contentWindow?.postMessage({
+          type: "EDIT_LAYERS", previewId, enabled: layerEditModeRef.current,
+        }, "*");
         callbacksRef.current.onReady?.();
       } else if (event.data.type === "SPARK_RENDER_ERROR") {
         window.clearTimeout(timeout);
@@ -104,6 +124,9 @@ export default function SparkLiveRunner({
             event.data.isPlaying !== false
           );
         }
+      } else if (event.data.type === "SPARK_LAYER_POSITIONS" && event.data.positions) {
+        layerPositionsRef.current = event.data.positions;
+        try { sessionStorage.setItem(layerEditKey, JSON.stringify(event.data.positions)); } catch {}
       }
     };
     window.addEventListener("message", handleMessage);
@@ -111,7 +134,16 @@ export default function SparkLiveRunner({
       window.clearTimeout(timeout);
       window.removeEventListener("message", handleMessage);
     };
-  }, [srcDoc, previewId, code, isGenerating, errorMessage]);
+  }, [srcDoc, previewId, code, isGenerating, errorMessage, layerEditKey]);
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(layerEditKey);
+      layerPositionsRef.current = stored ? JSON.parse(stored) : {};
+    } catch { layerPositionsRef.current = {}; }
+    layerEditModeRef.current = false;
+    setIsLayerEditMode(false);
+  }, [code, layerEditKey]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
@@ -144,6 +176,12 @@ export default function SparkLiveRunner({
       else await containerRef.current.requestFullscreen();
     } catch {}
   };
+  const toggleLayerEditMode = () => {
+    const enabled = !isLayerEditMode;
+    layerEditModeRef.current = enabled;
+    setIsLayerEditMode(enabled);
+    iframeRef.current?.contentWindow?.postMessage({ type: "EDIT_LAYERS", previewId, enabled }, "*");
+  };
 
   return (
     <div ref={containerRef} className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] bg-[#ECEAE3] border border-[#D5D2C8] ${className}`} style={{ aspectRatio }}>
@@ -154,9 +192,23 @@ export default function SparkLiveRunner({
             {visibleError ? "Preview needs attention" : isLoaded ? "Spark 1.3 · Live" : "Preparing preview"}
           </span>
         </div>
-        <button onClick={handleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen preview"} className="w-8 h-8 rounded-full grid place-items-center bg-black/60 text-white border border-white/10">
-          {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {code && !isGenerating && !visibleError && (
+            <button
+              type="button"
+              onClick={toggleLayerEditMode}
+              aria-pressed={isLayerEditMode}
+              aria-label={isLayerEditMode ? "Finish editing layers" : "Edit preview layers"}
+              title={isLayerEditMode ? "Finish moving preview layers" : "Move text and image layers"}
+              className={`h-8 px-2.5 rounded-full flex items-center gap-1.5 border text-[10px] font-semibold transition ${isLayerEditMode ? "bg-[#E4491B] text-white border-white/30" : "bg-black/60 text-white border-white/10"}`}
+            >
+              <Move size={12} /> {isLayerEditMode ? "Done" : "Edit layers"}
+            </button>
+          )}
+          <button onClick={handleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen preview"} className="w-8 h-8 rounded-full grid place-items-center bg-black/60 text-white border border-white/10">
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+        </div>
       </div>
 
       <div className="relative flex-1 min-h-0 w-full overflow-hidden">
@@ -169,6 +221,11 @@ export default function SparkLiveRunner({
             className="absolute inset-0 w-full h-full border-none bg-transparent"
             title="Meta Muse Spark 1.3 Live Animation Preview"
           />
+        )}
+        {isLayerEditMode && isLoaded && !visibleError && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 rounded-full bg-[#E4491B] px-3 py-1.5 text-white text-[10px] font-semibold shadow-lg pointer-events-none">
+            Drag text or images to reposition · click Done when finished
+          </div>
         )}
         {visibleError ? (
           <div className="absolute inset-0 z-20 bg-[#F7F5EF] text-[#141414] px-5 pt-14 pb-5 flex flex-col items-center justify-center text-center" role="alert">
@@ -194,12 +251,9 @@ export default function SparkLiveRunner({
               mood="writing"
               size={64}
               showDialogue={true}
-              dialogue={generatingStep || "Drawing paper physics & typography..."}
+              userInstruction={topic}
+              dialogue={generatingStep || "Adding motion to your video"}
             />
-            <p className="serif text-[20px] mt-2 mb-1 text-[#141414]">{isGenerating ? "Spark is creating your video" : "Opening your animation"}</p>
-            <p className="text-[12px] text-[#6B6A64] max-w-[250px] leading-relaxed">
-              Explore Wonder’s storyboard while the scenes come together.
-            </p>
           </div>
         )}
       </div>
@@ -216,7 +270,7 @@ export default function SparkLiveRunner({
                 <RotateCcw size={13} />
               </button>
               <span className="mono text-[10px] text-white/90 tabular-nums">{currentTime.toFixed(1)} / {totalVideoDuration.toFixed(1)}s</span>
-              <div className="ml-1.5 shrink-0" title={isPlaying ? "Pip is watching" : "Paused"}>
+              <div className="ml-1.5 shrink-0" title={isPlaying ? "Zee is watching" : "Paused"}>
                 <Pip mood={isPlaying ? "happy" : "idle"} size={22} interactive={false} />
               </div>
             </div>

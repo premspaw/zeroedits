@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { X, Download, Video, CheckCircle2, AlertCircle, Loader2, Play } from "lucide-react";
+import { X, Download, Video, CheckCircle2, AlertCircle, Loader2, Play, Minimize2, Maximize2 } from "lucide-react";
+import SparkLiveRunner from "./SparkLiveRunner";
 
 export interface StoryboardBeat {
   id: number;
@@ -76,12 +77,16 @@ export default function VideoExportModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [hasMeasuredRemotionProgress, setHasMeasuredRemotionProgress] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [totalFrames, setTotalFrames] = useState(0);
   const [exportComplete, setExportComplete] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<"mp4" | "webm">("mp4");
+  const [isMinimized, setIsMinimized] = useState(false);
+  const exportAbortControllerRef = useRef<AbortController | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   // Determine active beats list (fallback to storyboard beats if needed)
   const activeBeatsList: StoryboardBeat[] =
@@ -653,13 +658,14 @@ export default function VideoExportModal({
       setLocalSparkCode("");
       setUsedFallback(false);
       setPhase("idle");
+      setIsMinimized(false);
     }
   }, [isOpen, totalFramesCount]);
 
   // Compose the real Spark animation from beats when the reel has no code yet.
   // This keeps every download on the Remotion path (exact preview parity)
   // instead of silently dropping to the simplified canvas fallback.
-  const synthesizeSparkCode = async (): Promise<string> => {
+  const synthesizeSparkCode = async (signal?: AbortSignal): Promise<string> => {
     const n = Math.max(1, activeBeatsList.length);
     const step = totalDuration / n;
     const normalizedBeats = activeBeatsList.map((b, i) => ({
@@ -679,6 +685,7 @@ export default function VideoExportModal({
     const resp = await fetch("/api/code", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal,
       body: JSON.stringify({
         beats: normalizedBeats,
         theme: theme || storyboard?.theme || null,
@@ -702,42 +709,57 @@ export default function VideoExportModal({
 
   // Start the on-demand recording process
   const startExport = async () => {
+    const abortController = new AbortController();
+    exportAbortControllerRef.current = abortController;
     setIsExporting(true);
     setProgress(0);
+    setHasMeasuredRemotionProgress(false);
     setCurrentFrame(0);
     setExportError(null);
     setExportComplete(false);
 
     // ── PATH Pipeline B: Native Auto-Edit Video Export ──
     if (pipelineBRunId) {
-      setProgress(15);
       setPhase("rendering");
       try {
         const resp = await fetch("/api/pipeline-b/export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ runId: pipelineBRunId }),
+          signal: abortController.signal,
         });
-        setProgress(75);
         const result = await resp.json();
         if (!resp.ok || !result.success) {
           throw new Error(result.error || "Failed to render Pipeline B final reel.");
         }
+        const finalUrl = `/api/pipeline-b/media/${pipelineBRunId}/final?download=1&t=${Date.now()}`;
+        const mediaResp = await fetch(finalUrl, { cache: "no-store", signal: abortController.signal });
+        if (!mediaResp.ok) {
+          throw new Error(`Failed to fetch exported MP4 file (HTTP ${mediaResp.status}).`);
+        }
+        const arrayBuf = await mediaResp.arrayBuffer();
+        if (!arrayBuf || arrayBuf.byteLength < 1000) {
+          throw new Error("Exported MP4 file was empty or incomplete.");
+        }
+        const mp4Blob = new Blob([arrayBuf], { type: "video/mp4" });
+        const blobUrl = URL.createObjectURL(mp4Blob);
+        setDownloadUrl(blobUrl);
+        setExportFormat("mp4");
+        setRenderedFps(30);
         setProgress(100);
-        const finalUrl = `/api/pipeline-b/media/${pipelineBRunId}/final`;
-        setDownloadUrl(finalUrl);
         setExportComplete(true);
         const cleanName = topic.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30).replace(/_+/g, "_").replace(/^_|_$/g, "");
         const a = document.createElement("a");
-        a.href = finalUrl;
-        a.download = `${cleanName || "PipelineB"}_Edited.mp4`;
+        a.href = blobUrl;
+        a.download = `${cleanName || "Zee"}_Edited.mp4`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
       } catch (err: any) {
         console.error("Pipeline B export failed:", err);
-        setExportError(err.message || "Failed to export Pipeline B video.");
+        setExportError(abortController.signal.aborted ? "Export cancelled." : err.message || "Failed to export Pipeline B video.");
       } finally {
+        exportAbortControllerRef.current = null;
         setIsExporting(false);
       }
       return;
@@ -750,9 +772,15 @@ export default function VideoExportModal({
       try {
         setPhase("composing");
         setProgress(2);
-        codeToRender = await synthesizeSparkCode();
+        codeToRender = await synthesizeSparkCode(abortController.signal);
         setLocalSparkCode(codeToRender);
       } catch (composeErr: any) {
+        if (abortController.signal.aborted) {
+          setExportError("Export cancelled.");
+          setIsExporting(false);
+          exportAbortControllerRef.current = null;
+          return;
+        }
         console.warn("[export] animation compose failed, using canvas fallback:", composeErr);
         setUsedFallback(true);
       }
@@ -763,7 +791,7 @@ export default function VideoExportModal({
     if (codeToRender.trim().length > 30) {
       try {
         setPhase("rendering");
-        setProgress(5); // show immediate activity
+        setProgress(0);
         const resp = await fetch("/api/render-video", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -779,15 +807,77 @@ export default function VideoExportModal({
               .filter((t) => t?.hasAudio && t?.url)
               .map((t) => ({ url: t.url, start: t.start })),
           }),
+          signal: abortController.signal,
         });
 
-        if (!resp.ok) {
-          const errData = await resp.json().catch(() => ({}));
-          throw new Error(errData.error || `Server render failed (HTTP ${resp.status})`);
+        if (!resp.ok) throw new Error(`Server render failed (HTTP ${resp.status})`);
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error("The render stream could not be read.");
+        const marker = new TextEncoder().encode("--VIDEO--\n");
+        let pending = new Uint8Array(0);
+        let videoStarted = false;
+        let renderFailure: string | null = null;
+        const videoChunks: Uint8Array[] = [];
+        const concat = (a: Uint8Array, b: Uint8Array) => {
+          const merged = new Uint8Array(a.length + b.length);
+          merged.set(a);
+          merged.set(b, a.length);
+          return merged;
+        };
+        const markerIndex = (bytes: Uint8Array) => {
+          outer: for (let i = 0; i <= bytes.length - marker.length; i++) {
+            for (let j = 0; j < marker.length; j++) if (bytes[i + j] !== marker[j]) continue outer;
+            return i;
+          }
+          return -1;
+        };
+        const parseEvents = (bytes: Uint8Array) => {
+          const lines = new TextDecoder().decode(bytes).split("\n").filter(Boolean);
+          for (const line of lines) {
+            let event: any;
+            try { event = JSON.parse(line); } catch { continue; }
+            if (event.type === "progress") {
+              setPhase("rendering");
+              setHasMeasuredRemotionProgress(true);
+              setProgress(Math.min(88, Math.max(5, 5 + Math.floor(Number(event.progress || 0) * 83))));
+            } else if (event.type === "error" || event.type === "cancelled") {
+              renderFailure = event.error || "Export cancelled.";
+            }
+          }
+        };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (videoStarted) {
+            videoChunks.push(value);
+            continue;
+          }
+          pending = concat(pending, value);
+          const index = markerIndex(pending);
+          if (index >= 0) {
+            parseEvents(pending.slice(0, index));
+            const firstVideoBytes = pending.slice(index + marker.length);
+            if (firstVideoBytes.length) videoChunks.push(firstVideoBytes);
+            videoStarted = true;
+            pending = new Uint8Array(0);
+          } else {
+            const lastLineEnd = pending.lastIndexOf(10);
+            if (lastLineEnd >= 0) {
+              parseEvents(pending.slice(0, lastLineEnd + 1));
+              pending = pending.slice(lastLineEnd + 1);
+            }
+          }
         }
-
-        setProgress(90);
-        const blob = await resp.blob();
+        if (!videoStarted) {
+          parseEvents(pending);
+          throw new Error(renderFailure || "Remotion did not return a rendered video.");
+        }
+        const blobParts: BlobPart[] = videoChunks.map((chunk) => {
+          const copy = new Uint8Array(chunk.byteLength);
+          copy.set(chunk);
+          return copy.buffer;
+        });
+        const blob = new Blob(blobParts, { type: "video/mp4" });
         const url = URL.createObjectURL(blob);
         setDownloadUrl(url);
         setExportFormat("mp4");
@@ -810,6 +900,12 @@ export default function VideoExportModal({
         document.body.removeChild(a);
       } catch (err: any) {
         console.error("[Remotion export] failed:", err);
+        if (abortController.signal.aborted) {
+          setExportError("Export cancelled.");
+          setIsExporting(false);
+          exportAbortControllerRef.current = null;
+          return;
+        }
         setUsedFallback(true);
         // Fall through to the canvas fallback below so the user still gets a file.
       }
@@ -820,7 +916,7 @@ export default function VideoExportModal({
       setPhase("rendering");
     }
 
-    // ── PATH B: Canvas fallback (no sparkCode available) ───────────────────
+    // ── PATH B: Canvas fallback + FFmpeg server H.264 MP4 remux ────────────
     const canvas = canvasRef.current;
     if (!canvas) { setIsExporting(false); return; }
     const ctx = canvas.getContext("2d");
@@ -828,11 +924,11 @@ export default function VideoExportModal({
 
     try {
       const mimeTypes = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
         "video/mp4;codecs=avc1",
         "video/mp4",
-        "video/webm;codecs=vp9,opus",
-        "video/webm;codecs=vp8,opus",
-        "video/webm",
       ];
       let selectedMimeType = "";
       for (const mime of mimeTypes) {
@@ -840,11 +936,14 @@ export default function VideoExportModal({
       }
       if (!selectedMimeType) throw new Error("Your browser does not support MediaRecorder video encoding.");
 
-      const isMp4 = selectedMimeType.includes("mp4");
-      setExportFormat(isMp4 ? "mp4" : "webm");
+      const fallbackFps = 30;
+      const fallbackTotalFrames = Math.max(30, Math.round(totalDuration * fallbackFps));
+      setTotalFrames(fallbackTotalFrames);
 
-      const stream = canvas.captureStream(fps);
-      const recorder = new MediaRecorder(stream, { mimeType: selectedMimeType, videoBitsPerSecond: 12_000_000 });
+      const stream = canvas.captureStream(fallbackFps);
+      const videoTrack = stream.getVideoTracks()[0] as any;
+      const recorder = new MediaRecorder(stream, { mimeType: selectedMimeType, videoBitsPerSecond: 8_000_000 });
+      mediaRecorderRef.current = recorder;
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
 
@@ -853,38 +952,92 @@ export default function VideoExportModal({
         recorder.onerror = () => reject(new Error("MediaRecorder error during render"));
       });
 
-      recorder.start();
-      const frameStepTime = 1 / fps;
-      for (let f = 0; f < totalFramesCount; f++) {
+      recorder.start(100);
+      const frameStepTime = 1 / fallbackFps;
+      for (let f = 0; f < fallbackTotalFrames; f++) {
+        if (abortController.signal.aborted) {
+          if (recorder.state !== "inactive") recorder.stop();
+          throw new Error("Export cancelled.");
+        }
         renderFrameToCanvas(ctx, f * frameStepTime);
+        if (typeof videoTrack?.requestFrame === "function") {
+          try { videoTrack.requestFrame(); } catch {}
+        }
         setCurrentFrame(f + 1);
-        setProgress(Math.round(((f + 1) / totalFramesCount) * 100));
-        if (f % 3 === 0) await new Promise((r) => setTimeout(r, 0));
+        setProgress(Math.min(88, Math.round(((f + 1) / fallbackTotalFrames) * 88)));
+        await new Promise((r) => setTimeout(r, 12));
       }
 
       recorder.stop();
-      const videoBlob = await renderPromise;
-      const url = URL.createObjectURL(videoBlob);
+      const rawVideoBlob = await renderPromise;
+
+      // Transcode via FFmpeg (/api/remux-mp4) into a standard H.264 High Profile +faststart MP4
+      // so Windows Media Player, Movies & TV, QuickTime, and mobile galleries play it natively.
+      let finalMp4Blob = rawVideoBlob;
+      let finalExt: "mp4" | "webm" = selectedMimeType.includes("mp4") ? "mp4" : "webm";
+      try {
+        setProgress(94);
+        const remuxResp = await fetch("/api/remux-mp4", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: await rawVideoBlob.arrayBuffer(),
+        });
+        if (remuxResp.ok) {
+          const mp4Buf = await remuxResp.arrayBuffer();
+          if (mp4Buf && mp4Buf.byteLength > 1000) {
+            finalMp4Blob = new Blob([mp4Buf], { type: "video/mp4" });
+            finalExt = "mp4";
+          }
+        }
+      } catch (remuxErr) {
+        console.warn("[VideoExportModal] FFmpeg remux warning, using browser blob:", remuxErr);
+      }
+
+      setExportFormat(finalExt);
+      const url = URL.createObjectURL(finalMp4Blob);
       setDownloadUrl(url);
-      setRenderedFps(60);
+      setRenderedFps(30);
+      setProgress(100);
       setExportComplete(true);
 
       const cleanName = topic.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30).replace(/_+/g, "_").replace(/^_|_$/g, "");
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cleanName || "PaperStudio"}_${totalDuration}s_Reel.${isMp4 ? "mp4" : "webm"}`;
+      a.download = `${cleanName || "PaperStudio"}_${totalDuration}s_Reel.${finalExt}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     } catch (err: any) {
       console.error("Export failed:", err);
-      setExportError(err.message || "Failed to render video reel.");
+      setExportError(abortController.signal.aborted ? "Export cancelled." : err.message || "Failed to render video reel.");
     } finally {
+      mediaRecorderRef.current = null;
+      exportAbortControllerRef.current = null;
       setIsExporting(false);
     }
   };
 
+  const cancelExport = () => {
+    exportAbortControllerRef.current?.abort();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try { mediaRecorderRef.current.stop(); } catch {}
+    }
+    if (!isExporting) onClose();
+  };
+
   if (!isOpen) return null;
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-4 right-4 z-[60] rounded-2xl border-2 border-[#141414] bg-white p-3 shadow-[4px_4px_0px_#141414] flex items-center gap-3">
+        <div className="min-w-0">
+          <p className="mono text-[10px] font-bold text-[#141414]">{exportComplete ? "Export ready" : exportError || "Exporting video"}</p>
+          {isExporting && <p className="mono text-[10px] text-[#E4491B]">{pipelineBRunId ? "Export in progress" : hasSparkCode && !usedFallback && !hasMeasuredRemotionProgress ? "Starting render" : `${progress}% complete`}</p>}
+        </div>
+        <button type="button" onClick={() => setIsMinimized(false)} aria-label="Restore export window" className="h-8 w-8 rounded-full bg-[#ECEAE3] grid place-items-center border border-[#141414]"><Maximize2 size={14} /></button>
+        {isExporting && <button type="button" onClick={cancelExport} aria-label="Cancel export" className="h-8 w-8 rounded-full bg-rose-50 text-rose-700 grid place-items-center border border-rose-300"><X size={14} /></button>}
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-md animate-fade-in">
@@ -908,10 +1061,13 @@ export default function VideoExportModal({
             </div>
           </div>
 
+          <button type="button" onClick={() => setIsMinimized(true)} aria-label="Minimize export window" className="w-8 h-8 rounded-full bg-[#ECEAE3] border-2 border-[#141414] text-[#141414] grid place-items-center hover:bg-[#F6D9CC] transition shadow-[1px_1px_0px_#141414]">
+            <Minimize2 size={14} />
+          </button>
           <button
-            onClick={onClose}
-            disabled={isExporting}
-            className="w-8 h-8 rounded-full bg-[#ECEAE3] border-2 border-[#141414] text-[#141414] grid place-items-center hover:bg-[#F6D9CC] transition disabled:opacity-40 shadow-[1px_1px_0px_#141414]"
+            onClick={isExporting ? () => setIsMinimized(true) : onClose}
+            aria-label={isExporting ? "Minimize export window" : "Close export window"}
+            className="w-8 h-8 rounded-full bg-[#ECEAE3] border-2 border-[#141414] text-[#141414] grid place-items-center hover:bg-[#F6D9CC] transition shadow-[1px_1px_0px_#141414]"
           >
             <X size={15} />
           </button>
@@ -921,12 +1077,23 @@ export default function VideoExportModal({
         <div className="p-6 flex flex-col items-center">
           {/* Live Render Canvas Preview */}
           <div className="relative w-[216px] h-[384px] rounded-[20px] border-2 border-[#141414] shadow-[4px_4px_0px_#141414] overflow-hidden bg-[#ECEAE3] mb-5">
-            <canvas
-              ref={canvasRef}
-              width={1080}
-              height={1920}
-              className="w-full h-full object-cover"
-            />
+            {hasSparkCode ? (
+              <div className="w-full h-full relative pointer-events-none">
+                <SparkLiveRunner
+                  code={effectiveSparkCode}
+                  duration={totalDuration}
+                  theme={theme}
+                  showControls={false}
+                />
+              </div>
+            ) : (
+              <canvas
+                ref={canvasRef}
+                width={1080}
+                height={1920}
+                className="w-full h-full object-cover"
+              />
+            )}
             {!isExporting && !exportComplete && (
               <div className="absolute inset-0 bg-black/20 hover:bg-black/10 transition backdrop-blur-[1px] flex flex-col items-center justify-center text-white text-center p-4">
                 <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md grid place-items-center mb-2 shadow-sm">
@@ -989,29 +1156,29 @@ export default function VideoExportModal({
                 <div className="flex items-center justify-between text-[11px] mono text-[#52504A]">
                   <span className="flex items-center gap-1.5 font-bold text-[#141414]">
                     <Loader2 size={13} className="animate-spin text-[#E4491B]" />
-                    {phase === "composing"
+                    {pipelineBRunId
+                      ? "Exporting edited video..."
+                      : phase === "composing"
                       ? "Composing full animation from scenes…"
-                      : hasSparkCode
-                        ? progress < 90 ? "Rendering with Remotion…" : "Finalising MP4…"
-                        : `Rendering Frame ${currentFrame} / ${totalFrames}`}
+                      : !usedFallback && hasSparkCode && !hasMeasuredRemotionProgress ? "Starting Remotion render..." : !usedFallback && hasSparkCode ? (progress < 90 ? "Rendering with Remotion..." : "Finalising MP4...") : `Rendering Frame ${currentFrame} / ${totalFrames}`}
                   </span>
-                  <span className="font-bold text-[#E4491B]">{progress}%</span>
+                  {!pipelineBRunId && (!hasSparkCode || usedFallback || hasMeasuredRemotionProgress) && <span className="font-bold text-[#E4491B]">{progress}%</span>}
                 </div>
 
                 {/* Progress Bar */}
                 <div className="w-full h-2.5 rounded-full bg-[#ECEAE3] border-2 border-[#141414] overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-[#E4491B] via-[#E4491B] to-[#C93D14] transition-all duration-300"
-                    style={{ width: `${progress}%` }}
+                    className={`h-full bg-gradient-to-r from-[#E4491B] via-[#E4491B] to-[#C93D14] transition-all duration-300 ${isExporting && (pipelineBRunId || (hasSparkCode && !usedFallback && !hasMeasuredRemotionProgress)) ? "animate-pulse" : ""}`}
+                    style={isExporting && (pipelineBRunId || (hasSparkCode && !usedFallback && !hasMeasuredRemotionProgress)) ? { width: "38%" } : { width: `${progress}%` }}
                   />
                 </div>
 
                 <div className="mono text-[10px] text-[#52504A]">
-                  {phase === "composing"
+                  {pipelineBRunId
+                    ? "Preparing the edited video file..."
+                    : phase === "composing"
                     ? "Building the exact animation you see in the preview…"
-                    : hasSparkCode
-                      ? "Frame-accurate Remotion render • 1080×1920 • matches preview exactly"
-                      : "Encoding canvas fallback • 1080×1920 • 9:16 portrait"}
+                    : !usedFallback && hasSparkCode && !hasMeasuredRemotionProgress ? "Remotion is preparing the composition..." : !usedFallback && hasSparkCode ? "Frame-accurate Remotion render" : "Encoding canvas fallback"}
                 </div>
               </div>
             ) : (
@@ -1032,11 +1199,10 @@ export default function VideoExportModal({
             <div className="w-full pt-5 flex gap-2">
               <button
                 type="button"
-                onClick={onClose}
-                disabled={isExporting}
-                className="flex-1 py-2.5 rounded-full border-2 border-[#141414] bg-[#ECEAE3] hover:bg-[#F6D9CC] mono text-[12px] text-[#141414] font-bold transition disabled:opacity-40 shadow-[2px_2px_0px_#141414]"
+                onClick={isExporting ? cancelExport : onClose}
+                className="flex-1 py-2.5 rounded-full border-2 border-[#141414] bg-[#ECEAE3] hover:bg-[#F6D9CC] mono text-[12px] text-[#141414] font-bold transition shadow-[2px_2px_0px_#141414]"
               >
-                Cancel
+                {isExporting ? "Cancel export" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -1047,7 +1213,7 @@ export default function VideoExportModal({
                 {isExporting ? (
                   <>
                     <Loader2 size={14} className="animate-spin" />
-                    <span>Rendering ({progress}%)...</span>
+                    <span>{pipelineBRunId ? "Exporting..." : `Rendering (${progress}%)...`}</span>
                   </>
                 ) : (
                   <>

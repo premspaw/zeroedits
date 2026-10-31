@@ -21,7 +21,12 @@ import type {
   VisualPlanSegment,
 } from "../types.ts";
 import { getPipelineBTemplate } from "../templates/registry.ts";
-import { mapSourceTimeToEditedTime } from "./edit-planner.ts";
+import {
+  FILLER_SOUND_REGEX,
+  ISOLATED_FILLERS,
+  RETAKE_CUE_WORDS,
+  mapSourceTimeToEditedTime,
+} from "./edit-planner.ts";
 import { validateApprovedCutsSemantic } from "./cuts-validator.ts";
 
 export const WONDER_STAGE_A_MODEL_ID =
@@ -58,12 +63,12 @@ Review candidate cuts, evaluate spoken dialogue rhythm, approve edits that remov
 
 1. EDITORIAL GOAL:
    - Modern short-form video requires crisp pacing with zero dead air, zero repeated false starts, and zero stuttering.
-   - Actively APPROVE candidate cuts for:
-     a) Rapid repeated word stutters (e.g. repeated words like "two two two...", repeated "like, like, like...", rapid stammering tokens like "poop poop poop...", "this, this"). Keep only one clean utterance and cut the rest so it strictly matches the script.
-     b) Multi-word phrase restarts and retakes (e.g., "only when five clicks... only in five clicks", "it auto stitches... it auto stitches", "you can see... you can see"). Approve cutting the false take and preserve the clean final take.
-     c) Vocal fillers and hesitation sounds ("ah", "ahh", "um", "umm", "uh", "er", "hmm", "okay", "like") that introduce dead pauses or precede speech.
-     d) Starting vocal fillers ("ah", "um") and initial dead air before the first real word: MUST be approved for cutting so the video hooks instantly without hesitation.
-     e) Dead air (> 0.40s).
+   - Actively APPROVE candidate cuts AND analyze the full transcript to cut:
+     a) Rapid repeated word stutters (e.g. repeated words like "two two two...", repeated "like, like, like...", rapid stammering tokens like "poop poop poop...", "this, this"). Keep only one clean utterance and cut the rest so the same words never appear twice.
+     b) Sentence-level & multi-word phrase retakes at a retake point: Whenever a speaker starts a sentence or clause, hits a retake point (such as "uh", "uhhh", "ummm", "wait", "sorry", or an empty space / hesitation pause), and restarts the sentence or phrase (e.g., "Today we are going to— uhhh — Today we are going to build...", "only when five clicks... only in five clicks", "When we first... [pause] ...When I built..."), you MUST cut the ENTIRE aborted first sentence/clause + the "uhhh" + the empty space right up to the clean second take.
+     c) Vocal fillers and hesitation sounds ("ah", "ahh", "um", "umm", "ummm", "uh", "uhhh", "er", "hmm", "okay", "like") and all adjacent empty space around them.
+     d) Starting vocal fillers ("ah", "um", "uhhh") and initial/trailing dead air: MUST be approved for cutting so the video hooks instantly without hesitation.
+     e) Empty space / dead air (> 0.35s).
 
 2. SCRIPT AS GROUND TRUTH & REPETITION RESOLUTION:
    - When a userScript is provided, it represents the speaker's true intent.
@@ -146,47 +151,45 @@ export const WONDER_EDITORIAL_DECISION_SCHEMA = WONDER_EDITORIAL_CLEANUP_SCHEMA;
 export const WONDER_CREATIVE_DIRECTOR_SYSTEM_PROMPT = `# SYSTEM PROMPT — META MUSE WONDER: STAGE B CREATIVE VISUAL DIRECTOR
 
 ## IDENTITY
-You are META MUSE WONDER CREATIVE DIRECTOR, a world-class art director, motion designer, and visual storytelling expert for viral and cinematic short-form video.
-Your objective is to analyze the FINAL CLEAN NARRATIVE (after editorial cuts) and design a comprehensive, varied, story-specific visual edit plan.
+You are META MUSE WONDER CREATIVE DIRECTOR, an elite short-form Reel Editor and Minimalist Motion Director.
+Your objective is to analyze the FINAL CLEAN NARRATIVE (after editorial cuts) and edit it like a world-class reel editor: alternating cleanly between the speaker's full-frame face ("fullscreen_speaker") and ultra-clean, 100% full-screen visual animation cutaways ("broll_takeover") only when the spoken script calls for a visual explanation.
 
-## CORE PRINCIPLES & CAPABILITIES
+## CRITICAL GROUNDING & FIDELITY MANDATE (ZERO HALLUCINATION RULE)
+- ALL visual concepts, headlines, and spoken references MUST be derived 100% from the speaker's actual dialogue in the provided editedTranscript.
+- DO NOT invent or copy examples about video editing, software apps, timelines, or unrelated topics unless the speaker is literally discussing them in the transcript.
+- "spokenReference" MUST be an exact verbatim phrase spoken by the speaker in the specified start..end window.
+- "headlineText" MUST be 2–4 punchy, uppercase words directly quoting or summarizing the speaker's core words in that specific segment.
 
-1. NARRATIVE RELEVANCE OVER GIMMICKS:
-   - Base all visual choices strictly on what the speaker is communicating.
-   - Do NOT apply fixed generic emojis, progress bars, or repeated robotic animation patterns.
-   - Use the template settings as artistic inspiration and guidance, not as a rigid formula.
+## CORE REEL EDITING RULES
 
-2. COMPREHENSIVE VISUAL PALETTE:
-   Design visual segments using the full suite of modern video editing techniques:
-   - **fullscreen_speaker**: Clean primary talking head with subtle camera reframing / zoom punch-in.
-   - **split_screen**: Speaker side-by-side or stacked with supporting diagram, UI mockup, or B-roll.
-   - **stacked_layout**: Top half speaker, bottom half animated code/UI demo or kinetic typography.
-   - **picture_in_picture**: Speaker in floating circular or rounded card while main screen displays UI or B-roll.
-   - **broll_takeover**: Full B-roll footage or generative scene illustrating the spoken concept.
-   - **sam_cutout**: Segment-Anything cutout of the speaker layered over kinetic motion graphics, charts, or diagrams.
+1. START WITH FULL-SCREEN FACE VALUE ("fullscreen_speaker"):
+   - The opening hook (Segment 1 at the start of the topic) MUST ALWAYS be "fullscreen_speaker" so the viewer connects immediately with the speaker's face on the clean raw video.
+   - Never use 50/50 split screens ("split_screen" or "stacked_layout"). Never crowd the frame with multiple boxes.
 
-3. TECHNIQUE SPECS:
-   - **kinetic_typography**: Bold, punchy dynamic word emphasis for key insights.
-   - **dynamic_captions**: Highlighted words synchronized with speaker cadence.
-   - **animated_diagram**: Flowcharts, graphs, architecture diagrams, or mental models.
-   - **ui_mockup**: Modern software interface, mobile app card, terminal code, or button click.
-   - **broll_clip**: Contextual cinematic footage matching the spoken narrative.
-   - **generated_image**: Rich conceptual visual or graphic metaphor.
-   - **ai_video**: High-impact moving background or scene illustration.
-   - **camera_punch_in**: 1.15x camera scale on pivotal revelation or takeaway.
-   - **brand_lower_third**: Elegant name, title, or key stat banner.
+2. FULL-SCREEN CLEAN ANIMATION CUTAWAYS ("broll_takeover") ONLY WHEN NEEDED:
+   - Whenever the speaker explains a concrete comparison, number/metric, step-by-step process, or core visual concept, cut to a 100% FULL-SCREEN CLEAN ANIMATION ("broll_takeover") with technique "animated_diagram", "ui_mockup", or "kinetic_typography".
+   - Immediately after the concept is illustrated, cut back to "fullscreen_speaker" (full face raw video) for personal reactions, transitions, and the closing payoff.
+   - Alternate naturally: Speaker (Full Face) -> Full-Screen Clean Animation -> Speaker (Full Face) -> Full-Screen Clean Animation -> Speaker (Full Face).
 
-4. SEGMENT REQUIREMENTS:
+3. ULTRA-CLEAN, MINIMAL SINGLE-FOCUS VISUALS:
+   - Short-form viewers get confused if a frame has too many elements.
+   - Each "broll_takeover" animation scene must illustrate ONE simple, effortless-to-understand idea directly from the spoken words.
+   - Set "headlineText" to 2–4 punchy, crystal-clear words maximum derived from that segment's speech. Never put long sentences in headlineText.
+
+4. CONTINUOUS UNINTERRUPTED CAPTIONS:
+   - Word-by-word captions run continuously in the lower-third across both "fullscreen_speaker" and "broll_takeover" scenes without interruption.
+
+5. SEGMENT REQUIREMENTS:
    Each visual segment must include:
    - start & end timestamps (on the clean edited timeline: 0 to cleanDuration)
-   - layoutType, technique, spokenReference (exact words spoken), motionIntent (narrative rationale)
+   - layoutType ("fullscreen_speaker" or "broll_takeover"), technique, spokenReference (exact words spoken), motionIntent (why this shot is full-face speaker or what clean single-focus animation is shown)
    - requiredAssets (type, description, prompt)
    - layerArrangement ("background" | "main" | "overlay" | "foreground")
    - transitionDirection ("slide_up" | "slide_down" | "slide_left" | "slide_right" | "pop_in" | "zoom_in" | "fade" | "none")
-   - cameraZoom (1.0 or 1.15)
-   - headlineText (punchy callout text)
+   - cameraZoom (1.0 to 1.12)
+   - headlineText (2 to 4 clean words max from the spoken dialogue)
 
-5. OUTPUT FORMAT:
+6. OUTPUT FORMAT:
    Return valid JSON strictly matching the schema without markdown fences or extraneous text.`;
 
 export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
@@ -446,7 +449,7 @@ export async function callWonderEditorialCleanup(
       alternativeKeepOption: c.alternativeKeepOption,
     })),
     instruction:
-      "Stage A: Review transcript and candidate cuts. Core mandates: (1) ELIMINATE all vocal fillers ('ah', 'ahh', 'um', 'umm', 'uh', 'er', 'hmm', 'like') and dead air; (2) CUT starting 'ah' and initial dead air so video hooks instantly on the first real word; (3) When userScript or candidate cuts identify repeated words (e.g. repeated 'like, like, like' 4-5 times), APPROVE cutting all duplicate stutters, preserving exactly ONE clean instance matching script. Return approved cuts, protected ranges, and uncertain decisions matching the schema.",
+      "Stage A: Analyze the full transcript and candidate cuts at the sentence and word level. Core mandates: (1) ELIMINATE all vocal fillers ('ah', 'ahh', 'um', 'umm', 'uh', 'uhhh', 'er', 'hmm', 'like') and surrounding empty space; (2) CUT starting fillers and initial/trailing empty space so the video hooks immediately; (3) SENTENCE & PHRASE RETAKES: Whenever the speaker starts a sentence or phrase, hesitates at a retake point ('uhhh', 'um', 'wait', or empty space), and repeats or restarts the sentence/words, APPROVE cutting the entire aborted first sentence/phrase + 'uhhh' + empty space so the same words are never spoken or captioned twice. Return approved cuts, protected ranges, and uncertain decisions matching the schema.",
   };
 
   const payload = {
@@ -560,26 +563,77 @@ export async function callWonderEditorialCleanup(
         }))
     : [];
 
-  // Ensure vocal fillers, initial 'ah', leading dead air, and script stutters are not locked by protectedRanges
+  // Track candidates explicitly rejected by Wonder AI in uncertainDecisions (actionTaken === "kept_safe")
+  const rejectedCandidateIds = new Set<string>(
+    Array.isArray(parsed.uncertainDecisions)
+      ? parsed.uncertainDecisions
+          .filter((d: any) => d && d.actionTaken === "kept_safe" && typeof d.candidateId === "string")
+          .map((d: any) => d.candidateId)
+      : []
+  );
+
+  // Ensure vocal fillers, initial 'ah', leading/trailing dead air, and non-rejected utterance/word stutters are not locked by broad protectedRanges
+  const highConfRetakeOrFillerCands = candidateCuts.filter(
+    (c) =>
+      !rejectedCandidateIds.has(c.id) &&
+      (c.classification === "accidental_stutter" ||
+        c.classification === "filler_pause" ||
+        c.id === "cand-lead-silence" ||
+        c.id === "cand-trail-silence" ||
+        c.id === "cand-lead-filler")
+  );
+
   const cleanedProtectedRanges = rawProtectedRanges.filter((p) => {
     const pw = (p.protectedWords || "").toLowerCase().trim();
-    if (/^(ah|ahh|aah|um|umm|uh|er|hmm|ur)$/i.test(pw)) return false;
+    if (ISOLATED_FILLERS.has(pw) || FILLER_SOUND_REGEX.test(pw) || RETAKE_CUE_WORDS.has(pw)) {
+      return false;
+    }
+    // Never allow a protectedRange to block a cut that Wonder AI itself explicitly approved
+    const blocksAiApprovedCut = (parsed.approvedCuts || []).some(
+      (c: any) => typeof c.start === "number" && typeof c.end === "number" && Math.max(c.start, p.start) < Math.min(c.end, p.end) - 0.04
+    );
+    if (blocksAiApprovedCut) return false;
+
+    const isIntentionalEmphasis = /emphasis/i.test(p.reason || "");
+    if (!isIntentionalEmphasis) {
+      // Do not allow generic or breathing-pause protected ranges to block non-rejected high-confidence retake or filler cuts
+      const blocksRetakeOrFiller = highConfRetakeOrFillerCands.some(
+        (c) => Math.max(c.start, p.start) < Math.min(c.end, p.end) - 0.04
+      );
+      if (blocksRetakeOrFiller) return false;
+    }
     return true;
   });
 
-  // Combine AI approved cuts with high-confidence candidate cuts (lead silence, lead filler, script stutters, fillers)
+  // Combine AI approved cuts with non-rejected high-confidence candidate cuts
   const approvedIds = new Set((parsed.approvedCuts || []).map((c: any) => c.id));
   const mergedApprovedCuts: any[] = [...(parsed.approvedCuts || [])];
 
   for (const cand of candidateCuts) {
-    if (approvedIds.has(cand.id)) continue;
+    if (approvedIds.has(cand.id) || rejectedCandidateIds.has(cand.id)) continue;
 
-    const isLeadCut = cand.id === "cand-lead-silence" || cand.id === "cand-lead-filler";
-    const isScriptRepetition = cand.classification === "accidental_stutter" || cand.id.startsWith("cand-script-");
-    const isStutterGap = cand.id.startsWith("cand-stutter-gap") || cand.id.startsWith("cand-stutter-run");
-    const isHighConfFiller = (cand.classification === "filler_pause" || (cand.type as string) === "filler") && cand.confidence >= 0.90;
+    const isLeadOrTrailCut =
+      cand.id === "cand-lead-silence" ||
+      cand.id === "cand-trail-silence" ||
+      cand.id === "cand-lead-filler";
+    const isRetakeOrRepetition =
+      cand.classification === "accidental_stutter" ||
+      cand.type === "phrase_retake" ||
+      cand.type === "repetition" ||
+      cand.type === "false_start" ||
+      cand.id.startsWith("cand-script-") ||
+      cand.id.startsWith("cand-utterance-retake-") ||
+      cand.id.startsWith("cand-utterance-stumble-") ||
+      cand.id.startsWith("cand-sentence-retake-") ||
+      cand.id.startsWith("cand-phrase-retake-");
+    const isStutterGap = cand.id.startsWith("cand-stutter-gap") || cand.id.startsWith("cand-run-");
+    const isHighConfFiller =
+      (cand.classification === "filler_pause" || (cand.type as string) === "filler") &&
+      cand.confidence >= 0.90;
+    const isHighConfSilence =
+      cand.classification === "dead_air" && cand.confidence >= 0.92;
 
-    if (isLeadCut || isScriptRepetition || isStutterGap || isHighConfFiller) {
+    if (isLeadOrTrailCut || isRetakeOrRepetition || isStutterGap || isHighConfFiller || isHighConfSilence) {
       // Check if inside legitimate protected speech (excluding fillers)
       const isProtected = cleanedProtectedRanges.some((p) => {
         const oStart = Math.max(cand.start, p.start);
@@ -588,11 +642,21 @@ export async function callWonderEditorialCleanup(
       });
 
       if (!isProtected) {
+        let mappedType: EditCut["type"] = "silence";
+        if (cand.type === "filler") {
+          mappedType = "filler";
+        } else if (
+          cand.type === "repetition" ||
+          cand.type === "phrase_retake" ||
+          cand.type === "false_start"
+        ) {
+          mappedType = "retake";
+        }
         mergedApprovedCuts.push({
           id: cand.id,
           start: cand.start,
           end: cand.end,
-          type: cand.type === "repetition" ? "retake" : (cand.type === "sentence_pause" ? "silence" : (cand.type as any)),
+          type: mappedType,
           reason: cand.reason,
           cutWord: cand.affectedText,
         });
@@ -646,36 +710,119 @@ export function buildEditedTranscript(
 ): EditedTranscriptSegment[] {
   const editedSegments: EditedTranscriptSegment[] = [];
   const cleanDuration = +keepSegments.reduce((acc, k) => acc + k.duration, 0).toFixed(2);
+  const emphasisSet = new Set([
+    "very",
+    "really",
+    "never",
+    "more",
+    "again",
+    "so",
+    "many",
+    "much",
+    "big",
+    "great",
+    "now",
+    "far",
+    "fast",
+    "deep",
+    "long",
+    "true",
+  ]);
 
   let lastEditedEnd = 0;
 
   for (const seg of transcript) {
-    const editedWords = [];
+    const rawRetainedWords = [];
     for (const w of seg.words) {
-      const mid = (w.start + w.end) / 2;
-      const isRetained = keepSegments.some((k) => mid >= k.start && mid <= k.end);
-      if (isRetained) {
-        let eStart = mapSourceTimeToEditedTime(w.start, keepSegments);
-        let eEnd = mapSourceTimeToEditedTime(w.end, keepSegments);
-
-        // Ensure word does not start before the previous word ends on the edited timeline
-        eStart = Math.max(lastEditedEnd, +eStart.toFixed(2));
-        const minDur = Math.max(0.12, Math.min(0.60, +(w.word.length * 0.05).toFixed(2)));
-        if (eEnd <= eStart) {
-          eEnd = +(eStart + minDur).toFixed(2);
-        }
-        eEnd = Math.min(cleanDuration, +eEnd.toFixed(2));
-        lastEditedEnd = eEnd;
-
-        editedWords.push({
-          word: w.word,
-          sourceStart: w.start,
-          sourceEnd: w.end,
-          editedStart: eStart,
-          editedEnd: eEnd,
-          confidence: w.confidence,
-        });
+      const cleanW = w.word.toLowerCase().replace(/[^\w]/g, "");
+      // Never include vocal fillers ("uhhh", "ummm", "ahhh", "er", "hmm") or verbal retake cues in final captions
+      if (ISOLATED_FILLERS.has(cleanW) || FILLER_SOUND_REGEX.test(cleanW) || RETAKE_CUE_WORDS.has(cleanW)) {
+        continue;
       }
+
+      const wordDur = Math.max(0.04, w.end - w.start);
+      let retainedOverlap = 0;
+      for (const k of keepSegments) {
+        const oStart = Math.max(w.start, k.start);
+        const oEnd = Math.min(w.end, k.end);
+        if (oEnd > oStart) {
+          retainedOverlap += oEnd - oStart;
+        }
+      }
+      const mid = (w.start + w.end) / 2;
+      const isRetained =
+        retainedOverlap / wordDur >= 0.5 ||
+        keepSegments.some((k) => mid >= k.start + 0.01 && mid <= k.end - 0.01);
+
+      if (isRetained) {
+        rawRetainedWords.push(w);
+      }
+    }
+
+    // Deduplicate any residual adjacent repeated words or 2-3 word retake phrases so captions never repeat stutters
+    const dedupedSourceWords = [];
+    let wi = 0;
+    while (wi < rawRetainedWords.length) {
+      const wCur = rawRetainedWords[wi];
+      const cleanCur = wCur.word.toLowerCase().replace(/[^\w]/g, "");
+
+      // Check 2-3 word immediate phrase repeat
+      let skippedPhrase = false;
+      for (const pLen of [3, 2]) {
+        if (wi + 2 * pLen <= rawRetainedWords.length) {
+          const p1 = rawRetainedWords
+            .slice(wi, wi + pLen)
+            .map((x) => x.word.toLowerCase().replace(/[^\w]/g, ""))
+            .join(" ");
+          const p2 = rawRetainedWords
+            .slice(wi + pLen, wi + 2 * pLen)
+            .map((x) => x.word.toLowerCase().replace(/[^\w]/g, ""))
+            .join(" ");
+          if (p1 && p1 === p2) {
+            // Skip the first take of the repeated phrase, keep the second take
+            wi += pLen;
+            skippedPhrase = true;
+            break;
+          }
+        }
+      }
+      if (skippedPhrase) continue;
+
+      // Check adjacent identical single word stutter (unless intentional emphasis like "very, very")
+      if (wi + 1 < rawRetainedWords.length) {
+        const cleanNext = rawRetainedWords[wi + 1].word.toLowerCase().replace(/[^\w]/g, "");
+        if (cleanCur && cleanCur === cleanNext && !emphasisSet.has(cleanCur)) {
+          wi++;
+          continue;
+        }
+      }
+
+      dedupedSourceWords.push(wCur);
+      wi++;
+    }
+
+    const editedWords = [];
+    for (const w of dedupedSourceWords) {
+      let eStart = mapSourceTimeToEditedTime(w.start, keepSegments);
+      let eEnd = mapSourceTimeToEditedTime(w.end, keepSegments);
+
+      // Ensure word does not start before the previous word ends on the edited timeline
+      eStart = Math.max(lastEditedEnd, +eStart.toFixed(2));
+      const minDur = Math.max(0.12, Math.min(0.60, +(w.word.length * 0.05).toFixed(2)));
+      if (eEnd <= eStart) {
+        eEnd = +(eStart + minDur).toFixed(2);
+      }
+      eEnd = Math.min(cleanDuration, +eEnd.toFixed(2));
+      lastEditedEnd = eEnd;
+
+      editedWords.push({
+        word: w.word,
+        sourceStart: w.start,
+        sourceEnd: w.end,
+        editedStart: eStart,
+        editedEnd: eEnd,
+        confidence: w.confidence,
+      });
     }
 
     if (editedWords.length > 0) {
@@ -861,28 +1008,92 @@ export async function callWonderCreativeDirector(
     throw new Error(failMsg);
   }
 
-  // Validate and map visualSegments
+  // Check transcript grounding & overlap: detect and discard any LLM hallucination
+  const transcriptWordsSet = new Set(
+    allEditedWords
+      .map((w) => w.word.toLowerCase().replace(/[^a-z0-9]/g, ""))
+      .filter((w) => w.length >= 3)
+  );
+
+  let totalSegWords = 0;
+  let matchingSegWords = 0;
+
+  for (const seg of parsed.visualSegments) {
+    const segText = `${seg.spokenReference || ""} ${seg.headlineText || ""}`.toLowerCase();
+    const tokens = segText.split(/[^a-z0-9]+/).filter((t: string) => t.length >= 3);
+    for (const t of tokens) {
+      totalSegWords++;
+      if (transcriptWordsSet.has(t)) {
+        matchingSegWords++;
+      }
+    }
+  }
+
+  const overlapRatio = totalSegWords > 0 ? matchingSegWords / totalSegWords : 0;
+  if (allEditedWords.length >= 10 && overlapRatio < 0.25) {
+    onLogEvent?.("WONDER_CREATIVE_HALLUCINATION_DETECTED", {
+      runId,
+      overlapRatio: +overlapRatio.toFixed(2),
+      matchingSegWords,
+      totalSegWords,
+      reason: "Visual segments deviate from spoken transcript; falling back to deterministic creative planner",
+    });
+    return createDeterministicCreativePlan({
+      editedTranscript,
+      cleanDuration,
+      template,
+      runId,
+    });
+  }
+
+  // Validate and map visualSegments — enforce Pro Reel Editor cadence:
+  // Segment 0 is always fullscreen_speaker (face value at start of topic),
+  // and any 50/50 split_screen / stacked_layout / sam_cutout is converted to clean full-screen animation (broll_takeover)
   const validatedSegments: VisualPlanSegment[] = parsed.visualSegments
     .filter((s: any) => typeof s.start === "number" && typeof s.end === "number" && s.end > s.start)
-    .map((s: any, idx: number) => ({
-      id: s.id || `vseg-${idx + 1}`,
-      start: Math.max(0, +s.start.toFixed(2)),
-      end: Math.min(cleanDuration, +s.end.toFixed(2)),
-      layoutType: s.layoutType || "fullscreen_speaker",
-      technique: s.technique || "dynamic_captions",
-      spokenReference: String(s.spokenReference || ""),
-      motionIntent: String(s.motionIntent || ""),
-      requiredAssets: Array.isArray(s.requiredAssets) ? s.requiredAssets : [],
-      layerArrangement: s.layerArrangement || "overlay",
-      transitionDirection: s.transitionDirection || "slide_up",
-      cameraZoom: typeof s.cameraZoom === "number" ? s.cameraZoom : 1.0,
-      headlineText: s.headlineText ? String(s.headlineText) : undefined,
-      brandSettings: {
-        primaryColor: template.primaryColor,
-        highlightColor: template.highlightColor,
-        fontFamily: template.fontFamily,
-      },
-    }));
+    .map((s: any, idx: number) => {
+      let normalizedLayout: VisualPlanSegment["layoutType"] = "fullscreen_speaker";
+      if (idx === 0) {
+        normalizedLayout = "fullscreen_speaker";
+      } else if (
+        s.layoutType === "broll_takeover" ||
+        s.layoutType === "split_screen" ||
+        s.layoutType === "stacked_layout" ||
+        s.layoutType === "sam_cutout" ||
+        s.layoutType === "picture_in_picture" ||
+        s.technique === "animated_diagram" ||
+        s.technique === "ui_mockup"
+      ) {
+        normalizedLayout = "broll_takeover";
+      } else {
+        normalizedLayout = "fullscreen_speaker";
+      }
+
+      const rawHeadline = s.headlineText ? String(s.headlineText).trim() : "";
+      const cleanHeadline = rawHeadline
+        ? rawHeadline.split(/\s+/).slice(0, 4).join(" ").toUpperCase()
+        : undefined;
+
+      return {
+        id: s.id || `vseg-${idx + 1}`,
+        start: Math.max(0, +s.start.toFixed(2)),
+        end: Math.min(cleanDuration, +s.end.toFixed(2)),
+        layoutType: normalizedLayout,
+        technique: s.technique || (normalizedLayout === "broll_takeover" ? "animated_diagram" : "dynamic_captions"),
+        spokenReference: String(s.spokenReference || ""),
+        motionIntent: String(s.motionIntent || ""),
+        requiredAssets: Array.isArray(s.requiredAssets) ? s.requiredAssets : [],
+        layerArrangement: normalizedLayout === "broll_takeover" ? "foreground" : "overlay",
+        transitionDirection: s.transitionDirection || "fade",
+        cameraZoom: typeof s.cameraZoom === "number" ? s.cameraZoom : idx % 2 === 0 ? 1.0 : 1.08,
+        headlineText: cleanHeadline,
+        brandSettings: {
+          primaryColor: template.primaryColor,
+          highlightColor: template.highlightColor,
+          fontFamily: template.fontFamily,
+        },
+      };
+    });
 
   // Build backwards-compatible visualPlan items for Remotion & Storyboard cards
   const visualPlan: VisualOverlayItem[] = validatedSegments.map((seg, idx) => {
@@ -1128,6 +1339,92 @@ export function createDeterministicCreativePlan(params: {
 
   const visualSegments: VisualPlanSegment[] = [];
   const visualPlan: VisualOverlayItem[] = [];
+
+  // Story Explainer: Pro Reel Editor Cutaway Rhythm (No 50/50 split)
+  // Always starts on Fullscreen Speaker (face value), then cuts to 100% Fullscreen Clean Animation when concepts/numbers are explained, and cuts back to Fullscreen Speaker
+  if (
+    (template.id === "storyExplainer" || template.id === "samCutoutExplainer") &&
+    cleanDuration >= 3.0 &&
+    allEditedWords.length > 0
+  ) {
+    const numScenes = Math.max(3, Math.min(5, Math.ceil(cleanDuration / 3.5)));
+    const sliceDur = cleanDuration / numScenes;
+    const layoutSequence: VisualPlanSegment["layoutType"][] = [
+      "fullscreen_speaker", // Scene 1: Start of topic on Full-Screen Speaker (Face Value)
+      "broll_takeover",     // Scene 2: 100% Full-Screen Clean Visual Animation Cutaway
+      "fullscreen_speaker", // Scene 3: Cut back to Full-Screen Speaker
+      "broll_takeover",     // Scene 4: 100% Full-Screen Clean Visual Animation Cutaway
+      "fullscreen_speaker", // Scene 5: Final Payoff on Full-Screen Speaker
+    ];
+    const techniqueSequence: VisualPlanSegment["technique"][] = [
+      "camera_punch_in",
+      "animated_diagram",
+      "dynamic_captions",
+      "ui_mockup",
+      "camera_punch_in",
+    ];
+
+    for (let sIdx = 0; sIdx < numScenes; sIdx++) {
+      const sStart = +(sIdx * sliceDur).toFixed(2);
+      const sEnd = sIdx === numScenes - 1 ? cleanDuration : +((sIdx + 1) * sliceDur).toFixed(2);
+      const sceneWords = allEditedWords
+        .filter((w) => w.editedStart >= sStart - 0.05 && w.editedStart < sEnd)
+        .map((w) => w.word);
+      const spokenRef = sceneWords.join(" ") || allEditedWords.slice(0, 5).map((w) => w.word).join(" ");
+      const headline = sceneWords.slice(0, 3).join(" ").toUpperCase() || `SCENE 0${sIdx + 1}`;
+      const layoutType = layoutSequence[sIdx % layoutSequence.length];
+      const technique = techniqueSequence[sIdx % techniqueSequence.length];
+
+      visualSegments.push({
+        id: `vseg-story-${sIdx + 1}-${runId}`,
+        start: sStart,
+        end: sEnd,
+        layoutType,
+        technique,
+        spokenReference: spokenRef,
+        motionIntent:
+          layoutType === "broll_takeover"
+            ? "100% Full-Screen Clean Visual Animation Cutaway illustrating the spoken concept"
+            : "100% Full-Screen Speaker Face Value with continuous lower-third captions",
+        layerArrangement: layoutType === "broll_takeover" ? "foreground" : "overlay",
+        transitionDirection: "fade",
+        cameraZoom: layoutType === "fullscreen_speaker" ? 1.06 : 1.0,
+        headlineText: headline,
+        brandSettings: {
+          primaryColor: template.primaryColor,
+          highlightColor: template.highlightColor,
+          fontFamily: template.fontFamily,
+        },
+      });
+
+      visualPlan.push({
+        id: `overlay-story-${sIdx + 1}`,
+        segmentId: `vseg-story-${sIdx + 1}-${runId}`,
+        type: layoutType === "fullscreen_speaker" ? "kinetic_word" : "image_overlay",
+        timestamp: sStart,
+        duration: +(sEnd - sStart).toFixed(2),
+        content: headline,
+        animation: "pop",
+        style: {
+          bg: template.cardBg,
+          textColor: template.highlightColor,
+          border: template.primaryColor,
+        },
+      });
+    }
+
+    const hookDisplay = allEditedWords.slice(0, 6).map((w) => w.word).join(" ");
+    return {
+      planId: `rules-story-explainer-${runId}`,
+      title: hookDisplay || "Story Explainer Reel",
+      hookLine: hookDisplay ? `"${hookDisplay}..."` : "Story Explainer Reel",
+      narrativeTheme: "Pro Reel Editor: Full-Screen Speaker Face Value alternating with 100% Full-Screen Clean Visual Animations",
+      visualSegments,
+      visualPlan,
+      editorialNotes:
+        "Pro Reel Editor cutaway progression: Full-Screen Speaker Hook -> 100% Full-Screen Clean Animation -> Full-Screen Speaker -> 100% Full-Screen Clean Animation -> Full-Screen Speaker Outro.",
+    };
+  }
 
   // Dynamic Director: Fullscreen Hook -> Pipeline A Procedural Animation with PiP -> Fullscreen CTA
   if (template.id === "dynamicDirector" && cleanDuration >= 6.0 && allEditedWords.length > 0) {

@@ -164,6 +164,7 @@ export async function executePipelineB(
         transcript: state.transcript || [],
       });
 
+      editPlan.runId = runId;
       state.editPlan = editPlan;
       recordStageSuccess(state, "EDIT_PLANNED", {
         planId: cleanupDecision.planId,
@@ -189,10 +190,20 @@ export async function executePipelineB(
         throw new Error(errorMsg);
       }
       if (validation.needsReview) {
-        recordNeedsReview(state, validation.reviewReason || "Substantial cut ratio detected.");
-        return state;
+        logEvent("SUBSTANTIAL_CUT_RATIO_NOTICE", {
+          runId,
+          reviewReason: validation.reviewReason || "Substantial cut ratio detected.",
+        });
+        if (options?.stopAtStage === "CUTS_VALIDATED") {
+          recordNeedsReview(state, validation.reviewReason || "Substantial cut ratio detected.");
+          return state;
+        }
       }
-      recordStageSuccess(state, "CUTS_VALIDATED", { passed: true });
+      recordStageSuccess(state, "CUTS_VALIDATED", {
+        passed: true,
+        needsReview: validation.needsReview,
+        reviewReason: validation.reviewReason,
+      });
     }
     if (options?.stopAtStage === "CUTS_VALIDATED") return state;
 
@@ -316,12 +327,16 @@ export async function executePipelineB(
             assetId: seg.id,
           });
           resolvedAssets[seg.id] = genResult.publicUrl;
+          (seg as any).assetUrl = genResult.publicUrl;
         } catch (assetErr) {
           console.warn(`[ASSETS_RESOLVED] Non-fatal asset generation warning for segment ${seg.id}:`, assetErr);
         }
       }
 
       state.resolvedAssets = resolvedAssets;
+      if (state.editPlan) {
+        (state.editPlan as any).resolvedAssets = resolvedAssets;
+      }
       recordStageSuccess(state, "ASSETS_RESOLVED", {
         resolved: true,
         resolvedCount: Object.keys(resolvedAssets).length,
@@ -443,12 +458,21 @@ export async function resumePipelineB(
 ): Promise<PipelineBRunState> {
   const state = loadState(runId);
 
+  if (options?.customCaptionOverrides && state.transcript) {
+    for (const seg of state.transcript) {
+      const override = options.customCaptionOverrides[String(seg.id)];
+      if (typeof override === "string" && override.trim().length > 0) {
+        seg.text = override.trim();
+      }
+    }
+  }
+
   // If user provided custom cut edits in the transcript UI, re-assemble edit plan and reset cut stages
-  if (options?.customApprovedCuts && state.editPlan) {
+  if ((options?.customApprovedCuts || options?.customCaptionOverrides) && state.editPlan) {
     const updatedPlan = assembleFinalEditPlan({
       candidateCuts: state.editPlan.candidateCuts || [],
       editorial: {
-        approvedCuts: options.customApprovedCuts,
+        approvedCuts: options.customApprovedCuts ?? state.editPlan.cuts ?? [],
         protectedRanges: state.editPlan.protectedRanges || [],
         visualPlan: state.editPlan.visualPlan || [],
         hookLine: state.editPlan.hookLine || "Talking Head Reel",

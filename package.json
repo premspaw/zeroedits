@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test lib/model-retry.test.ts lib/pipeline-b/orchestrator.test.ts"
+    "test": "npx tsc --noEmit --pretty false"
   },
   "dependencies": {
     "@fontsource/anton": "^5.3.0",

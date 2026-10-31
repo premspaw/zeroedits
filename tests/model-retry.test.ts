@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { withModelRetry } from "./model-retry.ts";
+import { withModelRetry } from "../lib/model-retry.ts";
 
 const noSleep = async (_ms: number) => {};
 

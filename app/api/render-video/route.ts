@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import path from "path";
 import fs from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { makeCancelSignal, renderMedia, selectComposition } from "@remotion/renderer";
 
 const runCmd = promisify(execFile);
 
@@ -87,7 +87,40 @@ function detectComponentName(code: string): string | null {
 }
 
 export async function POST(req: NextRequest) {
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+    },
+  });
+  const sendEvent = (event: Record<string, unknown>) => {
+    try {
+      streamController?.enqueue(new TextEncoder().encode(`${JSON.stringify(event)}\n`));
+      if (event.type === "error" || event.type === "cancelled") streamController?.close();
+    } catch {}
+  };
+  void renderVideoRequest(req, sendEvent, (bytes) => {
+    try {
+      if (streamController) {
+        streamController.enqueue(new TextEncoder().encode("--VIDEO--\n"));
+        streamController.enqueue(bytes);
+        streamController.close();
+      }
+    } catch {}
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-paper-studio-render", "Cache-Control": "no-store" },
+  });
+}
+
+async function renderVideoRequest(
+  req: NextRequest,
+  sendEvent: (event: Record<string, unknown>) => void,
+  sendVideo: (bytes: Uint8Array) => void
+) {
   let renderDir: string | null = null;
+  const { cancelSignal, cancel } = makeCancelSignal();
+  req.signal.addEventListener("abort", cancel, { once: true });
 
   try {
     const body = await req.json();
@@ -102,7 +135,20 @@ export async function POST(req: NextRequest) {
     } = body;
 
     if (!sparkCode || typeof sparkCode !== "string" || sparkCode.trim().length < 20) {
-      return NextResponse.json({ error: "sparkCode is required and must be non-empty." }, { status: 400 });
+      throw new Error("sparkCode is required and must be non-empty.");
+    }
+
+    let cleanedSparkCode = sparkCode
+      .trim()
+      .replace(/^```(?:tsx|jsx|typescript|javascript)?\s*\r?\n/i, "")
+      .replace(/\r?\n```\s*$/, "")
+      .trim();
+
+    if (
+      !/import\s+React\b/.test(cleanedSparkCode) &&
+      !/import\s+\*\s+as\s+React\b/.test(cleanedSparkCode)
+    ) {
+      cleanedSparkCode = 'import React from "react";\n' + cleanedSparkCode;
     }
 
     const jobId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -111,10 +157,10 @@ export async function POST(req: NextRequest) {
 
     // Write the spark component to its own file so webpack can resolve imports normally
     const componentFile = path.join(renderDir, "SparkComponent.tsx");
-    fs.writeFileSync(componentFile, sparkCode, "utf-8");
+    fs.writeFileSync(componentFile, cleanedSparkCode, "utf-8");
 
     // Detect the exported name so we can reference it directly
-    const detectedName = detectComponentName(sparkCode);
+    const detectedName = detectComponentName(cleanedSparkCode);
     const componentRef = detectedName
       ? `SparkModule.default ?? (SparkModule as any).${detectedName} ?? SparkModule`
       : `SparkModule.default ?? (SparkModule as any).GeneratedReel ?? (SparkModule as any).FullReel ?? SparkModule`;
@@ -129,12 +175,22 @@ export async function POST(req: NextRequest) {
       'import { registerRoot, Composition, useCurrentFrame, useVideoConfig } from "remotion";',
       'import * as SparkModule from "./SparkComponent";',
       "",
+      "try {",
+      '  if (typeof window !== "undefined" && window.SVGElement) {',
+      "    const orig = SVGElement.prototype.setAttribute;",
+      "    SVGElement.prototype.setAttribute = function(n, v) {",
+      '      if (v === "NaN" || (typeof v === "number" && Number.isNaN(v))) v = "0";',
+      "      return orig.call(this, n, v);",
+      "    };",
+      "  }",
+      "} catch {}",
+      "",
       `const SparkComponent: React.ComponentType<any> = ${componentRef};`,
       "",
       // Mirror the preview iframe's #root stage exactly (spark-preview-document.ts)
       `const STAGE_BG = ${JSON.stringify(String(background))};`,
       `const STAGE_INK = ${JSON.stringify(String(ink))};`,
-      "const STAGE_CSS = `#spark-stage > * { width: 100% !important; height: 100% !important; min-height: 100% !important; } * { box-sizing: border-box; }`;",
+      "const STAGE_CSS = `@import url('https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Montserrat:ital,wght@0,700;0,800;0,900;1,900&family=Poppins:wght@800;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;700&display=swap'); #spark-stage > * { width: 100% !important; height: 100% !important; min-height: 100% !important; } * { box-sizing: border-box; }`;",
       "",
       "const RemotionWrapper: React.FC = () => {",
       "  const frame = useCurrentFrame();",
@@ -172,6 +228,7 @@ export async function POST(req: NextRequest) {
 
     // Bundle
     const bundleLocation = await bundle({ entryPoint: entryFile });
+    sendEvent({ type: "progress", phase: "composing", progress: 0 });
 
     // Select composition
     const composition = await selectComposition({ serveUrl: bundleLocation, id: "SparkReel" });
@@ -185,14 +242,24 @@ export async function POST(req: NextRequest) {
       outputLocation: outputFile,
       imageFormat: "jpeg",
       jpegQuality: 95,
+      cancelSignal,
+      onProgress: ({ progress, renderedFrames, encodedFrames, stitchStage }) => {
+        sendEvent({
+          type: "progress",
+          phase: stitchStage === "encoding" ? "rendering" : "finalizing",
+          progress,
+          renderedFrames,
+          encodedFrames,
+        });
+      },
     });
 
-    // Mux the voiceover track when beat audio was supplied.
+    // Mux the voiceover track when beat audio was supplied and enforce +faststart / yuv420p.
     let finalFile = outputFile;
     try {
       const mixed = await buildVoiceTrack(audioTracks, renderDir);
+      const faststartFile = path.join(renderDir, "output_faststart.mp4");
       if (mixed) {
-        const muxed = path.join(renderDir, "output_vo.mp4");
         await runCmd("ffmpeg", [
           "-y",
           "-i",
@@ -204,17 +271,54 @@ export async function POST(req: NextRequest) {
           "-map",
           "1:a",
           "-c:v",
-          "copy",
+          "libx264",
+          "-profile:v",
+          "high",
+          "-level",
+          "4.1",
+          "-pix_fmt",
+          "yuv420p",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "20",
           "-c:a",
           "aac",
+          "-b:a",
+          "192k",
           "-shortest",
-          muxed,
+          "-movflags",
+          "+faststart",
+          faststartFile,
         ]);
-        finalFile = muxed;
+      } else {
+        await runCmd("ffmpeg", [
+          "-y",
+          "-i",
+          outputFile,
+          "-c:v",
+          "libx264",
+          "-profile:v",
+          "high",
+          "-level",
+          "4.1",
+          "-pix_fmt",
+          "yuv420p",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "20",
+          "-movflags",
+          "+faststart",
+          faststartFile,
+        ]);
       }
+      finalFile = faststartFile;
     } catch (muxErr) {
-      console.warn("[render-video] voice mux failed, returning silent video:", muxErr);
+      console.warn("[render-video] faststart/voice mux warning, returning output.mp4:", muxErr);
     }
+
+    sendEvent({ type: "progress", phase: "finalizing", progress: 0.98 });
 
     const videoBuffer = fs.readFileSync(finalFile);
 
@@ -224,21 +328,13 @@ export async function POST(req: NextRequest) {
       .replace(/_+/g, "_")
       .replace(/^_|_$/g, "") || "SparkReel";
 
-    return new NextResponse(videoBuffer, {
-      headers: {
-        "Content-Type": "video/mp4",
-        "Content-Disposition": `attachment; filename="${cleanName}_${duration}s_60fps.mp4"`,
-        "Content-Length": String(videoBuffer.byteLength),
-        "Cache-Control": "no-store",
-      },
-    });
+    sendEvent({ type: "complete", filename: `${cleanName}_${duration}s_60fps.mp4`, bytes: videoBuffer.byteLength });
+    sendVideo(new Uint8Array(videoBuffer));
   } catch (err: any) {
     console.error("[render-video] Error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Render failed. Check server logs." },
-      { status: 500 }
-    );
+    sendEvent({ type: req.signal.aborted ? "cancelled" : "error", error: err?.message || "Render failed. Check server logs." });
   } finally {
+    req.signal.removeEventListener("abort", cancel);
     if (renderDir) {
       try { fs.rmSync(renderDir, { recursive: true, force: true }); } catch {}
     }

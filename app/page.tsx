@@ -42,10 +42,36 @@ import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
 import StoryBankView from "@/components/StoryBankView";
-import Pip, { type PipMood, type PipAction } from "@/components/Pip";
+import TalkingHeadExplainerStage from "@/components/TalkingHeadExplainerStage";
+import CinematicStoryStage from "@/components/CinematicStoryStage";
+import ProceduralStage from "@/components/ProceduralStage";
+import {
+  PROCEDURAL_STYLE_CATALOG,
+  MOOD_PRESET_MAP,
+  validateSceneScript,
+  type SceneScript,
+  type ProceduralStyleId,
+  type ProceduralMoodPreset,
+} from "@/lib/procedural-engine";
+import AppleDockNav, { type HeaderTab, DOCK_TABS } from "@/components/AppleDockNav";
+import ZeeView from "@/components/ZeeView";
+import YouView from "@/components/YouView";
+import PostView from "@/components/PostView";
+import { useZeeBrain } from "@/lib/zee-brain";
+import Pip, {
+  type PipMood,
+  type PipAction,
+  PIP_MOOD_META,
+  inferPipMoodFromContext,
+  cleanZeeDialogue,
+} from "@/components/Pip";
 
 type FormatType =
   | "auto"
+  | "procedural"
+  | "paperCut"
+  | "imageStory"
+  | "storyExplainer"
   | "paperCard"
   | "blackNeon"
   | "minimal"
@@ -126,9 +152,56 @@ interface ChatMessageItem {
   pipelineBRunId?: string;
   videoUrl?: string;
   finalDownloadUrl?: string;
+  audioStory?: {
+    runId: string;
+    audioUrl: string;
+    finalVideoUrl?: string;
+    referenceImageUrl?: string;
+    characterAndWorldBible?: string;
+    scenes: any[];
+    words: any[];
+    duration: number;
+    title: string;
+    style: string;
+  };
+  proceduralStory?: {
+    runId: string;
+    audioUrl?: string;
+    sceneScript: SceneScript;
+    duration: number;
+    title: string;
+  };
 }
 
 const TEMPLATES: Record<string, ThemeConfig> = {
+  procedural: {
+    bg: "#090D24",
+    paper: "#161B33",
+    accent: "#F97316",
+    effect: "Procedural (generative) math & noise animation engine: style separated from story, driven by Scene Script JSON tracks, seeded randomness, script & voiceover",
+    font: "Montserrat",
+  },
+  paperCut: {
+    bg: "#F5F1E8",
+    paper: "#FFFEFB",
+    accent: "#E4491B",
+    effect: "Selected visual direction: story-specific paper-cut animation with layered handmade paper scenery, tactile cut edges, believable parallax depth, and scene-dependent camera and transitions. Wonder must design distinct visuals from the user's exact topic/script/audio and direct Spark to implement those scenes; do not reuse a generic hills, sun, traveler, lantern, or repeated-card animation unless the story calls for them.",
+    font: "Instrument Serif",
+  },
+  imageStory: {
+    bg: "#090D24",
+    paper: "#16193B",
+    accent: "#FFE17D",
+    effect: "Consistent AI story images (muse-image-1.0) directed by Wonder AI with 2.5D camera motion & dynamic VFX",
+    font: "Montserrat",
+  },
+  storyExplainer: {
+    bg: "#0E101A",
+    paper: "#FAF7F0",
+    accent: "#E4491B",
+    effect: "Full-frame speaker face value alternating with 100% full-screen clean visual animation cutaways & continuous captions",
+    font: "Montserrat",
+  },
   paperCard: {
     bg: "#F5F1E8",
     paper: "#FFFEFB",
@@ -186,6 +259,24 @@ const FORMAT_OPTIONS: {
     desc: "AI decides theme & style",
   },
   {
+    id: "procedural",
+    label: "Procedural",
+    swatch: "linear-gradient(135deg, #1E1B4B 0%, #F97316 55%, #00F0FF 100%)",
+    desc: "Generative math & noise looks driven by story, script & voice",
+  },
+  {
+    id: "paperCut",
+    label: "Paper Cut",
+    swatch: "linear-gradient(135deg, #F5F1E8 0%, #E4491B 55%, #2D4A43 100%)",
+    desc: "Layered paper diorama shaped around your story",
+  },
+  {
+    id: "imageStory",
+    label: "Image Storyteller",
+    swatch: "linear-gradient(135deg, #16193B 0%, #9E4F6E 55%, #FFE17D 100%)",
+    desc: "Consistent AI story images + motion & VFX",
+  },
+  {
     id: "paperCard",
     label: "Paper Card",
     swatch: "#FFFEFB",
@@ -220,6 +311,26 @@ const FORMAT_OPTIONS: {
     label: "Glass",
     swatch: "rgba(255, 255, 255, 0.2)",
     desc: "Glassmorphism blur",
+  },
+];
+
+const AUTO_EDIT_TEMPLATE_OPTIONS: {
+  id: "storyExplainer" | "auto";
+  label: string;
+  swatch: string;
+  desc: string;
+}[] = [
+  {
+    id: "storyExplainer",
+    label: "Story Explainer",
+    swatch: "linear-gradient(135deg, #14182B 0%, #E4491B 50%, #FFE600 100%)",
+    desc: "Full face speaker + clean full-screen animation cutaways",
+  },
+  {
+    id: "auto",
+    label: "Auto (AI Decides)",
+    swatch: "linear-gradient(135deg, #E4491B 0%, #00D9FF 100%)",
+    desc: "AI cuts between speaker face & clean full-screen visuals",
   },
 ];
 
@@ -324,6 +435,70 @@ function generateBeats(topic: string, timing: TimingType): Beat[] {
 
 const SHOWCASE_REELS: ChatMessageItem[] = [
   {
+    id: "reel-procedural-dusk",
+    role: "assistant",
+    topic: "A traveller walks from morning into night",
+    text: "✨ Procedural Style Engine ready. Style ('Procedural Dusk') is separated from Story (Scene Script JSON): timeOfDay, cloudDensity & wind tracks evolve deterministically with seed #42.",
+    format: "procedural",
+    timing: "20s",
+    voice: "EN-IN",
+    generationStatus: "ready",
+    beats: [
+      {
+        id: 1,
+        role: "DAWN",
+        label: "Scene 1 • Morning Road",
+        tone: "calm",
+        start: 0,
+        end: 10,
+        durNum: 10,
+        duration: "0s - 10s",
+        script: "Morning, and the road begins",
+        visualDesc: "Look: Procedural Dusk • timeOfDay 0.0 → 0.5 • 6 birds, gentle breeze across mountain ridges",
+        motion: "render(t, params, 42) — sun arc rises into golden afternoon",
+      },
+      {
+        id: 2,
+        role: "DUSK TO NIGHT",
+        label: "Scene 2 • By The Water",
+        tone: "dreamy",
+        start: 10,
+        end: 20,
+        durNum: 10,
+        duration: "10s - 20s",
+        script: "Night finds him by the water",
+        visualDesc: "Look: Procedural Dusk • timeOfDay 0.5 → 1.0 • 40 fireflies emerge over shimmering lake reflection",
+        motion: "render(t, params, 42) — twilight deepens into starlight & crescent moon",
+      },
+    ],
+    proceduralStory: {
+      runId: "demo-procedural-dusk",
+      title: "A traveller walks from morning into night",
+      duration: 20,
+      sceneScript: validateSceneScript({
+        style: "procedural-dusk",
+        aspect: "9:16",
+        seed: 42,
+        duration: 20,
+        mood: "calm",
+        tracks: {
+          timeOfDay: [[0, 0.0], [10, 0.5], [20, 1.0]],
+          cloudDensity: [[0, 0.3], [20, 0.7]],
+          wind: [[0, 0.2], [20, 1.0]],
+          cameraDrift: [[0, 0.1], [20, 0.85]],
+          intensity: [[0, 0.3], [10, 0.65], [20, 0.8]],
+          colorMood: [[0, 0.2], [20, 0.8]],
+        },
+        elements: { birds: 6, fireflies: 40, lake: true, stars: 95, trees: 12, traveler: true },
+        captions: [
+          { t: 1.5, end: 9.5, text: "Morning, and the road begins" },
+          { t: 11.5, end: 19.2, text: "Night finds him by the water" },
+        ],
+        music: { mood: "calm", bpm: 70 },
+      }),
+    },
+  },
+  {
     id: "reel-1",
     role: "assistant",
     topic: "Now Edit Reels with AI",
@@ -384,9 +559,13 @@ function PreviewCard({
   generatingStep = "",
   sparkCode = "",
   storyboard,
+  editPlan,
   topic = "",
   videoUrl,
   finalDownloadUrl,
+  audioStory,
+  proceduralStory,
+  onUpdateProceduralScript,
   onRetry,
   errorMessage,
   onReady,
@@ -407,9 +586,13 @@ function PreviewCard({
   generatingStep?: string;
   sparkCode?: string;
   storyboard?: any;
+  editPlan?: any;
   topic?: string;
   videoUrl?: string;
   finalDownloadUrl?: string;
+  audioStory?: any;
+  proceduralStory?: ChatMessageItem["proceduralStory"];
+  onUpdateProceduralScript?: (updated: SceneScript) => void;
   onRetry?: () => void;
   errorMessage?: string | null;
   onReady?: () => void;
@@ -428,6 +611,37 @@ function PreviewCard({
   const beatAudioRef = useRef<HTMLAudioElement | null>(null);
   const voicedBeatRef = useRef(-1);
   const wasPlayingRef = useRef(true);
+  const uploadedNarration = voiceTracks?.length === 1 && String(voiceTracks[0]?.id).startsWith("upload-")
+    ? voiceTracks[0]
+    : null;
+
+  const syncUploadedNarration = useCallback((time: number, playing: boolean) => {
+    if (!uploadedNarration?.url) return;
+    let audio = beatAudioRef.current;
+    if (!audio) {
+      audio = new Audio();
+      audio.preload = "auto";
+      beatAudioRef.current = audio;
+    }
+    if (audio.dataset.trackUrl !== uploadedNarration.url) {
+      audio.pause();
+      audio.src = uploadedNarration.url;
+      audio.dataset.trackUrl = uploadedNarration.url;
+      audio.currentTime = Math.max(0, time);
+    }
+    if (!playing) {
+      audio.pause();
+      return;
+    }
+    const withinAudio = !Number.isFinite(audio.duration) || time < audio.duration;
+    if (Number.isFinite(audio.duration) && Math.abs(audio.currentTime - time) > 0.35 && withinAudio) {
+      try { audio.currentTime = Math.max(0, time); } catch {}
+    }
+    if (audio.paused && withinAudio) {
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === "function") playPromise.catch(() => {});
+    }
+  }, [uploadedNarration]);
 
   const stopVoice = useCallback(() => {
     voicedBeatRef.current = -1;
@@ -487,6 +701,10 @@ function PreviewCard({
 
   const handleVoiceTime = useCallback(
     (t: number, playing: boolean) => {
+      if (uploadedNarration) {
+        syncUploadedNarration(t, playing);
+        return;
+      }
       if (!playing) {
         wasPlayingRef.current = false;
         const a = beatAudioRef.current;
@@ -504,7 +722,7 @@ function PreviewCard({
       const idx = beatIndexAt(t);
       if (idx >= 0) playBeatVoice(idx);
     },
-    [beatIndexAt, playBeatVoice]
+    [beatIndexAt, playBeatVoice, uploadedNarration, syncUploadedNarration]
   );
 
   // Card (non-Spark) path follows the parent's activeBeat.
@@ -538,67 +756,70 @@ function PreviewCard({
   const activeVideoUrl = showCleanCut ? (videoUrl || finalDownloadUrl) : (finalDownloadUrl || videoUrl);
 
   useEffect(() => {
-    if (activeVideoUrl) {
+    if (activeVideoUrl || audioStory || proceduralStory) {
       stopVoice();
     }
-  }, [activeVideoUrl, stopVoice]);
+  }, [activeVideoUrl, audioStory, proceduralStory, stopVoice]);
+
+  if (proceduralStory?.sceneScript) {
+    return (
+      <ProceduralStage
+        sceneScript={proceduralStory.sceneScript}
+        audioUrl={proceduralStory.audioUrl}
+        runId={proceduralStory.runId}
+        topic={proceduralStory.title || topic}
+        onUpdateScript={onUpdateProceduralScript}
+      />
+    );
+  }
+
+  if (audioStory) {
+    return (
+      <CinematicStoryStage
+        audioUrl={audioStory.audioUrl}
+        finalVideoUrl={audioStory.finalVideoUrl}
+        scenes={audioStory.scenes}
+        words={audioStory.words}
+        duration={audioStory.duration}
+        topic={audioStory.title || topic}
+        style={audioStory.style}
+        runId={audioStory.runId}
+      />
+    );
+  }
 
   if (activeVideoUrl) {
     return (
-      <div
-        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-black flex flex-col items-center justify-center ${compact ? "scale-[0.98]" : ""}`}
-      >
-        <video
-          key={activeVideoUrl}
-          src={activeVideoUrl}
-          controls
-          playsInline
-          className="w-full h-full object-contain"
-        />
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-bold text-white border border-white/20 pointer-events-none z-10">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          {showCleanCut ? "✂️ Clean Cuts" : "✨ Edited Reel (Cuts + Subtitles + Badges)"}
-        </div>
-
-        {finalDownloadUrl && videoUrl && finalDownloadUrl !== videoUrl && (
-          <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/80 backdrop-blur-md rounded-full p-0.5 border border-white/20 z-10 text-[10px]">
-            <button
-              onClick={() => setShowCleanCut(false)}
-              className={`px-2 py-0.5 rounded-full font-bold transition ${!showCleanCut ? "bg-[#E4491B] text-white" : "text-white/70 hover:text-white"}`}
-            >
-              Full Reel
-            </button>
-            <button
-              onClick={() => setShowCleanCut(true)}
-              className={`px-2 py-0.5 rounded-full font-bold transition ${showCleanCut ? "bg-[#E4491B] text-white" : "text-white/70 hover:text-white"}`}
-            >
-              Cuts Only
-            </button>
-          </div>
-        )}
-
-        <a
-          href={finalDownloadUrl ? `${finalDownloadUrl}?download=1` : activeVideoUrl}
-          download="pipeline-b-edited-reel.mp4"
-          className="absolute bottom-4 right-4 px-3.5 py-1.5 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition active:scale-95 z-10"
-        >
-          <Download size={13} />
-          <span>Download Reel</span>
-        </a>
-      </div>
+      <TalkingHeadExplainerStage
+        cleanVideoUrl={videoUrl}
+        finalVideoUrl={finalDownloadUrl}
+        runId={editPlan?.runId || editPlan?.planId}
+        editPlan={editPlan}
+        beats={beats}
+        topic={topic}
+        compact={compact}
+      />
     );
   }
 
   if (isGenerating && !sparkCode && !storyboard) {
+    const stageMood = inferPipMoodFromContext(generatingStep, "thinking");
+    const stageAction = stageMood === "thinking" ? "spin-up" : stageMood === "idea" ? "spin-right" : "float";
+    const cleanSpeech = cleanZeeDialogue(generatingStep, stageMood);
     return (
       <div
-        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-[#141414] text-white flex flex-col items-center justify-center p-6 text-center ${compact ? "scale-[0.98]" : ""}`}
+        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] text-[#141414] flex flex-col items-center justify-center p-6 text-center ${compact ? "scale-[0.98]" : ""}`}
       >
-        <div className="w-12 h-12 rounded-full border-4 border-[#E4491B] border-t-transparent animate-spin mb-4" />
-        <h3 className="mono text-sm font-bold uppercase tracking-wider mb-2 text-[#E4491B]">Pipeline B Processing</h3>
-        <p className="text-xs text-[#ECEAE3]/80 leading-relaxed max-w-[220px]">
-          {generatingStep || "Trimming silences, synchronizing audio & building clean cut..."}
-        </p>
+        <div className="w-full max-w-[270px] flex flex-col items-center">
+          <Pip
+            mood={stageMood}
+            action={stageAction}
+            size={76}
+            interactive={true}
+            showDialogue={true}
+            question={cleanSpeech}
+          />
+        </div>
       </div>
     );
   }
@@ -1112,12 +1333,13 @@ async function readGenerationResponse(response: Response, stage: string) {
 }
 
 export default function ProperMobileResponsiveChat() {
+  const { recordPageActivity } = useZeeBrain();
   const [format, setFormat] = useState<FormatType>("auto");
+  const [autoEditTemplate, setAutoEditTemplate] = useState<"storyExplainer" | "auto">("storyExplainer");
   const [timing, setTiming] = useState<TimingType>("15s");
   const [voice, setVoice] = useState<VoiceType>("EN-IN");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  type HeaderTab = "script" | "edit";
-  const [activeHeaderTab, setActiveHeaderTab] = useState<HeaderTab>("script");
+  const [activeHeaderTab, setActiveHeaderTab] = useState<HeaderTab>("edit");
   // Pipeline B (auto-edit) staging — chat bar only, engine lands next.
   type StudioMode = "create" | "autoEdit";
   const [studioMode, setStudioMode] = useState<StudioMode>("create");
@@ -1127,12 +1349,28 @@ export default function ProperMobileResponsiveChat() {
   const [editVideoDuration, setEditVideoDuration] = useState<number | null>(null);
   const editVideoFileRef = useRef<File | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [audioVoiceoverName, setAudioVoiceoverName] = useState<string | null>(null);
+  const [audioVoiceoverDuration, setAudioVoiceoverDuration] = useState<number | null>(null);
+  const [audioVoiceoverUrl, setAudioVoiceoverUrl] = useState<string | null>(null);
+  const [audioVoiceoverPlaying, setAudioVoiceoverPlaying] = useState(false);
+  const [audioStyle, setAudioStyle] = useState<"auto" | "anime" | "cinematic" | "storybook" | "noir">("anime");
+  const audioVoiceoverFileRef = useRef<File | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
+  const audioPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [referenceImageName, setReferenceImageName] = useState<string | null>(null);
+  const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
+  const referenceImageFileRef = useRef<File | null>(null);
+  const referenceImageInputRef = useRef<HTMLInputElement | null>(null);
   const [input, setInput] = useState("");
   const [isInternetEnabled, setIsInternetEnabled] = useState(false);
   const [reviewCutsFirst, setReviewCutsFirst] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessageItem[]>(SHOWCASE_REELS);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>("reel-1");
+  const hasHydratedHistoryRef = useRef(false);
+  const skipNextMessageScrollRef = useRef(false);
+  const restoreChatScrollRef = useRef<number | null>(null);
+  const skipSelectedPersistRef = useRef(true);
 
   // Load persisted history safely on client mount.
   // Drop stuck in-flight messages (typing / storyboarding / rendering with no
@@ -1142,15 +1380,18 @@ export default function ProperMobileResponsiveChat() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab");
-      if (tabParam === "edit" || window.location.hash === "#edit") {
-        setActiveHeaderTab("edit");
-      } else if (tabParam === "script" || window.location.hash === "#script") {
-        setActiveHeaderTab("script");
+      const tabParam = params.get("tab") as HeaderTab | null;
+      const hash = window.location.hash.replace("#", "") as HeaderTab;
+      const targetTab = tabParam || hash;
+      if (targetTab && (targetTab === "z" || targetTab === "u" || targetTab === "script" || targetTab === "edit" || targetTab === "post")) {
+        setActiveHeaderTab(targetTab);
       }
     }
     try {
       const saved = localStorage.getItem("paper_studio_reels_v4");
+      const savedSelectedId = localStorage.getItem("paper_studio_selected_reel_v1");
+      const savedScroll = Number(sessionStorage.getItem("paper_studio_chat_scroll_v1"));
+      restoreChatScrollRef.current = Number.isFinite(savedScroll) ? savedScroll : null;
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1173,21 +1414,34 @@ export default function ProperMobileResponsiveChat() {
               : m;
           });
           if (repaired.length > 0) {
+            skipNextMessageScrollRef.current = true;
             setMessages(repaired);
-            const stillThere = repaired.some((m: any) => m?.id === parsed[0]?.id);
+            const preferredId = savedSelectedId || parsed[0]?.id;
+            const stillThere = repaired.some((m: any) => m?.id === preferredId);
             setSelectedMessageId(
-              stillThere ? parsed[0]?.id : repaired[0]?.id || "reel-1"
+              stillThere ? preferredId : repaired[0]?.id || "reel-1"
             );
           }
         }
       }
     } catch (e) {
       console.warn("Could not load reels from localStorage", e);
+    } finally {
+      hasHydratedHistoryRef.current = true;
     }
   }, []);
 
+  useEffect(() => {
+    if (skipSelectedPersistRef.current) {
+      skipSelectedPersistRef.current = false;
+      return;
+    }
+    if (selectedMessageId) localStorage.setItem("paper_studio_selected_reel_v1", selectedMessageId);
+  }, [selectedMessageId]);
+
   // Save history to localStorage
   useEffect(() => {
+    if (!hasHydratedHistoryRef.current) return;
     try {
       if (messages && messages.length > 0) {
         localStorage.setItem("paper_studio_reels_v4", JSON.stringify(messages));
@@ -1278,7 +1532,19 @@ export default function ProperMobileResponsiveChat() {
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const latestMessageRef = useRef<HTMLDivElement>(null);
+  const isInitialMountRef = useRef(true);
+  const prevMessagesLengthRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const savedTop = restoreChatScrollRef.current;
+    if (savedTop === null || !chatContainerRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedTop;
+      restoreChatScrollRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messages]);
 
   const activeMessage = useMemo(() => {
     if (selectedMessageId) return messages.find((message) => message.id === selectedMessageId);
@@ -1350,10 +1616,22 @@ export default function ProperMobileResponsiveChat() {
     return () => clearInterval(interval);
   }, [isCodeModalOpen, isModalPlaying, currentBeats, timing]);
 
-  // Smooth scroll
+  // Smooth scroll: ONLY when a brand new message is actively submitted during the live session
   useEffect(() => {
-    if (messages.length > 1) latestMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [messages.length, messages[messages.length - 1]?.storyboard]);
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      prevMessagesLengthRef.current = messages.length;
+      return;
+    }
+    if (messages.length > prevMessagesLengthRef.current) {
+      prevMessagesLengthRef.current = messages.length;
+      if (skipNextMessageScrollRef.current) {
+        skipNextMessageScrollRef.current = false;
+        return;
+      }
+      latestMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [messages.length]);
 
   const handleRetrySpark = async () => {
     const targetMessage = activeMessage;
@@ -1413,11 +1691,73 @@ export default function ProperMobileResponsiveChat() {
     } catch {}
   };
 
+  // Audio Storytelling Pipeline: handle uploaded voiceover
+  const handleAudioVoiceoverFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(file.name)) return;
+    audioVoiceoverFileRef.current = file;
+    setAudioVoiceoverName(file.name.length > 28 ? `${file.name.slice(0, 25)}...` : file.name);
+    setAudioVoiceoverDuration(null);
+    try {
+      const url = URL.createObjectURL(file);
+      setAudioVoiceoverUrl(url);
+      const probe = new Audio(url);
+      probe.onloadedmetadata = () => {
+        if (Number.isFinite(probe.duration)) setAudioVoiceoverDuration(probe.duration);
+      };
+    } catch {}
+  };
+
+  const handleClearAudioVoiceover = () => {
+    if (audioPreviewAudioRef.current) {
+      audioPreviewAudioRef.current.pause();
+    }
+    audioVoiceoverFileRef.current = null;
+    setAudioVoiceoverName(null);
+    setAudioVoiceoverDuration(null);
+    setAudioVoiceoverUrl(null);
+    setAudioVoiceoverPlaying(false);
+  };
+
+  const toggleAudioVoiceoverPreview = () => {
+    const audio = audioPreviewAudioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play().catch(console.warn);
+      setAudioVoiceoverPlaying(true);
+    } else {
+      audio.pause();
+      setAudioVoiceoverPlaying(false);
+    }
+  };
+
+  const handleReferenceImageFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/") && !/\.(png|jpe?g|webp|gif)$/i.test(file.name)) return;
+    referenceImageFileRef.current = file;
+    setReferenceImageName(file.name.length > 24 ? `${file.name.slice(0, 21)}...` : file.name);
+    try {
+      const url = URL.createObjectURL(file);
+      setReferenceImageUrl(url);
+    } catch {}
+  };
+
+  const handleClearReferenceImage = () => {
+    if (referenceImageUrl) {
+      try {
+        URL.revokeObjectURL(referenceImageUrl);
+      } catch {}
+    }
+    referenceImageFileRef.current = null;
+    setReferenceImageName(null);
+    setReferenceImageUrl(null);
+  };
+
   const handleApproveCuts = async (message: ChatMessageItem) => {
     if (!message.pipelineBRunId || isGenerating || isGeneratingCode) return;
     const runId = message.pipelineBRunId;
     setIsGenerating(true);
-    setGeneratingStep("Executing verified FFmpeg cuts based strictly on Wonder AI decisions...");
+    setGeneratingStep("Applying your cuts");
 
     updateMessage(message.id, {
       generationStatus: "rendering",
@@ -1431,13 +1771,13 @@ export default function ProperMobileResponsiveChat() {
           const statusData = await statusRes.json();
           const curStage = statusData?.state?.currentStage;
           if (curStage === "CLEAN_VIDEO_CREATED") {
-            setGeneratingStep("FFmpeg cutting clean video & verifying duration on disk...");
+            setGeneratingStep("Finishing your video");
           } else if (curStage === "VISUAL_PLAN_CREATED") {
-            setGeneratingStep("Wonder Muse AI Stage B: Planning creative layouts, kinetic titles & assets...");
+            setGeneratingStep("Planning your scenes");
           } else if (curStage === "MOTION_GENERATED") {
-            setGeneratingStep("Spark 1.3: Generating 60fps compositor code...");
+            setGeneratingStep("Adding motion to your video");
           } else if (curStage === "PREVIEW_READY") {
-            setGeneratingStep("Final video & interactive storyboard ready!");
+            setGeneratingStep("Your video is ready!");
           }
         }
       } catch {}
@@ -1456,6 +1796,7 @@ export default function ProperMobileResponsiveChat() {
       }
 
       const state = data.state;
+      const cleanVideoUrl = `/api/pipeline-b/media/${runId}/clean`;
       const finalVideoUrl = `/api/pipeline-b/media/${runId}/final`;
 
       const visualSegments = state?.editPlan?.visualSegments || [];
@@ -1489,7 +1830,9 @@ export default function ProperMobileResponsiveChat() {
       updateMessage(message.id, {
         generationStatus: "ready",
         generationError: undefined,
-        videoUrl: finalVideoUrl,
+        pipeline: "pipeline-b",
+        pipelineBRunId: runId,
+        videoUrl: cleanVideoUrl,
         finalDownloadUrl: finalVideoUrl,
         beats: beats.length > 0 ? beats : message.beats,
         editPlan: state.editPlan,
@@ -1509,7 +1852,284 @@ export default function ProperMobileResponsiveChat() {
     }
   };
 
+  const handleRecreateSingleScene = async (
+    targetMessage: ChatMessageItem,
+    sceneIndex: number,
+    instruction: string,
+    customStart?: number,
+    customEnd?: number
+  ) => {
+    if (!targetMessage) return;
+    setSelectedMessageId(targetMessage.id);
+    setActiveBeat(sceneIndex);
+    setIsGenerating(true);
+    setGeneratingStep(
+      `Recreating Scene ${sceneIndex + 1} for you...`
+    );
+
+    try {
+      const currentBeat = targetMessage.beats?.[sceneIndex];
+      const res = await fetch("/api/recreate-scene", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: targetMessage.audioStory
+            ? "imageStory"
+            : targetMessage.pipeline === "pipeline-b" || targetMessage.editPlan
+            ? "pipeline-b"
+            : "pipeline-a",
+          runId:
+            targetMessage.audioStory?.runId ||
+            targetMessage.pipelineBRunId ||
+            targetMessage.editPlan?.runId,
+          sceneIndex,
+          userInstruction: instruction,
+          customStart,
+          customEnd,
+          currentBeat,
+          storyboard: targetMessage.storyboard,
+          editPlan: targetMessage.editPlan,
+          audioStory: targetMessage.audioStory,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Failed to recreate Scene ${sceneIndex + 1}`);
+      }
+
+      const nextBeats = (targetMessage.beats || []).map((b, i) =>
+        i === sceneIndex ? { ...b, ...data.updatedBeat } : b
+      );
+
+      if (data.mode === "imageStory" && targetMessage.audioStory) {
+        const nextScenes = (targetMessage.audioStory.scenes || []).map((sc: any, i: number) =>
+          i === sceneIndex ? data.updatedScene : sc
+        );
+        updateMessage(targetMessage.id, {
+          beats: nextBeats,
+          audioStory: {
+            ...targetMessage.audioStory,
+            scenes: nextScenes,
+          },
+          text: `✨ Recreated Scene ${sceneIndex + 1} (${data.updatedScene.start}s–${data.updatedScene.end}s) with Meta Wonder 1.0 & Meta Image 1.0! All other scenes were preserved untouched.`,
+        });
+      } else if (data.mode === "pipeline-b") {
+        const nextVisualSegments = (targetMessage.editPlan?.visualSegments || []).map(
+          (seg: any, i: number) => (i === sceneIndex ? data.updatedVisualSegment : seg)
+        );
+        updateMessage(targetMessage.id, {
+          beats: nextBeats,
+          sparkCode: data.updatedMotionCode || targetMessage.sparkCode,
+          editPlan: targetMessage.editPlan
+            ? {
+                ...targetMessage.editPlan,
+                visualSegments: nextVisualSegments,
+              }
+            : targetMessage.editPlan,
+          text: `✨ Recreated Auto-Edit Scene ${sceneIndex + 1} (${data.updatedVisualSegment.start}s–${data.updatedVisualSegment.end}s)!`,
+        });
+      } else {
+        const nextStoryboard = targetMessage.storyboard
+          ? {
+              ...targetMessage.storyboard,
+              beats: (targetMessage.storyboard.beats || []).map((sb: any, i: number) =>
+                i === sceneIndex ? data.updatedStoryboardBeat : sb
+              ),
+            }
+          : targetMessage.storyboard;
+
+        const updatedMsg: ChatMessageItem = {
+          ...targetMessage,
+          beats: nextBeats,
+          storyboard: nextStoryboard,
+          sparkCode: "",
+          generationError: undefined,
+        };
+        updateMessage(targetMessage.id, updatedMsg);
+        await handleOpenFullReel(updatedMsg);
+      }
+    } catch (err: any) {
+      console.error("Failed to recreate single scene:", err);
+    } finally {
+      setIsGenerating(false);
+      setGeneratingStep("");
+    }
+  };
+
   const handleSend = async () => {
+    // Use the Image Storyteller pipeline only when that template is selected.
+    if (studioMode === "create" && format === "imageStory") {
+      if (isGenerating || isGeneratingCode) return;
+      const audioFile = audioVoiceoverFileRef.current;
+      const refImgFile = referenceImageFileRef.current;
+      const userNote = input.trim();
+      const customScript =
+        userNote.length > 220 || userNote.split("\n").filter(Boolean).length >= 3
+          ? userNote
+          : "";
+
+      if (!audioFile && !userNote && !customScript) {
+        return;
+      }
+
+      setIsGenerating(true);
+      setGeneratingStep(
+        audioFile
+          ? "Listening to your voiceover..."
+          : "Thinking a story for you..."
+      );
+
+      const userMsgId = Date.now().toString();
+      const botMsgId = (Date.now() + 1).toString();
+
+      const stagedUser: ChatMessageItem = {
+        id: userMsgId,
+        role: "user",
+        text: audioFile
+          ? `🖼️ Image Storyteller • Voiceover: ${audioFile.name} (${Math.round(audioVoiceoverDuration || 0)}s)${refImgFile ? ` • Ref Image: ${refImgFile.name}` : ""}${userNote ? ` • Prompt: ${userNote}` : ""}`
+          : `🖼️ Image Storyteller (${timing})${refImgFile ? ` • Ref Image: ${refImgFile.name}` : ""}: ${userNote || customScript}`,
+      };
+
+      const clientRunId = `story-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 7)}`;
+      const stagedReply: ChatMessageItem = {
+        id: botMsgId,
+        role: "assistant",
+        text: `✨ Zee is directing your scenes & getting character-consistent artwork ready...`,
+        typing: true,
+        generationStatus: "storyboarding",
+        topic: userNote || customScript || "Image Story",
+        format: "imageStory",
+      };
+
+      setMessages((prev) => [...prev, stagedUser, stagedReply]);
+      setSelectedMessageId(botMsgId);
+      setInput("");
+
+      try {
+        const formData = new FormData();
+        if (audioFile) {
+          formData.append("audio", audioFile);
+        }
+        formData.append("style", "auto");
+        formData.append("prompt", userNote);
+        formData.append("userScript", customScript);
+        formData.append("timing", timing);
+        formData.append("voice", voice);
+        formData.append("runId", clientRunId);
+        if (refImgFile) {
+          formData.append("referenceImage", refImgFile);
+        }
+
+        setGeneratingStep("Getting the images for you...");
+
+        const response = await fetch("/api/audio-story", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Failed to direct image storytelling animation");
+        }
+
+        const beats: Beat[] = (data.beats || []).map((b: any) => ({
+          id: b.id,
+          label: b.label,
+          start: b.start,
+          end: b.end,
+          durNum: b.durNum,
+          duration: b.duration,
+          script: b.script,
+          headline: b.headline,
+          visualDesc: b.visualDesc,
+          motion: b.motion,
+          camera: b.camera,
+          tone: data.style || "anime",
+        }));
+
+        updateMessage(botMsgId, {
+          typing: false,
+          generationStatus: "ready",
+          generationError: undefined,
+          format: "imageStory",
+          text: `✨ Directed by Meta Wonder (muse-wonder-1.0) & illustrated by Meta Image (muse-image-1.0): Created ${data.scenes?.length || 4} character-consistent 9:16 scenes (${Math.round(data.duration || 15)}s) with dynamic 2.5D motion, VFX & MP4 video output.`,
+          beats,
+          audioStory: {
+            runId: data.runId,
+            audioUrl: data.audioUrl,
+            finalVideoUrl: data.finalVideoUrl,
+            referenceImageUrl: data.referenceImageUrl,
+            characterAndWorldBible: data.characterAndWorldBible,
+            scenes: data.scenes,
+            words: data.transcriptWords,
+            duration: data.duration,
+            title: data.title,
+            style: data.style || "anime",
+          },
+        });
+      } catch (err: any) {
+        updateMessage(botMsgId, {
+          typing: false,
+          generationStatus: "error",
+          generationError: err.message,
+          text: `❌ Image Storyteller error: ${err.message}`,
+        });
+      } finally {
+        setIsGenerating(false);
+        setGeneratingStep("");
+      }
+      return;
+    }
+
+    if (studioMode === "create" && format === "procedural") {
+      if (isGenerating || isGeneratingCode) return;
+      const audioFile = audioVoiceoverFileRef.current;
+      const userNote = input.trim();
+      if (!audioFile && !userNote) return;
+      const userMsgId = Date.now().toString();
+      const botMsgId = (Date.now() + 1).toString();
+      const runId = `proc-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 7)}`;
+      setMessages((previous) => [
+        ...previous,
+        { id: userMsgId, role: "user", text: audioFile ? `Procedural voiceover: ${audioFile.name}${userNote ? ` • Direction: ${userNote}` : ""}` : userNote },
+        { id: botMsgId, role: "assistant", topic: userNote || "Procedural audio story", text: "Building a procedural story from your input…", typing: true, generationStatus: "storyboarding", format, timing, voice },
+      ]);
+      setSelectedMessageId(botMsgId);
+      setInput("");
+      setIsGenerating(true);
+      setGeneratingStep(audioFile ? "Listening to your voiceover..." : "Thinking a story for you...");
+      try {
+        const formData = new FormData();
+        if (audioFile) formData.append("audio", audioFile);
+        formData.append("prompt", userNote);
+        formData.append("userScript", userNote);
+        formData.append("timing", timing);
+        formData.append("voice", voice);
+        formData.append("voiceoverEnabled", String(voiceEnabled));
+        formData.append("style", "auto");
+        formData.append("runId", runId);
+        const response = await fetch("/api/procedural-story", { method: "POST", body: formData });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Could not build the procedural story.");
+        updateMessage(botMsgId, {
+          typing: false,
+          generationStatus: "ready",
+          format,
+          beats: data.beats || [],
+          sparkCode: data.sparkCode || "",
+          proceduralStory: { runId: data.runId, audioUrl: data.audioUrl, sceneScript: data.sceneScript, duration: data.duration, title: data.title },
+          text: `Procedural story ready: ${data.title || userNote || "voiceover story"}.`,
+        });
+      } catch (err: any) {
+        updateMessage(botMsgId, { typing: false, generationStatus: "error", generationError: err.message, text: `Procedural story error: ${err.message}` });
+      } finally {
+        setIsGenerating(false);
+        setGeneratingStep("");
+      }
+      return;
+    }
+
     // Auto-edit mode: activate Pipeline B (upload -> transcribe -> silence cut -> clean video -> overlays)
     if (studioMode === "autoEdit") {
       if (isGenerating || isGeneratingCode) return;
@@ -1520,7 +2140,7 @@ export default function ProperMobileResponsiveChat() {
       }
 
       setIsGenerating(true);
-      setGeneratingStep("Validating media & uploading to Pipeline B...");
+      setGeneratingStep("Getting your video ready");
 
       const userNote = input.trim();
       const userScriptContent = editScript.trim();
@@ -1537,7 +2157,8 @@ export default function ProperMobileResponsiveChat() {
       const stagedReply: ChatMessageItem = {
         id: botMsgId,
         role: "assistant",
-        text: "Pipeline B initiated: Uploading talking-head video to Wonder Muse AI Editorial Director...",
+        text: "Hey, I’m Zee! Analyzing your talking-head video & script to craft your best clean cut...",
+        topic: userNote || userScriptContent || videoFile.name,
         generationStatus: "rendering",
         pipeline: "pipeline-b",
         pipelineBRunId: clientRunId,
@@ -1557,15 +2178,13 @@ export default function ProperMobileResponsiveChat() {
           formData.append("userScript", `[Target Script]:\n${userScriptContent}\n\n[Director Instructions]:\n${userNote}`);
         } else if (userScriptContent) {
           formData.append("userScript", userScriptContent);
-        } else if (userNote) {
-          formData.append("userScript", userNote);
         }
         if (reviewCutsFirst) {
           formData.append("stopAtStage", "EDIT_PLANNED");
         }
-        formData.append("templateId", "hormoziPunch");
+        formData.append("templateId", autoEditTemplate === "auto" ? "storyExplainer" : autoEditTemplate);
 
-        setGeneratingStep("Uploading talking-head video & extracting audio...");
+        setGeneratingStep("Getting your video ready");
 
         // Poll run status to update UI step in real-time as Wonder AI processes stages
         pollTimer = setInterval(async () => {
@@ -1575,23 +2194,23 @@ export default function ProperMobileResponsiveChat() {
               const statusData = await statusRes.json();
               const curStage = statusData?.state?.currentStage;
               if (curStage === "MEDIA_VALIDATED") {
-                setGeneratingStep("Validating media streams & audio channels...");
+                setGeneratingStep("Checking your video");
               } else if (curStage === "TRANSCRIBED") {
-                setGeneratingStep("Transcribing spoken speech with exact word-level timestamps...");
+                setGeneratingStep("Listening to your video");
               } else if (curStage === "TRANSCRIPT_ALIGNED") {
-                setGeneratingStep("Aligning transcript & computing deviation scores...");
+                setGeneratingStep("Finding the best takes");
               } else if (curStage === "EDIT_PLANNED") {
-                setGeneratingStep("Wonder Muse AI Stage A: Analyzing stutters, pauses & protected speech...");
+                setGeneratingStep("Cleaning up your video");
               } else if (curStage === "CUTS_VALIDATED") {
-                setGeneratingStep("Validating approved cuts against spoken-word boundaries...");
+                setGeneratingStep("Shaping the cuts");
               } else if (curStage === "CLEAN_VIDEO_CREATED") {
-                setGeneratingStep("Executing verified FFmpeg cuts based strictly on Wonder AI decisions...");
+                setGeneratingStep("Putting your edit together");
               } else if (curStage === "VISUAL_PLAN_CREATED") {
-                setGeneratingStep("Wonder Muse AI Stage B: Planning creative layouts, kinetic titles & assets...");
+                setGeneratingStep("Creating your images");
               } else if (curStage === "MOTION_GENERATED") {
-                setGeneratingStep("Spark 1.3: Generating 60fps compositor code...");
+                setGeneratingStep("Adding motion to your video");
               } else if (curStage === "PREVIEW_READY") {
-                setGeneratingStep("Final video & interactive storyboard ready!");
+                setGeneratingStep("Your video is ready!");
               }
             }
           } catch {
@@ -1666,7 +2285,8 @@ export default function ProperMobileResponsiveChat() {
           generationError: undefined,
           pipeline: "pipeline-b",
           pipelineBRunId: runId,
-          videoUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
+          videoUrl: isPausedAtEditorial ? undefined : cleanVideoUrl,
+          finalDownloadUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
           sparkCode: data.motionCode || undefined,
           beats: beats.length > 0 ? beats : undefined,
           editPlan: state?.editPlan,
@@ -1708,19 +2328,17 @@ export default function ProperMobileResponsiveChat() {
     }
 
     const trimmed = input.trim();
-    if (!trimmed || isGenerating || isGeneratingCode) return;
-    const sceneEdit = trimmed.match(/^(?:edit|change|update)\s+scene\s+(\d+)\s*(?::|text\s+to)\s*([\s\S]+)$/i);
-    if (sceneEdit && activeMessage?.storyboard) {
+    const paperCutAudio = format === "paperCut" ? audioVoiceoverFileRef.current : null;
+    if ((!trimmed && !paperCutAudio) || isGenerating || isGeneratingCode) return;
+    const sceneEdit = trimmed.match(/^(?:recreate|regenerate|edit|change|update)\s+scene\s+(\d+)\s*(?::|text\s+to)?\s*([\s\S]*)$/i);
+    if (sceneEdit && activeMessage?.beats) {
       const sceneIndex = Number(sceneEdit[1]) - 1;
-      const replacement = sceneEdit[2].trim().replace(/^["“]|["”]$/g, "");
-      if (sceneIndex < 0 || sceneIndex >= (activeMessage.beats?.length || 0) || !replacement) return;
-      const beats = activeMessage.beats!.map((beat, index) => index === sceneIndex ? { ...beat, script: replacement } : beat);
-      const storyboard = { ...activeMessage.storyboard, beats: activeMessage.storyboard.beats.map((beat: any, index: number) => index === sceneIndex ? { ...beat, text: replacement } : beat) };
-      const editedMessage = { ...activeMessage, beats, storyboard, sparkCode: "", generationError: undefined };
-      updateMessage(activeMessage.id, editedMessage);
-      setInput("");
-      await handleOpenFullReel(editedMessage);
-      return;
+      const instruction = (sceneEdit[2] || "").trim().replace(/^["“]|["”]$/g, "");
+      if (sceneIndex >= 0 && sceneIndex < (activeMessage.beats?.length || 0)) {
+        setInput("");
+        await handleRecreateSingleScene(activeMessage, sceneIndex, instruction);
+        return;
+      }
     }
 
     const userMessage: ChatMessageItem = {
@@ -1740,7 +2358,7 @@ export default function ProperMobileResponsiveChat() {
 
     const finalTopic = isInternetEnabled
       ? `${scriptTopic} (incorporating live web facts & trends)`
-      : scriptTopic;
+      : scriptTopic || (paperCutAudio ? "Create a story from the uploaded audio" : "");
 
     const typingMessage: ChatMessageItem = {
       id: (Date.now() + 1).toString(),
@@ -1748,7 +2366,7 @@ export default function ProperMobileResponsiveChat() {
       text: "",
       typing: true,
       generationStatus: "storyboarding",
-      topic: scriptTopic,
+      topic: scriptTopic || (paperCutAudio ? "Audio story" : ""),
       timing,
       format,
       voice,
@@ -1765,33 +2383,53 @@ export default function ProperMobileResponsiveChat() {
     setCodeModalContent("");
     setGeneratingStep(
       voiceEnabled
-        ? `Directing voiceover in ${voiceLangOf(voice) === "HI" ? "Hindi" : voiceLangOf(voice) === "KN" ? "Kannada" : "English"} • ${voiceNameOf(voice)}${isPastedScript ? " • your script" : ""}...`
-        : isInternetEnabled
-          ? "Searching web trends & connecting to Meta muse-wonder-1.0..."
-          : "Connecting to Meta muse-wonder-1.0 model..."
+        ? "Thinking a story & voiceover for you..."
+        : "Thinking a story for you..."
     );
 
     const stepTimer1 = setTimeout(() => {
-      setGeneratingStep(
-        isInternetEnabled
-          ? "Incorporating live web insights into storyboard..."
-          : "Director analyzing format & word counts..."
-      );
+      setGeneratingStep("Writing the scenes for you...");
     }, 700);
 
     const stepTimer2 = setTimeout(() => {
-      setGeneratingStep("Generating format-specific visualDesc & beats...");
+      setGeneratingStep("Making the video for you...");
     }, 1500);
 
     try {
-      const durationNum = Number(timing.replace("s", "")) || 10;
+      let creativeInput = trimmed;
+      let audioDurationSec: number | null = null;
+      let uploadedAudioTrack: VoiceTrack | null = null;
+      const selectedAudio = format !== "imageStory" ? audioVoiceoverFileRef.current : null;
+      if (selectedAudio) {
+        setGeneratingStep("Listening to your audio...");
+        const audioForm = new FormData();
+        audioForm.append("audio", selectedAudio);
+        audioForm.append("userScript", userScript);
+        const transcriptRes = await fetch("/api/transcribe-audio", { method: "POST", body: audioForm });
+        const transcriptData = await transcriptRes.json();
+        if (!transcriptRes.ok || !transcriptData.success || !transcriptData.transcript) {
+          throw new Error(transcriptData.error || "Could not transcribe the uploaded audio.");
+        }
+        creativeInput = [trimmed, `Audio transcript: ${transcriptData.transcript}`].filter(Boolean).join("\n\n");
+        audioDurationSec = Number(transcriptData.duration) || null;
+        uploadedAudioTrack = {
+          id: `upload-${Date.now()}`,
+          url: transcriptData.audioUrl,
+          file: selectedAudio.name,
+          start: 0,
+          end: audioDurationSec || 0,
+          duration: audioDurationSec || 0,
+          hasAudio: Boolean(transcriptData.audioUrl),
+        };
+      }
+      const durationNum = audioDurationSec || Number(timing.replace("s", "")) || 10;
       const selectedTemplate = format === "auto" ? null : TEMPLATES[format] || null;
 
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: finalTopic,
+          topic: selectedAudio ? creativeInput : finalTopic,
           duration: durationNum,
           timing,
           template: selectedTemplate,
@@ -1800,7 +2438,7 @@ export default function ProperMobileResponsiveChat() {
           language: voiceLangOf(voice),
           voiceName: voiceNameOf(voice),
           voiceoverEnabled: voiceEnabled,
-          userScript,
+          userScript: selectedAudio ? creativeInput : userScript,
           internet: isInternetEnabled,
         }),
       });
@@ -1841,9 +2479,9 @@ export default function ProperMobileResponsiveChat() {
         // measured durations so animation and voice stay locked by construction.
         let voiceTracks: VoiceTrack[] = [];
         let reelDuration = durationNum;
-        if (voiceEnabled) {
+        if (voiceEnabled && !uploadedAudioTrack) {
           try {
-            setGeneratingStep(`Voicing ${metaBeats.length} beats in ${voiceLangOf(voice) === "HI" ? "Hindi" : voiceLangOf(voice) === "KN" ? "Kannada" : "English"} • ${voiceNameOf(voice)}...`);
+            setGeneratingStep("Voicing your scenes...");
             const voiceRes = await fetch("/api/voiceover", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1890,7 +2528,7 @@ export default function ProperMobileResponsiveChat() {
           }
         }
 
-        setGeneratingStep("Spark 1.3 generating React/TSX animation code...");
+        setGeneratingStep("Making your video");
 
         updateMessage(typingMessage.id, {
           typing: false,
@@ -1902,7 +2540,7 @@ export default function ProperMobileResponsiveChat() {
           theme,
           styleHint,
           storyboard: validatedStoryboard,
-          voiceTracks,
+          voiceTracks: uploadedAudioTrack ? [uploadedAudioTrack] : voiceTracks,
           generationStatus: "rendering",
         });
 
@@ -1987,18 +2625,32 @@ export default function ProperMobileResponsiveChat() {
 
   const handleOpenFullReel = async (message?: ChatMessageItem, targetBeatIndex: number = 0) => {
     const targetMessage = message || activeMessage;
-    if (!targetMessage || !targetMessage.beats || targetMessage.beats.length === 0 || isGenerating || isGeneratingCode) return;
+    if (!targetMessage || isGenerating || isGeneratingCode) return;
     setSelectedMessageId(targetMessage.id);
 
     setIsFullReelMode(true);
     setModalActiveBeatIndex(targetBeatIndex);
     const totalSec = Number((targetMessage.timing || timing).replace("s", "")) || 15;
-    const initialElapsed = targetMessage.beats[targetBeatIndex]?.start ?? 0;
+    const initialElapsed = targetMessage.beats?.[targetBeatIndex]?.start ?? 0;
     setModalElapsed(initialElapsed);
     setIsModalPlaying(true);
     setIsCodeModalOpen(true);
     setModalTab("preview");
     setReplayKey((k) => k + 1);
+
+    // If this message has an Audio Story or Pipeline B video, open the live stage immediately!
+    if (
+      targetMessage.audioStory ||
+      targetMessage.pipeline === "pipeline-b" ||
+      targetMessage.videoUrl ||
+      targetMessage.finalDownloadUrl
+    ) {
+      setIsGeneratingCode(false);
+      return;
+    }
+
+    if (!targetMessage.beats || targetMessage.beats.length === 0) return;
+
     setIsGeneratingCode(true);
     if (targetMessage.sparkCode) {
       setCodeModalContent(targetMessage.sparkCode);
@@ -2092,7 +2744,10 @@ export default function ProperMobileResponsiveChat() {
     URL.revokeObjectURL(url);
   };
 
-  const currentFormat = FORMAT_OPTIONS.find((f) => f.id === format);
+  const currentFormat =
+    studioMode === "autoEdit"
+      ? AUTO_EDIT_TEMPLATE_OPTIONS.find((t) => t.id === autoEditTemplate) || AUTO_EDIT_TEMPLATE_OPTIONS[0]
+      : FORMAT_OPTIONS.find((f) => f.id === format);
 
   return (
     <div
@@ -2127,38 +2782,28 @@ export default function ProperMobileResponsiveChat() {
               </button>
             </div>
 
-            {/* Mobile Navigation Tabs: Script first, Edit second */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 mb-4 rounded-xl bg-[#ECEAE3] border border-[#D5D2C8] shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveHeaderTab("script");
-                  setIsMobileDrawerOpen(false);
-                }}
-                className={`py-2 rounded-lg mono text-[12px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${
-                  activeHeaderTab === "script"
-                    ? "bg-[#141414] text-white shadow-xs"
-                    : "text-[#6B6A64] hover:text-[#141414]"
-                }`}
-              >
-                <BookOpen size={13} className={activeHeaderTab === "script" ? "text-[#E4491B]" : ""} />
-                <span>Script</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveHeaderTab("edit");
-                  setIsMobileDrawerOpen(false);
-                }}
-                className={`py-2 rounded-lg mono text-[12px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${
-                  activeHeaderTab === "edit"
-                    ? "bg-[#141414] text-white shadow-xs"
-                    : "text-[#6B6A64] hover:text-[#141414]"
-                }`}
-              >
-                <Scissors size={13} className={activeHeaderTab === "edit" ? "text-[#E4491B]" : ""} />
-                <span>Edit</span>
-              </button>
+            {/* Mobile Navigation Tabs: Z, U, Script, Edit, Post */}
+            <div className="grid grid-cols-5 gap-1 p-1 mb-4 rounded-2xl bg-[#ECEAE3] border border-[#D5D2C8] shrink-0">
+              {DOCK_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveHeaderTab(tab.id);
+                    setIsMobileDrawerOpen(false);
+                  }}
+                  className={`py-2 px-1 rounded-xl mono text-[11px] font-bold flex flex-col items-center justify-center gap-1 transition active:scale-95 ${
+                    activeHeaderTab === tab.id
+                      ? "bg-[#141414] text-white shadow-xs"
+                      : "text-[#6B6A64] hover:text-[#141414]"
+                  }`}
+                >
+                  <span className={activeHeaderTab === tab.id ? "text-white" : ""}>
+                    {typeof tab.icon === "function" ? tab.icon(activeHeaderTab === tab.id) : tab.icon}
+                  </span>
+                  <span className="text-[10px] tracking-tight">{tab.label}</span>
+                </button>
+              ))}
             </div>
 
             <button
@@ -2210,122 +2855,115 @@ export default function ProperMobileResponsiveChat() {
         </div>
       )}
 
-      {/* Header */}
-      <header
-        suppressHydrationWarning
-        className="sticky top-0 z-30 backdrop-blur-[16px] bg-[#ECEAE3]/85 border-b border-[#D5D2C8]"
-        style={{ top: "var(--safe-area-inset-top)" }}
+      {/* Apple-Style Floating Dock Navigation Bar (Replaces traditional header) */}
+      <div
+        className="sticky top-1 z-40 w-full px-3 pointer-events-none flex items-center justify-center -mb-2"
+        style={{ top: "max(0.25rem, env(safe-area-inset-top, 0.25rem))" }}
       >
-        <div
-          suppressHydrationWarning
-          className="mx-auto max-w-[1600px] w-full h-[64px] px-4 lg:px-8 flex items-center justify-between gap-4"
-        >
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsMobileDrawerOpen(true)}
-              aria-label="Open menu"
-              className="lg:hidden w-10 h-10 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] grid place-items-center shadow-xs hover:bg-[#EAE7DF] transition active:scale-95"
-            >
-              <Menu size={18} />
-            </button>
+        <div className="pointer-events-auto flex items-center justify-center gap-2">
+          {/* Mobile drawer trigger for small screens */}
+          <button
+            onClick={() => setIsMobileDrawerOpen(true)}
+            aria-label="Open menu"
+            className="lg:hidden shrink-0 w-9 h-9 rounded-[14px] bg-gradient-to-b from-white/45 via-white/25 to-white/15 backdrop-blur-2xl border border-white/65 grid place-items-center shadow-[0_8px_24px_-4px_rgba(20,20,20,0.08),inset_0_1px_0.5px_rgba(255,255,255,0.85)] hover:bg-white/50 transition active:scale-95 text-[#141414]"
+          >
+            <Menu size={15} />
+          </button>
 
-            <div className="flex items-center gap-2.5">
-              <div className="relative shrink-0 flex items-center justify-center">
-                <Pip mood="idle" size={32} interactive={true} />
-              </div>
-              <span className="serif text-[19px] lg:text-[21px] tracking-[-0.02em] font-medium select-none text-[#141414]">
-                PAPER STUDIO
-              </span>
-              <span className="hidden sm:inline-flex ml-1.5 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-[#E4491B]/15 to-[#C93D14]/15 border border-[#E4491B]/30 text-[#E4491B] mono text-[10px] font-semibold tracking-wider">
-                BETA
-              </span>
-            </div>
-          </div>
-
-          {/* Header Navigation Tabs: Script first, Edit second */}
-          <nav aria-label="Main Navigation" className="flex items-center gap-1 p-1 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] shadow-xs">
-            <button
-              type="button"
-              onClick={() => setActiveHeaderTab("script")}
-              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-full mono text-[12px] font-bold transition-all active:scale-95 ${
-                activeHeaderTab === "script"
-                  ? "bg-[#141414] text-white shadow-xs"
-                  : "text-[#6B6A64] hover:text-[#141414] hover:bg-[#ECEAE3]"
-              }`}
-            >
-              <BookOpen size={13} className={activeHeaderTab === "script" ? "text-[#E4491B]" : ""} />
-              <span>Script</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveHeaderTab("edit")}
-              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-full mono text-[12px] font-bold transition-all active:scale-95 ${
-                activeHeaderTab === "edit"
-                  ? "bg-[#141414] text-white shadow-xs"
-                  : "text-[#6B6A64] hover:text-[#141414] hover:bg-[#ECEAE3]"
-              }`}
-            >
-              <Scissors size={13} className={activeHeaderTab === "edit" ? "text-[#E4491B]" : ""} />
-              <span>Edit</span>
-            </button>
-          </nav>
-
-          <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] shadow-xs select-none">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-xs shadow-emerald-500/50" />
-            <span className="mono text-[11px] uppercase tracking-widest text-[#6B6A64]">
-              Format
-            </span>
-            <span className="mono text-[12px] font-medium text-[#141414]">
-              {currentFormat?.label || "Paper Card"}
-            </span>
-            <span className="w-px h-3 bg-[#EAE7DF] mx-1" />
-            <Clock size={12} className="text-[#E4491B]" />
-            <span className="mono text-[12px] text-[#141414] font-medium">{timing}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExport}
-              className="hidden sm:flex items-center gap-2 px-4 h-9 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] mono text-[12px] font-medium shadow-xs hover:border-[#E4491B]/40 hover:bg-[#EAE7DF] transition active:scale-95 text-[#141414]"
-            >
-              {isCopied ? (
-                <Check size={14} className="text-emerald-600" />
-              ) : (
-                <FileJson size={14} className="text-[#E4491B]" />
-              )}
-              <span>{isCopied ? "Copied" : "Export JSON"}</span>
-            </button>
-
-            <button
-              onClick={handleExport}
-              aria-label="Copy JSON"
-              className="sm:hidden w-9 h-9 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] grid place-items-center shadow-xs hover:bg-[#EAE7DF] transition active:scale-95 text-[#141414]"
-            >
-              {isCopied ? (
-                <Check size={16} className="text-emerald-600" />
-              ) : (
-                <Copy size={16} />
-              )}
-            </button>
-
-            <div className="w-9 h-9 rounded-full bg-[#E4491B] text-white grid place-items-center mono text-[12px] select-none font-medium shadow-xs">
-              AK
-            </div>
-          </div>
+          <AppleDockNav
+            activeTab={activeHeaderTab}
+            onTabChange={setActiveHeaderTab}
+          />
         </div>
-      </header>
+      </div>
 
-      {/* Main Viewport: Script (Story Bank) vs Edit (Studio) */}
-      {activeHeaderTab === "script" ? (
-        <div className="mx-auto max-w-[1600px] w-full min-h-[calc(100vh-64px)] p-4 sm:p-6">
-          <StoryBankView hideHeader={true} onSwitchToStudio={() => setActiveHeaderTab("edit")} />
+      {/* Main Viewport: Z vs U vs Script vs Edit vs Post */}
+      {activeHeaderTab === "z" ? (
+        <ZeeView
+          onSwitchToTab={(tab) => {
+            setActiveHeaderTab(tab);
+            recordPageActivity(tab, `Switched to ${tab.toUpperCase()}`, `Opened ${tab.toUpperCase()} stage from Zee Brain`);
+          }}
+          onNewReel={handleNewReel}
+          recentTopic={activeMessage?.topic || activeMessage?.text || input}
+          totalReelsCount={messages.filter((m) => m.role === "assistant" && (m.topic || m.beats)).length}
+        />
+      ) : activeHeaderTab === "u" ? (
+        <YouView
+          onSwitchToTab={(tab) => {
+            setActiveHeaderTab(tab);
+            recordPageActivity(tab, `Switched to ${tab.toUpperCase()}`, `Navigated from You Memory Bank to ${tab.toUpperCase()}`);
+          }}
+          onSelectTopicForScript={(hookIdea, matchedFormat) => {
+            setInput(hookIdea);
+            if (matchedFormat) {
+              setFormat(matchedFormat as FormatType);
+            }
+            recordPageActivity("script", "Script • Story Bank", `Loaded personal memory hook: "${hookIdea.slice(0, 48)}..."`, hookIdea);
+            setActiveHeaderTab("script");
+          }}
+        />
+      ) : activeHeaderTab === "script" ? (
+        <div className="mx-auto max-w-[1600px] w-full min-h-[calc(100vh-50px)] px-4 pt-1.5 pb-6 sm:px-6 sm:pt-2 sm:pb-8">
+          <StoryBankView
+            hideHeader={true}
+            initialTopicFromYou={input}
+            onSwitchToStudio={() => setActiveHeaderTab("edit")}
+            onCompleteRecordingToStudio={(videoFile, fullScriptText, title) => {
+              editVideoFileRef.current = videoFile;
+              setEditVideoName(videoFile.name);
+              setEditVideoDuration(28);
+              setEditScript(fullScriptText);
+              setShowEditScript(true);
+              setStudioMode("autoEdit");
+              setInput(title);
+              recordPageActivity(
+                "edit",
+                "Edit • Video Studio",
+                `Received recorded take "${videoFile.name}" from Teleprompter & Mobile Loop`,
+                title
+              );
+              setActiveHeaderTab("edit");
+            }}
+          />
         </div>
+      ) : activeHeaderTab === "post" ? (
+        <PostView
+          onSwitchToTab={setActiveHeaderTab}
+          activeTopic={activeMessage?.topic || activeMessage?.text || input}
+          activeVideoUrl={
+            activeMessage?.audioStory?.finalVideoUrl ||
+            activeMessage?.videoUrl ||
+            activeMessage?.finalDownloadUrl
+          }
+          duration={
+            activeMessage?.audioStory?.duration ||
+            activeMessage?.editPlan?.cleanDuration ||
+            33.5
+          }
+          onDownloadMp4={() => {
+            if (activeMessage?.audioStory) {
+              if (activeMessage.audioStory.finalVideoUrl) {
+                window.location.href = `${activeMessage.audioStory.finalVideoUrl}&download=1`;
+              } else {
+                setActiveHeaderTab("edit");
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
+                }, 300);
+              }
+            } else if (activeMessage?.videoUrl || activeMessage?.finalDownloadUrl) {
+              window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
+            } else {
+              setIsExportModalOpen(true);
+            }
+          }}
+        />
       ) : (
         <>
-          {/* Main Studio Viewport */}
-          <div className="mx-auto max-w-[1600px] w-full flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
+          {/* Main Studio Viewport (Edit) */}
+          <div className="mx-auto max-w-[1600px] w-full flex flex-col lg:flex-row min-h-[calc(100vh-50px)]">
         {/* Left History Sidebar */}
-        <aside className="hidden lg:flex w-[280px] shrink-0 border-r-2 border-[#141414] bg-[#ECEAE3] flex-col p-4 sticky top-[64px] h-[calc(100vh-64px)] overflow-y-auto">
+        <aside className="hidden lg:flex w-[280px] shrink-0 border-r-2 border-[#141414] bg-[#ECEAE3] flex-col p-4 sticky top-0 h-screen overflow-y-auto">
           {/* Top: New Studio Reel button */}
           <button
             onClick={handleNewReel}
@@ -2438,8 +3076,43 @@ export default function ProperMobileResponsiveChat() {
         <main className="flex-1 flex flex-col min-w-0 relative">
           <div
             ref={chatContainerRef}
-            className="flex-1 overflow-y-auto px-4 lg:px-10 py-6 lg:py-10 space-y-6 lg:space-y-8 pb-[140px] lg:pb-[160px]"
+            onScroll={(event) => {
+              try { sessionStorage.setItem("paper_studio_chat_scroll_v1", String(event.currentTarget.scrollTop)); } catch {}
+            }}
+            className="flex-1 overflow-y-auto px-4 lg:px-10 pt-2 lg:pt-3 space-y-6 lg:space-y-8 pb-[140px] lg:pb-[160px]"
           >
+            {/* Zee Welcome & Live Agent Greeting Banner */}
+            <div className="w-full max-w-[780px] mx-auto rounded-[20px] border-2 border-[#141414] bg-gradient-to-r from-[#FFFDF8] via-[#FAF6EC] to-[#F6D9CC]/45 p-3.5 sm:p-4 shadow-[3px_3px_0px_#141414]">
+              <Pip
+                mood={
+                  isGenerating || isGeneratingCode
+                    ? inferPipMoodFromContext(generatingStep, "thinking")
+                    : studioMode === "autoEdit" && editVideoName
+                    ? "listening"
+                    : input.trim().length > 0
+                    ? "listening"
+                    : "happy"
+                }
+                size={48}
+                spin={false}
+                orientation="horizontal"
+                interactive={true}
+                userInstruction={input.trim() || activeMessage?.topic || activeMessage?.text}
+                isAutoEdit={studioMode === "autoEdit"}
+                question={
+                  isGenerating || isGeneratingCode
+                    ? cleanZeeDialogue(generatingStep, "thinking", studioMode === "autoEdit")
+                    : studioMode === "autoEdit"
+                    ? editVideoName
+                      ? `"${editVideoName}" loaded. Tap Auto-Edit to trim & build your video!`
+                      : "Upload your video — I’ll trim retakes, cut dead air & animate it for you."
+                    : input.trim().length > 0
+                    ? `Ready to make your video: "${input.trim().slice(0, 48)}${input.trim().length > 48 ? "…" : ""}".`
+                    : "Tell me your idea or paste a script. Let’s make something good!"
+                }
+              />
+            </div>
+
             {messages.map((message, messageIndex) => {
               const isUser = message.role === "user";
               const isSelectedReel = activeMessage?.id === message.id;
@@ -2474,15 +3147,21 @@ export default function ProperMobileResponsiveChat() {
                             <div className="shrink-0 flex items-center justify-center">
                               <Pip
                                 mood={
-                                  message.generationStatus === "ready"
-                                    ? "happy"
-                                    : message.generationStatus === "error"
-                                    ? "thinking"
-                                    : message.generationStatus === "storyboarding" ||
-                                      message.generationStatus === "rendering" ||
-                                      message.typing ||
+                                  message.generationStatus === "error"
+                                    ? "concerned"
+                                    : message.typing ||
                                       (isGenerating && messageIndex === messages.length - 1)
+                                    ? "thinking"
+                                    : message.generationStatus === "storyboarding"
+                                    ? message.pipeline === "pipeline-b"
+                                      ? "idea"
+                                      : "thinking"
+                                    : message.generationStatus === "rendering"
                                     ? "writing"
+                                    : message.pipeline === "pipeline-b" && message.videoUrl
+                                    ? "excited"
+                                    : isSelectedReel && currentBeats[activeBeat]
+                                    ? "happy"
                                     : "idle"
                                 }
                                 size={28}
@@ -2491,7 +3170,7 @@ export default function ProperMobileResponsiveChat() {
                             </div>
                             <div>
                               <div className="mono text-[11px] font-bold tracking-[0.08em] text-[#141414] flex items-center gap-1.5">
-                                <span>PIP • PAPER STUDIO</span>
+                                <span>ZEE • PAPER STUDIO</span>
                                 {isSelectedReel && (
                                   <span className="px-1.5 py-0.2 rounded-full bg-[#F6D9CC] text-[#E4491B] text-[8.5px] uppercase font-semibold">Active In Preview</span>
                                 )}
@@ -2542,12 +3221,21 @@ export default function ProperMobileResponsiveChat() {
 
                         {message.typing ? (
                           <div className="px-4.5 pb-4.5 pt-3 flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2 mono text-[11.5px] font-semibold text-[#E4491B]">
-                              <Disc3 size={15} className="animate-spin text-[#E4491B]" />
-                              <span>Wonder is crafting your storyboard...</span>
-                            </div>
-                            <div className="mono text-[10.5px] text-[#6B6A64] bg-[#ECEAE3] border border-[#D5D2C8] rounded-lg px-3 py-2 flex items-center justify-between">
-                              <span>{generatingStep || "Generating 60fps paper physics..."}</span>
+                            <Pip
+                              mood={inferPipMoodFromContext(generatingStep, "thinking")}
+                              size={46}
+                              orientation="horizontal"
+                              userInstruction={message.topic || message.text}
+                              isAutoEdit={message.pipeline === "pipeline-b"}
+                              question={cleanZeeDialogue(
+                                generatingStep || "Thinking a story for you...",
+                                "thinking",
+                                message.pipeline === "pipeline-b"
+                              )}
+                              interactive={true}
+                            />
+                            <div className="mono text-[10.5px] text-[#6B6A64] bg-[#ECEAE3] border border-[#D5D2C8] rounded-xl px-3 py-2 flex items-center justify-between">
+                              <span>{cleanZeeDialogue(generatingStep, "thinking", message.pipeline === "pipeline-b")}</span>
                               <Loader2 size={12} className="animate-spin text-[#E4491B]" />
                             </div>
                           </div>
@@ -2596,8 +3284,10 @@ export default function ProperMobileResponsiveChat() {
                               let actions: PipAction[] = [];
 
                               if (message.generationStatus === "error") {
-                                pipMood = "thinking";
-                                question = "I ran into an issue while generating this reel. Want to retry?";
+                                pipMood = "concerned";
+                                question = message.generationError
+                                  ? `Hey, I’m Zee — ${message.generationError} Want me to retry this custom reel for you?`
+                                  : "Hey, I’m Zee — I ran into an issue while crafting this reel. Want me to retry?";
                                 actions = [
                                   {
                                     label: "Retry Reel",
@@ -2606,13 +3296,26 @@ export default function ProperMobileResponsiveChat() {
                                     onClick: () => handleOpenFullReel({ ...message, sparkCode: "" }),
                                   },
                                 ];
+                              } else if (message.generationStatus === "rendering") {
+                                pipMood = inferPipMoodFromContext(generatingStep, "writing");
+                                question =
+                                  generatingStep ||
+                                  "Hey, I’m Zee! Coding the custom 60fps animations and typography for each scene right now…";
                               } else if (isPipelineB) {
-                                pipMood = cuts.length > 0 ? "idea" : "reading";
-                                question = cuts.length > 0
-                                  ? `Found ${cuts.length} cuts saving -${cutDur.toFixed(2)}s. Shall we trim pauses and punch in on key points?`
-                                  : "Speech boundaries verified. 100% natural speech cadence intact. Ready to export?";
+                                if (message.videoUrl && message.generationStatus === "ready") {
+                                  pipMood = cuts.length > 0 ? "excited" : "happy";
+                                  question =
+                                    cuts.length > 0
+                                      ? `Boom! I’m Zee — I trimmed -${cutDur.toFixed(2)}s across ${cuts.length} retake/silence cut(s) and locked your custom explainer reel. Ready to watch or download?`
+                                      : "Hey, I’m Zee! Your clean talking-head reel is locked with kinetic subtitles & custom explainer visuals! Ready to watch or export?";
+                                } else {
+                                  pipMood = cuts.length > 0 ? "idea" : "reading";
+                                  question = cuts.length > 0
+                                    ? `Hey, I’m Zee! I found ${cuts.length} retake/silence cuts saving -${cutDur.toFixed(2)}s. Shall we trim them and punch in on your key points?`
+                                    : "Hey, I’m Zee! Speech boundaries verified with 100% natural cadence. Ready to export?";
+                                }
                                 actions = [
-                                  ...(cuts.length > 0
+                                  ...(cuts.length > 0 && !message.videoUrl
                                     ? [
                                         {
                                           label: "Apply Editorial Cuts",
@@ -2625,9 +3328,25 @@ export default function ProperMobileResponsiveChat() {
                                   {
                                     label: "Play Reel",
                                     icon: <Play size={11} />,
-                                    variant: "secondary" as const,
+                                    variant: cuts.length > 0 && !message.videoUrl ? ("secondary" as const) : ("primary" as const),
                                     onClick: () => handleOpenFullReel(message),
                                   },
+                                  ...(message.videoUrl || message.finalDownloadUrl || message.pipeline === "pipeline-b"
+                                    ? [
+                                        {
+                                          label: "Download MP4",
+                                          icon: <Download size={11} />,
+                                          variant: "secondary" as const,
+                                          onClick: () => {
+                                            setSelectedMessageId(message.id);
+                                            handleOpenFullReel(message);
+                                            setTimeout(() => {
+                                              window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
+                                            }, 400);
+                                          },
+                                        },
+                                      ]
+                                    : []),
                                   {
                                     label: "Want a punchier hook?",
                                     icon: <Sparkles size={11} />,
@@ -2639,8 +3358,17 @@ export default function ProperMobileResponsiveChat() {
                                   },
                                 ];
                               } else {
-                                pipMood = "happy";
-                                question = "Here's your reel! 60fps paper animation with dynamic typography is ready. What do you think?";
+                                const liveBeat = isSelectedReel ? currentBeats[activeBeat] : message.beats?.[0];
+                                pipMood = liveBeat
+                                  ? inferPipMoodFromContext(
+                                      `${liveBeat.label} ${liveBeat.tone || ""} ${liveBeat.script}`,
+                                      "happy"
+                                    )
+                                  : "happy";
+                                question =
+                                  isSelectedReel && liveBeat
+                                    ? `Scene ${activeBeat + 1} (${liveBeat.label}) is ready! Tap play to watch the full reel.`
+                                    : "Your video is ready! Tap play to watch.";
                                 actions = [
                                   {
                                     label: "Play Full Reel",
@@ -2654,7 +3382,19 @@ export default function ProperMobileResponsiveChat() {
                                     variant: "secondary" as const,
                                     onClick: () => {
                                       setSelectedMessageId(message.id);
-                                      setIsExportModalOpen(true);
+                                      if (message.audioStory) {
+                                        handleOpenFullReel(message);
+                                        setTimeout(() => {
+                                          window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
+                                        }, 400);
+                                      } else if (message.videoUrl || message.finalDownloadUrl || message.pipelineBRunId) {
+                                        handleOpenFullReel(message);
+                                        setTimeout(() => {
+                                          window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
+                                        }, 400);
+                                      } else {
+                                        setIsExportModalOpen(true);
+                                      }
                                     },
                                   },
                                   {
@@ -2678,6 +3418,8 @@ export default function ProperMobileResponsiveChat() {
                                     question={question}
                                     actions={actions}
                                     interactive={true}
+                                    userInstruction={message.topic || message.text}
+                                    isAutoEdit={isPipelineB}
                                   />
                                 </div>
                               );
@@ -2693,11 +3435,30 @@ export default function ProperMobileResponsiveChat() {
                                 status={message.generationStatus}
                                 error={message.generationError}
                                 timing={message.timing}
-                                onEdit={(scene) => { setSelectedMessageId(message.id); setInput(`Edit scene ${scene}: `); textareaRef.current?.focus(); }}
+                                onEdit={(scene) => { setSelectedMessageId(message.id); setInput(`Recreate scene ${scene}: `); textareaRef.current?.focus(); }}
+                                onRecreateScene={(sceneIdx, instruction, customStart, customEnd) =>
+                                  handleRecreateSingleScene(
+                                    message,
+                                    sceneIdx,
+                                    instruction,
+                                    customStart,
+                                    customEnd
+                                  )
+                                }
                                 disabled={isGenerating || isGeneratingCode}
                                 onPlay={() => handleOpenFullReel(message)}
                                 onRetry={() => handleOpenFullReel({ ...message, sparkCode: "" })}
                                 onApproveCuts={() => handleApproveCuts(message)}
+                                onRebuildCuts={(_customCuts, updatedState) => {
+                                  const bust = Date.now();
+                                  const rid = message.pipelineBRunId;
+                                  updateMessage(message.id, {
+                                    generationStatus: "ready",
+                                    videoUrl: rid ? `/api/pipeline-b/media/${rid}/clean?t=${bust}` : message.videoUrl,
+                                    finalDownloadUrl: rid ? `/api/pipeline-b/media/${rid}/final?t=${bust}` : message.finalDownloadUrl,
+                                    editPlan: updatedState?.editPlan || message.editPlan,
+                                  });
+                                }}
                                 unifiedMode={true}
                               />
                             )}
@@ -2705,11 +3466,6 @@ export default function ProperMobileResponsiveChat() {
                         )}
                       </div>
 
-                      {!message.typing && (
-                        <div className="mono text-[9px] tracking-widest uppercase text-[#6B6A64] ml-1.5 flex items-center gap-1.5">
-                          <span>Paper Engine • 60fps real type</span>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -2738,56 +3494,98 @@ export default function ProperMobileResponsiveChat() {
             <div className="mx-auto max-w-[780px]">
               <div className="relative">
                 {activePopover && (
-                  <div className="absolute bottom-full mb-3 left-0 right-0 flex justify-start z-30">
-                    <div className="rounded-[20px] bg-[#F7F5EF] border border-[#D5D2C8] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.18)] p-2 w-[320px] max-w-[92vw] animate-popover">
+                  <div className="absolute bottom-full mb-2 left-0 right-0 flex justify-start z-30">
+                    <div className="rounded-[20px] bg-[#F7F5EF] border border-[#D5D2C8] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.18)] p-2 w-[320px] max-w-[92vw] max-h-[min(70dvh,520px)] overflow-y-auto overscroll-contain animate-popover">
                       {activePopover === "format" && (
                         <div className="space-y-1">
                           <div className="px-3 py-2 mono text-[11px] uppercase tracking-widest text-[#6B6A64] font-semibold">
-                            Format • Paper engine
+                            {studioMode === "autoEdit"
+                              ? "Template • Auto-edit"
+                              : "Format • Paper engine"}
                           </div>
-                          {FORMAT_OPTIONS.map((f) => {
-                            const isSelected = format === f.id;
-                            return (
-                              <button
-                                key={f.id}
-                                onClick={() => {
-                                  setFormat(f.id);
-                                  setActivePopover(null);
-                                }}
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[14px] text-left transition ${
-                                  isSelected
-                                    ? "bg-gradient-to-r from-[#E4491B] to-[#E4491B] text-white shadow-xs"
-                                    : "hover:bg-[#EAE7DF] text-[#141414]"
-                                }`}
-                              >
-                                <span
-                                  className="w-7 h-7 rounded-full border border-[#D5D2C8] grid place-items-center text-[11px] font-bold shrink-0 shadow-xs"
-                                  style={{
-                                    background: f.swatch,
-                                    color:
-                                      f.id === "blackNeon" ? "white" : "#111",
-                                  }}
-                                >
-                                  Aa
-                                </span>
-                                <span className="flex-1">
-                                  <span className="block text-[13px] font-semibold">
-                                    {f.label}
-                                  </span>
-                                  <span
-                                    className={`block mono text-[10.5px] ${
+                          {studioMode === "autoEdit"
+                            ? AUTO_EDIT_TEMPLATE_OPTIONS.map((t) => {
+                                const isSelected = autoEditTemplate === t.id;
+                                return (
+                                  <button
+                                    key={t.id}
+                                    onClick={() => {
+                                      setAutoEditTemplate(t.id);
+                                      setActivePopover(null);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[14px] text-left transition ${
                                       isSelected
-                                        ? "text-white/70"
-                                        : "text-[#6B6A64]"
+                                        ? "bg-gradient-to-r from-[#E4491B] to-[#E4491B] text-white shadow-xs"
+                                        : "hover:bg-[#EAE7DF] text-[#141414]"
                                     }`}
                                   >
-                                    {f.desc}
-                                  </span>
-                                </span>
-                                {isSelected && <Check size={16} className="text-[#E4491B]" />}
-                              </button>
-                            );
-                          })}
+                                    <span
+                                      className="w-7 h-7 rounded-full border border-[#D5D2C8] grid place-items-center text-[11px] font-bold shrink-0 shadow-xs text-white"
+                                      style={{ background: t.swatch }}
+                                    >
+                                      50
+                                    </span>
+                                    <span className="flex-1">
+                                      <span className="block text-[13px] font-semibold">
+                                        {t.label}
+                                      </span>
+                                      <span
+                                        className={`block mono text-[10.5px] ${
+                                          isSelected
+                                            ? "text-white/70"
+                                            : "text-[#6B6A64]"
+                                        }`}
+                                      >
+                                        {t.desc}
+                                      </span>
+                                    </span>
+                                    {isSelected && <Check size={16} className="text-white" />}
+                                  </button>
+                                );
+                              })
+                            : FORMAT_OPTIONS.map((f) => {
+                                const isSelected = format === f.id;
+                                return (
+                                  <button
+                                    key={f.id}
+                                    onClick={() => {
+                                      setFormat(f.id);
+                                      setActivePopover(null);
+                                    }}
+                                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[12px] text-left transition ${
+                                      isSelected
+                                        ? "bg-gradient-to-r from-[#E4491B] to-[#E4491B] text-white shadow-xs"
+                                        : "hover:bg-[#EAE7DF] text-[#141414]"
+                                    }`}
+                                  >
+                                    <span
+                                      className="w-6 h-6 rounded-full border border-[#D5D2C8] grid place-items-center text-[10px] font-bold shrink-0 shadow-xs"
+                                      style={{
+                                        background: f.swatch,
+                                        color:
+                                          f.id === "blackNeon" ? "white" : "#111",
+                                      }}
+                                    >
+                                      Aa
+                                    </span>
+                                    <span className="flex-1">
+                                      <span className="block text-[12px] font-semibold">
+                                        {f.label}
+                                      </span>
+                                      <span
+                                        className={`block mono text-[9.5px] ${
+                                          isSelected
+                                            ? "text-white/70"
+                                            : "text-[#6B6A64]"
+                                        }`}
+                                      >
+                                        {f.desc}
+                                      </span>
+                                    </span>
+                                    {isSelected && <Check size={16} className="text-[#E4491B]" />}
+                                  </button>
+                                );
+                              })}
                         </div>
                       )}
 
@@ -3022,11 +3820,6 @@ export default function ProperMobileResponsiveChat() {
                       <span>Auto-edit</span>
                     </button>
                   </div>
-                  <span className="mono text-[10px] font-semibold text-[#6B6A64]">
-                    {studioMode === "create"
-                      ? "Pipeline A • Wonder & Spark 1.3 Code Animation"
-                      : "Pipeline B • Talking-Head Auto Video Editor"}
-                  </span>
                 </div>
 
                 {/* Structured, Aligned Studio Input Console */}
@@ -3059,16 +3852,115 @@ export default function ProperMobileResponsiveChat() {
                       </div>
                     </div>
                   )}
+                  {/* Image Storyteller Controller Banner (Shows when Image Storyteller template is selected or Audio/Ref Image is attached) */}
+                  {studioMode === "create" && (format === "imageStory" || audioVoiceoverName || referenceImageName) && (
+                    <div className="w-full px-3.5 py-2 bg-gradient-to-r from-[#F6F4EE] via-[#FDFBF7] to-[#F6F4EE] border-b border-[#D5D2C8] flex flex-wrap items-center justify-between gap-2">
+                      {/* Left: Voiceover Audio + Reference Image Controls */}
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <span className="px-2 py-0.5 rounded-full bg-[#141414] text-white mono text-[9.5px] font-bold tracking-wide uppercase">
+                          Image Storyteller
+                        </span>
+
+                        {audioVoiceoverName ? (
+                          <div className="flex items-center gap-2 bg-white border border-[#2563EB]/25 rounded-full pl-1.5 pr-2.5 py-0.5 shadow-2xs">
+                            {audioVoiceoverUrl && (
+                              <audio
+                                ref={audioPreviewAudioRef}
+                                src={audioVoiceoverUrl}
+                                onEnded={() => setAudioVoiceoverPlaying(false)}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={toggleAudioVoiceoverPreview}
+                              className="w-5 h-5 rounded-full bg-[#2563EB] text-white flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition"
+                              title={audioVoiceoverPlaying ? "Pause preview" : "Play voiceover preview"}
+                            >
+                              {audioVoiceoverPlaying ? <Pause size={10} /> : <Play size={10} className="ml-0.5" />}
+                            </button>
+                            <span className="font-bold text-[11px] text-[#141414] truncate max-w-[140px]">
+                              {audioVoiceoverName}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded-full bg-blue-100 text-[#2563EB] mono text-[9px] font-bold">
+                              {audioVoiceoverDuration ? `${Math.round(audioVoiceoverDuration)}s` : "Audio"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleClearAudioVoiceover}
+                              className="text-[#888] hover:text-rose-600 transition ml-0.5"
+                              title="Remove voiceover audio"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => audioFileInputRef.current?.click()}
+                            className="px-2.5 py-0.5 rounded-full bg-white hover:bg-[#ECEAE3] border border-dashed border-[#141414]/30 text-[10.5px] font-bold text-[#444] hover:text-[#141414] flex items-center gap-1 transition"
+                            title="Upload optional voiceover audio (or leave empty to generate from your prompt/script)"
+                          >
+                            <Mic size={10} className="text-[#2563EB]" />
+                            <span>+ Voiceover Audio (Optional)</span>
+                          </button>
+                        )}
+
+                        {referenceImageName ? (
+                          <div className="flex items-center gap-2 bg-white border border-[#E4491B]/30 rounded-full pl-1.5 pr-2.5 py-0.5 shadow-2xs">
+                            {referenceImageUrl && (
+                              <img
+                                src={referenceImageUrl}
+                                alt="Reference"
+                                className="w-5 h-5 rounded-full object-cover border border-black/15 shrink-0"
+                              />
+                            )}
+                            <span className="font-bold text-[11px] text-[#141414] truncate max-w-[120px]">
+                              {referenceImageName}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded-full bg-[#F6D9CC] text-[#E4491B] mono text-[9px] font-bold">
+                              Ref Image
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleClearReferenceImage}
+                              className="text-[#888] hover:text-rose-600 transition ml-0.5"
+                              title="Remove reference image"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => referenceImageInputRef.current?.click()}
+                            className="px-2.5 py-0.5 rounded-full bg-white hover:bg-[#ECEAE3] border border-dashed border-[#141414]/30 text-[10.5px] font-bold text-[#444] hover:text-[#141414] flex items-center gap-1 transition"
+                            title="Add reference image for character or style consistency"
+                          >
+                            <Upload size={10} className="text-[#E4491B]" />
+                            <span>+ Character / Style Ref Image</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mono text-[9.5px] text-[#6B6A64] flex items-center gap-1.5">
+                        <Sparkles size={10} className="text-[#E4491B] shrink-0" />
+                        <span>
+                          Wonder 1.0 + Muse Image 1.0 • Prompt decides style (Anime, Storybook, etc.) with locked Character Sheet
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Top: Text Input + Clear button */}
                   <div className="px-3.5 pt-2 pb-1 relative flex items-start gap-2.5">
                     <div
                       className="shrink-0 pt-0.5"
                       title={
                         isGenerating || isGeneratingCode
-                          ? "Pip is writing your script..."
+                          ? "Zee is crafting your custom script & video..."
                           : input.trim().length > 0
-                          ? "Pip is listening..."
-                          : "Pip is ready. Type your idea!"
+                          ? "Zee is listening to your instruction..."
+                          : "Hey, I’m Zee! Tell me your idea!"
                       }
                     >
                       <Pip
@@ -3083,6 +3975,7 @@ export default function ProperMobileResponsiveChat() {
                         interactive={true}
                       />
                     </div>
+
                     <textarea
                       ref={textareaRef}
                       value={input}
@@ -3105,9 +3998,11 @@ export default function ProperMobileResponsiveChat() {
                         )}px`;
                       }}
                       placeholder={
-                        studioMode === "autoEdit"
-                          ? "Pipeline B: Add an editor instruction (optional) — e.g. 'cut pauses, punch in on key points'"
-                          : "Pipeline A: Ask anything... e.g., 'Explain quantum computing in 5s' or 'Why paper cards convert better'"
+                        audioVoiceoverName
+                          ? `Add optional story direction, character details, or visual prompt (or leave blank and let the AI Storyteller decide from your voice)...`
+                          : studioMode === "autoEdit"
+                          ? "Hey, I’m Zee! Add custom edit instructions (optional) — e.g. 'cut retakes & silences, 50/50 story explainer'"
+                          : "Hey, I’m Zee! Tell me what video to create, then choose a template for its look."
                       }
                       rows={1}
                       className="w-full resize-none bg-transparent outline-none border-none text-[14px] sm:text-[15px] leading-[1.4] text-[#141414] placeholder:text-[#6B6A64]/60 min-h-[36px] max-h-[104px] py-1"
@@ -3127,10 +4022,10 @@ export default function ProperMobileResponsiveChat() {
                     )}
                   </div>
 
-                  {/* Bottom Toolbar: Perfectly aligned horizontal control bar */}
-                  <div className="px-3 py-1.5 bg-[#ECEAE3] border-t-2 border-[#141414] flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {/* Format Selector Pill */}
+                  {/* Bottom Toolbar: Single-line horizontal control bar */}
+                  <div className="px-3 py-1.5 bg-[#ECEAE3] border-t-2 border-[#141414] flex items-center justify-between gap-2 flex-nowrap">
+                    <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto scrollbar-none min-w-0">
+                      {/* Format / Template Selector Pill */}
                       <button
                         type="button"
                         onClick={() =>
@@ -3138,8 +4033,11 @@ export default function ProperMobileResponsiveChat() {
                             prev === "format" ? null : "format"
                           )
                         }
-                        className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
-                          activePopover === "format" || format !== "auto"
+                        className={`h-7 px-2 sm:px-2.5 rounded-full border-2 flex items-center gap-1 mono text-[10px] sm:text-[11px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
+                          activePopover === "format" ||
+                          (studioMode === "autoEdit"
+                            ? autoEditTemplate === "storyExplainer"
+                            : format !== "auto")
                             ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
                             : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
                         }`}
@@ -3148,7 +4046,9 @@ export default function ProperMobileResponsiveChat() {
                           className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{
                             background:
-                              format === "blackNeon"
+                              studioMode === "autoEdit"
+                                ? currentFormat?.swatch
+                                : format === "blackNeon"
                                 ? "#00D9FF"
                                 : format === "anime"
                                 ? "#FF3366"
@@ -3157,10 +4057,9 @@ export default function ProperMobileResponsiveChat() {
                                 : currentFormat?.swatch || "#FF5520",
                           }}
                         />
-                        <span className="hidden sm:inline">
+                        <span>
                           {currentFormat?.label}
                         </span>
-                        <span className="sm:hidden">Format</span>
                         <ChevronUp
                           size={12}
                           className={`transition-transform duration-200 opacity-60 ${
@@ -3169,8 +4068,8 @@ export default function ProperMobileResponsiveChat() {
                         />
                       </button>
 
-                      {/* Timing Selector Pill — Create mode only (auto-edit uses the uploaded video's length) */}
-                      {studioMode === "create" && (
+                      {/* Timing Selector Pill — Create mode only (when no voiceover file is overriding duration) */}
+                      {studioMode === "create" && !audioVoiceoverName && (
                       <button
                         type="button"
                         onClick={() =>
@@ -3178,7 +4077,7 @@ export default function ProperMobileResponsiveChat() {
                             prev === "timing" ? null : "timing"
                           )
                         }
-                        className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
+                        className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
                           activePopover === "timing"
                             ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
                             : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
@@ -3195,8 +4094,8 @@ export default function ProperMobileResponsiveChat() {
                       </button>
                       )}
 
-                      {/* Voice Selector Pill — Create mode only (auto-edit keeps your own voice) */}
-                      {studioMode === "create" && (
+                      {/* Voice Selector Pill — Create mode only (when no custom voiceover file is uploaded) */}
+                      {studioMode === "create" && !audioVoiceoverName && (
                       <button
                         type="button"
                         onClick={() =>
@@ -3204,7 +4103,7 @@ export default function ProperMobileResponsiveChat() {
                             prev === "voice" ? null : "voice"
                           )
                         }
-                        className={`h-8 px-2.5 sm:px-3 rounded-full border-2 hidden sm:flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
+                        className={`h-7 w-8 p-0 rounded-full border-2 hidden sm:flex items-center justify-center mono text-[10px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
                           activePopover === "voice"
                             ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
                             : voiceEnabled
@@ -3218,19 +4117,74 @@ export default function ProperMobileResponsiveChat() {
                             voiceEnabled ? "text-[#E4491B]" : "text-[#0EA5E9]"
                           }
                         />
-                        <span>
-                          {voiceEnabled ? `${voiceLangOf(voice)} • ${voice}` : "Voice off"}
-                        </span>
-                        {voiceEnabled && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        )}
-                        <ChevronUp
-                          size={12}
-                          className={`transition-transform duration-200 opacity-60 ${
-                            activePopover === "voice" ? "rotate-180" : ""
-                          }`}
-                        />
                       </button>
+                      )}
+
+                      {/* Voiceover Audio & Reference Image Upload Pills — Create mode */}
+                      {studioMode === "create" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => audioFileInputRef.current?.click()}
+                            title={
+                              audioVoiceoverName
+                                ? `Voiceover: ${audioVoiceoverName}`
+                                : "Upload voiceover audio; the selected template controls the visuals"
+                            }
+                            className={`h-7 px-2 sm:px-2.5 rounded-full border-2 flex items-center gap-1 mono text-[10px] sm:text-[11px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
+                              audioVoiceoverName
+                                ? "bg-[#2563EB] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
+                                : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
+                            }`}
+                          >
+                            <Volume2 size={12} className={audioVoiceoverName ? "text-white" : "text-[#2563EB]"} />
+                            <span>
+                              {audioVoiceoverName
+                                ? `Audio ready${audioVoiceoverDuration ? ` • ${Math.round(audioVoiceoverDuration)}s` : ""}`
+                                : "Audio"}
+                            </span>
+                          </button>
+                          <input
+                            ref={audioFileInputRef}
+                            type="file"
+                            accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac"
+                            className="hidden"
+                            onChange={(e) => {
+                              handleAudioVoiceoverFile(e.target.files?.[0]);
+                              e.target.value = "";
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => referenceImageInputRef.current?.click()}
+                            title={
+                              referenceImageName
+                                ? `Reference image: ${referenceImageName}`
+                                : "Upload optional reference image for character or visual style"
+                            }
+                            className={`h-7 px-2 sm:px-2.5 rounded-full border-2 flex items-center gap-1 mono text-[10px] sm:text-[11px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
+                              referenceImageName
+                                ? "bg-[#141414] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
+                                : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
+                            }`}
+                          >
+                            <Upload size={12} className={referenceImageName ? "text-[#FFDD67]" : "text-[#E4491B]"} />
+                            <span>
+                              {referenceImageName ? "Ref Image ✓" : "Ref Image"}
+                            </span>
+                          </button>
+                          <input
+                            ref={referenceImageInputRef}
+                            type="file"
+                            accept="image/*,.png,.jpg,.jpeg,.webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              handleReferenceImageFile(e.target.files?.[0]);
+                              e.target.value = "";
+                            }}
+                          />
+                        </>
                       )}
 
                       {/* Auto-edit pills: video upload + running script — Pipeline B only */}
@@ -3239,17 +4193,21 @@ export default function ProperMobileResponsiveChat() {
                           <button
                             type="button"
                             onClick={() => editFileInputRef.current?.click()}
-                            title="Upload your talking video"
-                            className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
+                            title={
+                              editVideoName
+                                ? `Uploaded: ${editVideoName}`
+                                : "Upload your talking video"
+                            }
+                            className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
                               editVideoName
                                 ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
                                 : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
                             }`}
                           >
-                            <Upload size={12} />
-                            <span className="max-w-[140px] truncate">
+                            {editVideoName ? <Check size={12} /> : <Upload size={12} />}
+                            <span>
                               {editVideoName
-                                ? `${editVideoName}${editVideoDuration ? ` • ${Math.round(editVideoDuration)}s` : ""}`
+                                ? `Video ready${editVideoDuration ? ` • ${Math.round(editVideoDuration)}s` : ""}`
                                 : "Upload video"}
                             </span>
                           </button>
@@ -3267,7 +4225,7 @@ export default function ProperMobileResponsiveChat() {
                             type="button"
                             onClick={() => setShowEditScript((prev) => !prev)}
                             title="Paste the running script for the AI to match"
-                            className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
+                            className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
                               showEditScript || editScript.trim()
                                 ? "bg-[#141414] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
                                 : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
@@ -3279,42 +4237,8 @@ export default function ProperMobileResponsiveChat() {
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             )}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setReviewCutsFirst((prev) => !prev)}
-                            title="Pause after Wonder Stage A cut analysis to review cuts in storyboard before FFmpeg slices"
-                            className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
-                              reviewCutsFirst
-                                ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
-                                : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
-                            }`}
-                          >
-                            <Scissors size={12} />
-                            <span>{reviewCutsFirst ? "Review cuts ON" : "Review cuts"}</span>
-                          </button>
                         </>
                       )}
-
-                      {/* Internet / Web Search Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={() => setIsInternetEnabled((prev) => !prev)}
-                        className={`h-8 px-2.5 sm:px-3 rounded-full border-2 flex items-center gap-1.5 mono text-[11px] sm:text-[12px] font-bold transition active:scale-95 ${
-                          isInternetEnabled
-                            ? "bg-gradient-to-r from-[#0284C7] to-[#0EA5E9] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
-                            : "bg-[#FFFFFF] border-[#141414]/30 text-[#555] hover:text-[#141414] hover:border-[#141414]"
-                        }`}
-                        title="Toggle live Internet / Web Search context"
-                      >
-                        <Globe
-                          size={13}
-                          className={isInternetEnabled ? "animate-pulse" : "text-[#0EA5E9]"}
-                        />
-                        <span>Internet</span>
-                        {isInternetEnabled ? (
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#FFFFFF] animate-ping ml-0.5" />
-                        ) : null}
-                      </button>
                     </div>
 
                     {/* Right: Vibrant Generate Button with Pip */}
@@ -3324,7 +4248,9 @@ export default function ProperMobileResponsiveChat() {
                       disabled={
                         isGenerating ||
                         isGeneratingCode ||
-                        (studioMode === "autoEdit"
+                        (audioVoiceoverName
+                          ? false
+                          : studioMode === "autoEdit"
                           ? !editVideoFileRef.current && !editVideoName && !input.trim()
                           : !input.trim())
                       }
@@ -3335,9 +4261,17 @@ export default function ProperMobileResponsiveChat() {
                         <Pip
                           mood={
                             isGenerating || isGeneratingCode
-                              ? "writing"
-                              : input.trim().length > 0
+                              ? inferPipMoodFromContext(generatingStep, "writing")
+                              : studioMode === "autoEdit" && editVideoName
                               ? "listening"
+                              : input.trim().length > 100
+                              ? "thinking"
+                              : input.trim().length > 0
+                              ? isInternetEnabled
+                                ? "reading"
+                                : "listening"
+                              : activePopover !== null
+                              ? "thinking"
                               : "idle"
                           }
                           size={18}
@@ -3345,10 +4279,16 @@ export default function ProperMobileResponsiveChat() {
                         />
                       </div>
                       {isGenerating || isGeneratingCode ? (
-                        <span>Generating...</span>
+                        <span>Directing...</span>
                       ) : (
                         <>
-                          <span>{studioMode === "autoEdit" ? "Auto-Edit Video" : "Generate"}</span>
+                          <span>
+                            {audioVoiceoverName
+                              ? `Direct ${audioStyle.toUpperCase()} Story`
+                              : studioMode === "autoEdit"
+                              ? "Auto-Edit Video"
+                              : "Generate"}
+                          </span>
                           <Send size={12} className="opacity-80 ml-0.5" />
                         </>
                       )}
@@ -3378,7 +4318,7 @@ export default function ProperMobileResponsiveChat() {
         </main>
 
         {/* Right Desktop Preview & Timeline */}
-        <aside className="hidden lg:flex w-[400px] shrink-0 border-l border-[#D5D2C8] bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] flex-col items-center sticky top-[64px] h-[calc(100vh-64px)] overflow-hidden shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.04)]">
+        <aside className="hidden lg:flex w-[400px] shrink-0 border-l border-[#D5D2C8] bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] flex-col items-center sticky top-0 h-screen overflow-hidden shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.04)]">
           <div className="py-4" style={{ width: "min(352px, calc((100dvh - 160px) * 9 / 16))" }}>
             <div className="flex items-center justify-between mb-4 px-1">
               <div className="flex items-center gap-1.5 mono text-[11px] uppercase tracking-widest text-[#6B6A64] font-semibold">
@@ -3408,6 +4348,9 @@ export default function ProperMobileResponsiveChat() {
             <PreviewCard
               videoUrl={activeMessage?.videoUrl}
               finalDownloadUrl={activeMessage?.finalDownloadUrl}
+              audioStory={activeMessage?.audioStory}
+              proceduralStory={activeMessage?.proceduralStory}
+              editPlan={activeMessage?.editPlan}
               format={activeMessage?.format || format}
               beats={currentBeats}
               activeBeat={activeBeat}
@@ -3479,6 +4422,9 @@ export default function ProperMobileResponsiveChat() {
                     <PreviewCard
                       videoUrl={activeMessage?.videoUrl}
                       finalDownloadUrl={activeMessage?.finalDownloadUrl}
+                      audioStory={activeMessage?.audioStory}
+                      proceduralStory={activeMessage?.proceduralStory}
+                      editPlan={activeMessage?.editPlan}
                       format={activeMessage?.format || format}
                       beats={currentBeats}
                       activeBeat={activeBeat}
@@ -3625,7 +4571,19 @@ export default function ProperMobileResponsiveChat() {
                 </button>
 
                 <button
-                  onClick={() => setIsExportModalOpen(true)}
+                  onClick={() => {
+                    if (activeMessage?.audioStory) {
+                      window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
+                    } else if (
+                      activeMessage?.pipeline === "pipeline-b" ||
+                      activeMessage?.videoUrl ||
+                      activeMessage?.finalDownloadUrl
+                    ) {
+                      window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
+                    } else {
+                      setIsExportModalOpen(true);
+                    }
+                  }}
                   disabled={isGeneratingCode}
                   className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#E4491B] to-[#C93D14] text-white mono text-[12px] font-bold flex items-center gap-1.5 hover:brightness-105 transition active:scale-95 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Render and Download 1080x1920 60fps MP4 Reel"
@@ -3676,6 +4634,38 @@ export default function ProperMobileResponsiveChat() {
                   const bEnd = typeof currentModalBeat?.end === "number" ? currentModalBeat.end : totalSec;
 
                   const sparkCodeToRun = codeModalContent || currentSparkCode || activeMessage?.sparkCode;
+
+                  if (activeMessage?.audioStory) {
+                    return (
+                      <div className="w-full max-w-[360px] flex flex-col items-center">
+                        <CinematicStoryStage
+                          audioUrl={activeMessage.audioStory.audioUrl}
+                          finalVideoUrl={activeMessage.audioStory.finalVideoUrl}
+                          scenes={activeMessage.audioStory.scenes}
+                          words={activeMessage.audioStory.words}
+                          duration={activeMessage.audioStory.duration}
+                          topic={activeMessage.audioStory.title || activeMessage.text || input}
+                          style={activeMessage.audioStory.style}
+                          runId={activeMessage.audioStory.runId}
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (activeMessage?.videoUrl || activeMessage?.finalDownloadUrl) {
+                    return (
+                      <div className="w-full max-w-[360px] flex flex-col items-center">
+                        <TalkingHeadExplainerStage
+                          cleanVideoUrl={activeMessage.videoUrl}
+                          finalVideoUrl={activeMessage.finalDownloadUrl}
+                          runId={activeMessage?.pipelineBRunId || activeMessage?.editPlan?.runId || activeMessage?.editPlan?.planId}
+                          editPlan={activeMessage.editPlan}
+                          beats={currentBeats}
+                          topic={activeMessage.text || input}
+                        />
+                      </div>
+                    );
+                  }
 
                   if (sparkError || (sparkCodeToRun && !sparkCodeToRun.startsWith("// Connecting"))) {
                     return (

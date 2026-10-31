@@ -5,61 +5,93 @@ import { loadState } from "@/lib/pipeline-b/state";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { runId: string; type: string } }
+  context: { params: Promise<{ runId: string; type: string }> | { runId: string; type: string } }
 ) {
   try {
-    const { runId, type } = params;
+    const { runId, type } = await Promise.resolve(context.params);
     const state = loadState(runId);
     const runDir = path.join(process.cwd(), "workspace", "pipeline-b", "runs", runId);
 
+    const cleanCandidate = state.cleanVideoPath || path.join(runDir, "clean_video.mp4");
+    const finalCandidate1 = path.join(runDir, "final_reel.mp4");
+    const finalCandidate2 = state.finalVideoPath || path.join(runDir, "final_edited_reel.mp4");
+    const rawCandidate = state.rawVideoPath || path.join(runDir, "raw_input.mp4");
+
     let filePath = "";
     if (type === "clean") {
-      filePath = state.cleanVideoPath || path.join(runDir, "clean_video.mp4");
+      filePath = cleanCandidate;
     } else if (type === "final") {
-      filePath = state.finalVideoPath || path.join(runDir, "final_edited_reel.mp4");
+      if (fs.existsSync(finalCandidate1)) {
+        filePath = finalCandidate1;
+      } else if (fs.existsSync(finalCandidate2)) {
+        filePath = finalCandidate2;
+      } else {
+        return NextResponse.json(
+          { error: "No rendered final MP4 exists yet. Please render your reel before downloading." },
+          { status: 404 }
+        );
+      }
     } else {
-      filePath = state.rawVideoPath || path.join(runDir, "raw_input.mp4");
+      filePath = rawCandidate;
     }
 
     if (!fs.existsSync(filePath)) {
-      // Fallback to raw if clean is not finished
-      filePath = state.rawVideoPath || path.join(runDir, "raw_input.mp4");
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: "Media file not found." }, { status: 404 });
+      return NextResponse.json({ error: `Requested ${type} media file not found on disk.` }, { status: 404 });
     }
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
+    const isDownload = req.nextUrl.searchParams.get("download") === "1";
     const range = req.headers.get("range");
 
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunksize = end - start + 1;
-      const fileStream = fs.createReadStream(filePath, { start, end });
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": "*",
+    };
 
-      // @ts-ignore
-      return new NextResponse(fileStream, {
+    // When downloading (?download=1), always serve the complete 200 OK binary file
+    // so the browser never saves a partial 206 byte range as an incomplete .mp4 file.
+    if (range && !isDownload) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = Math.max(0, parseInt(parts[0], 10) || 0);
+      const end = parts[1] ? Math.min(fileSize - 1, parseInt(parts[1], 10)) : fileSize - 1;
+      const chunksize = Math.max(0, end - start + 1);
+
+      const buffer = Buffer.alloc(chunksize);
+      const fd = fs.openSync(filePath, "r");
+      try {
+        fs.readSync(fd, buffer, 0, chunksize, start);
+      } finally {
+        fs.closeSync(fd);
+      }
+
+      return new NextResponse(new Uint8Array(buffer), {
         status: 206,
         headers: {
+          ...corsHeaders,
           "Content-Range": `bytes ${start}-${end}/${fileSize}`,
           "Accept-Ranges": "bytes",
           "Content-Length": String(chunksize),
           "Content-Type": "video/mp4",
+          "Cache-Control": "no-store",
         },
       });
     } else {
-      const isDownload = req.nextUrl.searchParams.get("download") === "1";
-      const fileStream = fs.createReadStream(filePath);
-      // @ts-ignore
-      return new NextResponse(fileStream, {
+      const fileBuffer = fs.readFileSync(filePath);
+      return new NextResponse(new Uint8Array(fileBuffer), {
+        status: 200,
         headers: {
-          "Content-Length": String(fileSize),
+          ...corsHeaders,
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(fileBuffer.byteLength),
           "Content-Type": "video/mp4",
-          ...(isDownload ? { "Content-Disposition": 'attachment; filename="pipeline-b-edited-reel.mp4"' } : {}),
+          "Cache-Control": "no-store",
+          ...(isDownload
+            ? {
+                "Content-Disposition": `attachment; filename="zee-story-reel-${runId.slice(-6)}.mp4"`,
+              }
+            : {}),
         },
       });
     }
