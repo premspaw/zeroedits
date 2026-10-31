@@ -2904,11 +2904,26 @@ export default function ProperMobileResponsiveChat() {
           }}
         />
       ) : activeHeaderTab === "script" ? (
-        <div className="mx-auto max-w-[1600px] w-full min-h-[calc(100vh-50px)] px-4 pt-1.5 pb-6 sm:px-6 sm:pt-2 sm:pb-8">
+        <div className="w-full max-w-[1600px] mx-auto px-1 sm:px-2 pt-0 pb-2">
           <StoryBankView
             hideHeader={true}
             initialTopicFromYou={input}
-            onSwitchToStudio={() => setActiveHeaderTab("edit")}
+            onSwitchToStudio={(fullScriptText, title) => {
+              if (fullScriptText) {
+                setEditScript(fullScriptText);
+                setShowEditScript(true);
+                setInput(fullScriptText);
+              }
+              if (title) {
+                recordPageActivity(
+                  "script",
+                  "Script • Story Bank",
+                  `Locked script for "${title}"`,
+                  title
+                );
+              }
+              setActiveHeaderTab("edit");
+            }}
             onCompleteRecordingToStudio={(videoFile, fullScriptText, title) => {
               editVideoFileRef.current = videoFile;
               setEditVideoName(videoFile.name);

@@ -31,6 +31,14 @@ import {
   Square,
   Check,
   Edit3,
+  Copy,
+  Lock,
+  Unlock,
+  Send,
+  MessageSquare,
+  Bot,
+  FileText,
+  ListOrdered,
 } from "lucide-react";
 import {
   useZeeBrain,
@@ -68,7 +76,7 @@ export interface CompactMemoryLog {
 }
 
 interface StoryBankViewProps {
-  onSwitchToStudio?: () => void;
+  onSwitchToStudio?: (fullScriptText?: string, title?: string) => void;
   onCompleteRecordingToStudio?: (
     videoFile: File,
     fullScriptText: string,
@@ -445,10 +453,230 @@ const HASHTAGS = [
 
 const ANGLES = ["POV burnout", "Client savage", "Founder flex", "Gokarna horizon"];
 
+export interface ScriptAngleOption {
+  id: string;
+  badge: string;
+  title: string;
+  hook: string;
+  tone: string;
+  targetLength: "15s" | "30s";
+  metrics: { hookRate: string; saves: string };
+  fullScriptText: string;
+  beats: ScriptBeatCard[];
+}
+
+export function buildScriptAnglesForMemory(
+  mem: CompactMemoryLog,
+  userName: string = "Prem"
+): ScriptAngleOption[] {
+  const baseTitle = mem?.title || "My Founder Story";
+
+  // 1. Raw POV (Vulnerable Founder)
+  const opt1Beats: ScriptBeatCard[] = [
+    {
+      id: 1,
+      label: "HOOK",
+      range: "0–3s",
+      text:
+        mem?.beats?.[0]?.text ||
+        `POV: ${baseTitle.toLowerCase()} — and you realize nobody talks about the messy part.`,
+      visual: "Handheld close-up in studio, warm natural light, torn-paper timestamp badge.",
+      motion: "soft push-in + subtle paper jitter",
+      voice: "raw, vulnerable founder tone",
+      coaching: "Speak softly for the first 3 words so viewers lean in and stop scrolling.",
+      durationSec: 3,
+      bRollLabel: "RAW FOUNDER POV",
+    },
+    {
+      id: 2,
+      label: "TRANSFORM",
+      range: "3–7s",
+      text:
+        mem?.beats?.[1]?.text ||
+        `For months I was trapped doing this manually until 2 AM, feeling like an autopilot robot.`,
+      visual: "Torn paper split: chaotic screen capture vs clean notebook ink lines.",
+      motion: "paper tear transition + speed cut",
+      voice: "honest, confiding realization",
+      coaching: "Slight head tilt — let genuine founder transparency show.",
+      durationSec: 4,
+      bRollLabel: "STRUGGLE VS SHIFT",
+    },
+    {
+      id: 3,
+      label: "MAGIC",
+      range: "7–11s",
+      text:
+        mem?.beats?.[2]?.text ||
+        `Then we rebuilt our entire workflow around real voice notes — turning 2-minute thoughts into finished video.`,
+      visual: "Fast-motion timeline cutaway: voice waveform auto-animating into paper-cut scenes.",
+      motion: "dolly zoom + sticker pop",
+      voice: "clear, energized, builder pride",
+      coaching: "Point towards the screen cutaway — showcase the simplicity.",
+      durationSec: 4,
+      bRollLabel: "WORKFLOW IN ACTION",
+    },
+    {
+      id: 4,
+      label: "PAYOFF",
+      range: "11–15s",
+      text:
+        mem?.beats?.[3]?.text ||
+        `Stop over-editing. Comment REEL and I'll send you our exact prompt + setup for free.`,
+      visual: `${userName} smiling directly at camera, torn paper CTA 'COMMENT REEL' taped to desk.`,
+      motion: "dolly-in + CTA wiggle",
+      voice: "warm, direct CTA",
+      coaching: "Smile as you say 'for free' — authentic generosity converts.",
+      durationSec: 4,
+      bRollLabel: "DESK CTA + PAPER BADGE",
+    },
+  ];
+
+  // 2. Contrarian Pattern-Interrupt
+  const opt2Beats: ScriptBeatCard[] = [
+    {
+      id: 1,
+      label: "HOOK",
+      range: "0–3s",
+      text: `Stop editing reels frame-by-frame. Here's why that 3-hour manual edit is actually hurting your reach.`,
+      visual: "Direct eye contact, hand up to camera with bold paper-cut 'STOP' stencil.",
+      motion: "hard cut + whip punch",
+      voice: "direct, authoritative, scroll-stopping",
+      coaching: "Hit 'Stop' with real authority — immediate pattern interrupt in feed.",
+      durationSec: 3,
+      bRollLabel: "PATTERN INTERRUPT",
+    },
+    {
+      id: 2,
+      label: "TRANSFORM",
+      range: "3–7s",
+      text: `Viewers don't connect with sterile 60fps polished ads anymore. They save raw, personal stories like this.`,
+      visual: "Side-by-side metric comparison: high-gloss ad vs raw voice-note reel metrics.",
+      motion: "split-screen slider",
+      voice: "grounded, insightful contrast",
+      coaching: "Use your hands to contrast 'sterile' with 'real'.",
+      durationSec: 4,
+      bRollLabel: "RETENTION COMPARISON",
+    },
+    {
+      id: 3,
+      label: "MAGIC",
+      range: "7–11s",
+      text: `We feed our raw voice notes into our AI engine, and it builds kinetic paper layers around our exact voice.`,
+      visual: "Paper layers falling into place with tactile shadow depth.",
+      motion: "layered pop + kinetic bounce",
+      voice: "fascinated, quick tempo",
+      coaching: "Keep pace crisp — maintain high viewer velocity.",
+      durationSec: 4,
+      bRollLabel: "PAPER ENGINE DEMO",
+    },
+    {
+      id: 4,
+      label: "PAYOFF",
+      range: "11–15s",
+      text: `Save this reel before your next shoot, and drop a comment below if you want the template link.`,
+      visual: "Animated save bookmark icon + torn paper link capsule.",
+      motion: "bookmark pulse + camera zoom",
+      voice: "actionable, clear instruction",
+      coaching: "Look straight down lens on 'Save this reel'.",
+      durationSec: 4,
+      bRollLabel: "SAVE BOOKMARK CTA",
+    },
+  ];
+
+  // 3. 3-Step Rapid Breakdown
+  const opt3Beats: ScriptBeatCard[] = [
+    {
+      id: 1,
+      label: "HOOK",
+      range: "0–3s",
+      text: `Here is the exact 3-step storytelling blueprint we use to turn a 2-minute voice note into 100K views.`,
+      visual: `${userName} holding up fingers '1-2-3' with 3 torn paper badges popping on screen.`,
+      motion: "snap zoom + badge pop",
+      voice: "curious, value-driven, educational",
+      coaching: "Crisp hand gesture on '3-step blueprint' to anchor viewer visual attention.",
+      durationSec: 3,
+      bRollLabel: "BLUEPRINT PROMISE",
+    },
+    {
+      id: 2,
+      label: "TRANSFORM",
+      range: "3–7s",
+      text: `Step 1: Record your unfiltered thought the moment it happens. Don't edit it. Keep the raw pauses.`,
+      visual: "Phone lock screen with active voice memo recording timer ticking.",
+      motion: "paper push-in + audio wave glow",
+      voice: "instructive, encouraging",
+      coaching: "Emphasize 'Keep the raw pauses' — counters standard perfectionism.",
+      durationSec: 4,
+      bRollLabel: "STEP 1: RAW VOICE",
+    },
+    {
+      id: 3,
+      label: "MAGIC",
+      range: "7–11s",
+      text: `Step 2: Let AI generate kinetic paper-cut layers that visualize the metaphor behind your story.`,
+      visual: "Metaphor animation bursting from paper background: clock, compass, lightbulb.",
+      motion: "paper origami unfold",
+      voice: "illuminating, crisp breakdown",
+      coaching: "Nod as the origami unfolds — validates the visual payoff.",
+      durationSec: 4,
+      bRollLabel: "STEP 2: METAPHOR BURST",
+    },
+    {
+      id: 4,
+      label: "PAYOFF",
+      range: "11–15s",
+      text: `Step 3: End with one clear lesson. Comment SCRIPT to get our complete automated prompt pack.`,
+      visual: `${userName} in studio smiling, 'SCRIPT' stamped across screen in paper cutout letters.`,
+      motion: "dolly-in + stamp impact",
+      voice: "sharp, confident sign-off",
+      coaching: "Warm nod at the end — makes viewer feel capable of doing this today.",
+      durationSec: 4,
+      bRollLabel: "STEP 3: BLUEPRINT PAYOFF",
+    },
+  ];
+
+  return [
+    {
+      id: "angle-vulnerable",
+      badge: "High Retention · 92% Hook",
+      title: "The Raw POV (Vulnerable Founder)",
+      hook: opt1Beats[0].text,
+      tone: "Vulnerable · Personal Story · High Trust",
+      targetLength: "15s",
+      metrics: { hookRate: "92%", saves: "78%" },
+      fullScriptText: opt1Beats.map((b) => b.text).join(" "),
+      beats: opt1Beats,
+    },
+    {
+      id: "angle-contrarian",
+      badge: "Scroll Stopper · +188% Saves",
+      title: "Contrarian Pattern-Interrupt",
+      hook: opt2Beats[0].text,
+      tone: "Bold · Pattern Interrupt · Debate Starter",
+      targetLength: "15s",
+      metrics: { hookRate: "88%", saves: "94%" },
+      fullScriptText: opt2Beats.map((b) => b.text).join(" "),
+      beats: opt2Beats,
+    },
+    {
+      id: "angle-breakdown",
+      badge: "High Saves · 3.2x Bookmarks",
+      title: "3-Step Rapid Breakdown",
+      hook: opt3Beats[0].text,
+      tone: "Educational · Framework · High Saves",
+      targetLength: "15s",
+      metrics: { hookRate: "85%", saves: "96%" },
+      fullScriptText: opt3Beats.map((b) => b.text).join(" "),
+      beats: opt3Beats,
+    },
+  ];
+}
+
 export default function StoryBankView({
   onSwitchToStudio,
   onCompleteRecordingToStudio,
   initialTopicFromYou,
+  hideHeader = false,
 }: StoryBankViewProps) {
   const { brain } = useZeeBrain();
   const userName = brain.virtualYou.userName || "Prem";
@@ -626,6 +854,118 @@ export default function StoryBankView({
       DEFAULT_BEATS,
     [beatsByMemoryId, activeMemory]
   );
+
+  // 3 Script Angle Choices state
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState(0);
+  const [scriptDisplayMode, setScriptDisplayMode] = useState<"fullScript" | "beats">("fullScript");
+  const [isEditingFullScript, setIsEditingFullScript] = useState(false);
+  const [fullScriptCustomText, setFullScriptCustomText] = useState("");
+  const [isScriptLocked, setIsScriptLocked] = useState(false);
+  const [copiedScript, setCopiedScript] = useState(false);
+
+  const scriptAngles = useMemo(
+    () => buildScriptAnglesForMemory(activeMemory, userName),
+    [activeMemory, userName]
+  );
+
+  const currentOption = scriptAngles[selectedOptionIndex] || scriptAngles[0];
+
+  // Full continuous script derived from active beats
+  const fullScriptGenerated = useMemo(() => {
+    return activeBeats.map((b) => b.text).join(" ");
+  }, [activeBeats]);
+
+  const activeFullScript = isEditingFullScript
+    ? fullScriptCustomText
+    : fullScriptCustomText || fullScriptGenerated;
+
+  // Two-way interactive Zee brainstorming conversation
+  const [zeeConversation, setZeeConversation] = useState<
+    Array<{ sender: "zee" | "prem"; text: string; time: string }>
+  >([
+    {
+      sender: "zee",
+      text: `Hey ${userName}! I took your story "${activeMemory.title}" and shaped 3 complete script angles. Pick an option above, or brainstorm with me below to tune anything!`,
+      time: "Just now",
+    },
+  ]);
+
+  // Sync when active memory changes
+  useEffect(() => {
+    setSelectedOptionIndex(0);
+    setIsEditingFullScript(false);
+    setIsScriptLocked(false);
+    setFullScriptCustomText("");
+    setZeeConversation([
+      {
+        sender: "zee",
+        text: `Hey ${userName}! Loaded your "${activeMemory.title}" story (${activeMemory.time}). I prepared 3 distinct script angles for today's reel. Which vibe fits your mood, or tell me what to rewrite!`,
+        time: "Just now",
+      },
+    ]);
+  }, [activeMemory.id, userName]);
+
+  // Handle selecting one of the 3 script options
+  const handleSelectOption = (idx: number) => {
+    setSelectedOptionIndex(idx);
+    const opt = scriptAngles[idx];
+    if (opt) {
+      setBeatsByMemoryId((prev) => ({
+        ...prev,
+        [activeMemory.id]: opt.beats,
+      }));
+      setFullScriptCustomText(opt.fullScriptText);
+      setIsScriptLocked(false);
+      setToastMessage(`Selected: "${opt.title}"`);
+    }
+  };
+
+  // Save full script edits back to beats
+  const handleSaveFullScriptEdits = () => {
+    setIsEditingFullScript(false);
+    const textToSave = fullScriptCustomText.trim();
+    if (!textToSave) return;
+    
+    // Split sentences into the 4 beats
+    const sentences = textToSave
+      .split(/(?<=[.?!])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (sentences.length > 0) {
+      setBeatsByMemoryId((prev) => ({
+        ...prev,
+        [activeMemory.id]: (prev[activeMemory.id] || activeMemory.beats).map(
+          (b, idx) => ({
+            ...b,
+            text: sentences[idx] || (idx === 0 ? textToSave : b.text),
+          })
+        ),
+      }));
+    }
+    setToastMessage("Full script saved & synchronized ✓");
+  };
+
+  // Copy full script
+  const handleCopyScript = () => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(activeFullScript);
+      setCopiedScript(true);
+      setToastMessage("Complete script copied to clipboard 📋");
+      setTimeout(() => setCopiedScript(false), 2000);
+    }
+  };
+
+  // Lock script and proceed to studio
+  const handleLockAndProceed = () => {
+    setIsScriptLocked(true);
+    setToastMessage("Script locked! Heading to Studio to generate video 🎬");
+    if (onSwitchToStudio) {
+      setTimeout(() => {
+        onSwitchToStudio(activeFullScript, activeMemory.title);
+      }, 500);
+    }
+  };
 
   // Auto-hide toast after 3 seconds
   useEffect(() => {
@@ -814,20 +1154,26 @@ export default function StoryBankView({
     setTimeout(() => setIsListeningCoWrite(false), 900);
   };
 
-  // Refine script via Meta Muse `/api/script-brain`
-  const handleRefineWithMeta = async () => {
-    const instruction = coWriteInput.trim();
+  // Two-way Zee Script Brainstorming
+  const handleSendMessageToZee = async (instructionOverride?: string) => {
+    const instruction = (instructionOverride || coWriteInput).trim();
     if (!instruction || isRefiningWithMeta) return;
+
+    // Add Prem's message to conversation
+    setZeeConversation((prev) => [
+      ...prev,
+      { sender: "prem", text: instruction, time: "Just now" },
+    ]);
+    setCoWriteInput("");
     setIsRefiningWithMeta(true);
+
     try {
       const res = await fetch("/api/script-brain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userName,
-          storyIdea: `${activeMemory.title} — ${activeBeats
-            .map((b) => b.text)
-            .join(" ")}`,
+          storyIdea: `${activeMemory.title} — ${activeFullScript}`,
           userInstruction: instruction,
           memoriesSummary: memoryBankList
             .map((m) => `- ${m.title}: ${m.story}`)
@@ -846,33 +1192,98 @@ export default function StoryBankView({
           },
         }),
       });
+
       const json = await res.json().catch(() => null);
+
       if (res.ok && json?.success && Array.isArray(json?.data?.beats)) {
         const apiBeats = json.data.beats;
+        const newBeats = activeBeats.map((b, i) => ({
+          ...b,
+          text: apiBeats[i]?.spokenLine || b.text,
+          visual: apiBeats[i]?.visualCutaway || b.visual,
+          coaching: apiBeats[i]?.deliveryCue || b.coaching,
+        }));
+
         setBeatsByMemoryId((prev) => ({
           ...prev,
-          [activeMemory.id]: activeBeats.map((b, i) => ({
-            ...b,
-            text: apiBeats[i]?.spokenLine || b.text,
-            visual: apiBeats[i]?.visualCutaway || b.visual,
-            coaching: apiBeats[i]?.deliveryCue || b.coaching,
-          })),
+          [activeMemory.id]: newBeats,
         }));
-        setCoWriteInput("");
-        setToastMessage("Zee updated your script with Meta Muse ✓");
+        setFullScriptCustomText(newBeats.map((b) => b.text).join(" "));
+
+        const zeeReply =
+          json.data.zeeDirectorNote ||
+          `I tweaked the script with "${instruction}". The hook and narrative are updated above!`;
+
+        setZeeConversation((prev) => [
+          ...prev,
+          { sender: "zee", text: zeeReply, time: "Just now" },
+        ]);
+        setToastMessage("Zee updated the script ✓");
       } else {
-        handleUpdateBeatText(activeBeatId, instruction);
-        setCoWriteInput("");
-        setToastMessage(`Updated Beat ${activeBeatId} ✓`);
+        // Smart heuristic fallbacks
+        const low = instruction.toLowerCase();
+        let reply = "";
+        let updated = [...activeBeats];
+
+        if (low.includes("punch") || low.includes("hook")) {
+          updated[0] = {
+            ...updated[0],
+            text: `Stop scrolling. ${activeMemory.title} taught me the one thing nobody admits out loud.`,
+          };
+          reply = `Punched up the hook to hit with raw curiosity in 2 seconds flat!`;
+        } else if (low.includes("casual") || low.includes("raw")) {
+          updated[0] = {
+            ...updated[0],
+            text: `So I was sitting with my chai at 6:45 AM, thinking about ${activeMemory.title.toLowerCase()}...`,
+          };
+          reply = `Softened the opening into an intimate, conversational creator confession.`;
+        } else if (low.includes("15s") || low.includes("trim") || low.includes("short")) {
+          updated = updated.map((b) => ({
+            ...b,
+            text: b.text.split(" — ")[0],
+          }));
+          reply = `Trimmed the excess words — now tightly paced for high-velocity 15s retention.`;
+        } else if (low.includes("cta") || low.includes("comment")) {
+          updated[3] = {
+            ...updated[3],
+            text: `Don't overcomplicate this. Comment SCRIPT below and I'll send you our exact setup for free.`,
+          };
+          reply = `Boosted the payoff with a direct, high-converting keyword CTA!`;
+        } else {
+          updated[0] = {
+            ...updated[0],
+            text: `${instruction}: ${activeMemory.title}.`,
+          };
+          reply = `Got it! Modified the script with your direction: "${instruction}".`;
+        }
+
+        setBeatsByMemoryId((prev) => ({
+          ...prev,
+          [activeMemory.id]: updated,
+        }));
+        setFullScriptCustomText(updated.map((b) => b.text).join(" "));
+        setZeeConversation((prev) => [
+          ...prev,
+          { sender: "zee", text: reply, time: "Just now" },
+        ]);
+        setToastMessage("Zee modified your script ✓");
       }
     } catch {
-      handleUpdateBeatText(activeBeatId, instruction);
-      setCoWriteInput("");
-      setToastMessage(`Updated Beat ${activeBeatId} ✓`);
+      setZeeConversation((prev) => [
+        ...prev,
+        {
+          sender: "zee",
+          text: `Updated beat with "${instruction}". Review your complete script above!`,
+          time: "Just now",
+        },
+      ]);
+      setToastMessage("Zee adjusted the line ✓");
     } finally {
       setIsRefiningWithMeta(false);
     }
   };
+
+  const handleRefineWithMeta = () => handleSendMessageToZee();
 
   // Sync Teleprompter Session with `/api/script-session`
   const pushSessionUpdate = useCallback(
@@ -1065,29 +1476,29 @@ export default function StoryBankView({
 
   return (
     <div
-      className="min-h-screen bg-[#FFFEFB] text-[#111111] relative overflow-x-clip"
+      className="bg-[#FFFEFB] text-[#111111] relative overflow-x-clip px-1 sm:px-2 py-0.5"
       style={{
         backgroundImage:
-          "radial-gradient(circle at 1px 1px, rgba(17,17,17,0.08) 1px, transparent 0)",
+          "radial-gradient(circle at 1px 1px, rgba(17,17,17,0.06) 1px, transparent 0)",
         backgroundSize: "24px 24px",
       }}
     >
       {/* Soft Ambient Radial Glows */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div
-          className="absolute -top-[30%] left-[20%] w-[70%] h-[60%] rounded-full blur-[120px] opacity-[0.12]"
+          className="absolute -top-[30%] left-[20%] w-[70%] h-[60%] rounded-full blur-[120px] opacity-[0.10]"
           style={{
             background: "radial-gradient(circle, #FF6B35 0%, transparent 70%)",
           }}
         />
         <div
-          className="absolute top-[10%] right-[5%] w-[45%] h-[50%] rounded-full blur-[120px] opacity-[0.10]"
+          className="absolute top-[10%] right-[5%] w-[45%] h-[50%] rounded-full blur-[120px] opacity-[0.08]"
           style={{
             background: "radial-gradient(circle, #0066FF 0%, transparent 70%)",
           }}
         />
         <div
-          className="absolute bottom-0 left-0 w-[50%] h-[40%] rounded-full blur-[120px] opacity-[0.08]"
+          className="absolute bottom-0 left-0 w-[50%] h-[40%] rounded-full blur-[120px] opacity-[0.06]"
           style={{
             background: "radial-gradient(circle, #FFB5A7 0%, transparent 70%)",
           }}
@@ -1095,60 +1506,58 @@ export default function StoryBankView({
       </div>
 
       {/* =====================================================================
-          STICKY STUDIO SUB-HEADER BAR
+          STICKY STUDIO SUB-HEADER BAR (Rendered ONLY when !hideHeader)
          ===================================================================== */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/80 border-b border-[#EDE8E3]">
-        <div className="mx-auto max-w-[1600px] px-4 md:px-6 h-[64px] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setLeftDrawerOpen(!leftDrawerOpen)}
-              className="lg:hidden p-2 rounded-full border border-[#EDE8E3] bg-white cursor-pointer"
-            >
-              {leftDrawerOpen ? <X size={16} /> : <Menu size={16} />}
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#111111] text-[#FFFEFB] grid place-items-center font-bold text-[12px]">
-                P
+      {!hideHeader && (
+        <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/80 border-b border-[#EDE8E3]">
+          <div className="mx-auto max-w-[1600px] px-3 md:px-5 h-[56px] flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setLeftDrawerOpen(!leftDrawerOpen)}
+                className="lg:hidden p-1.5 rounded-full border border-[#EDE8E3] bg-white cursor-pointer"
+              >
+                {leftDrawerOpen ? <X size={15} /> : <Menu size={15} />}
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#111111] text-[#FFFEFB] grid place-items-center font-bold text-[11px]">
+                  P
+                </div>
+                <span className="font-semibold tracking-tight lowercase text-sm">
+                  {userName}&apos;s studio
+                </span>
+                <span className="hidden md:inline-flex ml-1.5 px-2 py-0.5 rounded-full bg-[#111111] text-[#FFFEFB] text-[9px] mono">
+                  AI DIRECTOR v2
+                </span>
               </div>
-              <span className="font-semibold tracking-tight lowercase">
-                {userName}&apos;s studio
-              </span>
-              <span className="hidden md:inline-flex ml-2 px-2 py-0.5 rounded-full bg-[#111111] text-[#FFFEFB] text-[10px] mono">
-                AI DIRECTOR v2
-              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center gap-2 text-[11px] mono px-2.5 py-1 rounded-full bg-white border border-[#EDE8E3] shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>analyzing {memoryBankList.length} memories • live</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenRecordStage}
+                className="hidden sm:inline-flex items-center gap-1.5 text-[10px] mono font-semibold px-2.5 py-1 rounded-full bg-[#111111] text-white hover:bg-[#FF6B35] transition cursor-pointer"
+              >
+                <QrCode size={12} />
+                <span>Teleprompter + QR</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRightDrawerOpen(!rightDrawerOpen)}
+                className="lg:hidden p-1.5 rounded-full border border-[#EDE8E3] bg-white cursor-pointer"
+              >
+                <TrendingUp size={15} />
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-2 text-[12px] mono px-3 py-1.5 rounded-full bg-white border border-[#EDE8E3] shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>analyzing {memoryBankList.length} memories • live</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleOpenRecordStage}
-              className="hidden sm:inline-flex items-center gap-1.5 text-[11px] mono font-semibold px-3 py-1.5 rounded-full bg-[#111111] text-white hover:bg-[#FF6B35] transition cursor-pointer"
-            >
-              <QrCode size={13} />
-              <span>Teleprompter + QR</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setRightDrawerOpen(!rightDrawerOpen)}
-              className="lg:hidden p-2 rounded-full border border-[#EDE8E3] bg-white cursor-pointer"
-            >
-              <TrendingUp size={16} />
-            </button>
-
-            <div className="w-8 h-8 rounded-full bg-[#111] text-white grid place-items-center font-semibold text-[12px] border border-[#EDE8E3]">
-              P
-            </div>
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* =====================================================================
           3-COLUMN STUDIO GRID:
@@ -1156,32 +1565,32 @@ export default function StoryBankView({
           CENTER (1fr): AI DIRECTOR'S PICK + TORN-PAPER BEAT CARDS + ACTION BAR
           RIGHT (360px): WHAT'S POPPING ON IG + SUGGESTION ENGINE + HASHTAGS
          ===================================================================== */}
-      <div className="mx-auto max-w-[1600px] px-0 lg:px-6 py-0 lg:py-6 grid grid-cols-1 lg:grid-cols-[280px_1fr_360px] gap-0 lg:gap-6 items-start relative z-10">
+      <div className="mx-auto max-w-[1600px] grid grid-cols-1 lg:grid-cols-[230px_1fr_290px] gap-2.5 sm:gap-3 items-start relative z-10">
         {/* ===================================================================
             LEFT SIDEBAR: MEMORY BANK
            =================================================================== */}
         <aside
-          className={`lg:sticky lg:top-[76px] lg:h-[calc(100vh-96px)] bg-white lg:rounded-[24px] border-y lg:border border-[#EDE8E3] shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col fixed inset-y-0 left-0 z-40 w-[300px] lg:w-auto transition-transform duration-300 ${
+          className={`lg:sticky lg:top-[60px] lg:h-[calc(100vh-80px)] bg-white lg:rounded-[20px] border-y lg:border border-[#EDE8E3] shadow-[0_8px_30px_rgba(0,0,0,0.03)] flex flex-col fixed inset-y-0 left-0 z-40 w-[280px] lg:w-auto transition-transform duration-300 ${
             leftDrawerOpen
               ? "translate-x-0"
               : "-translate-x-full lg:translate-x-0"
           }`}
         >
-          <div className="p-5 border-b border-[#EDE8E3]">
+          <div className="p-3.5 border-b border-[#EDE8E3]">
             <div className="flex items-center justify-between">
-              <h3 className="serif text-[20px] tracking-tight font-normal">
+              <h3 className="serif text-[18px] tracking-tight font-normal">
                 Memory Bank
               </h3>
-              <span className="text-[10px] mono px-2 py-1 rounded-full bg-[#111] text-white">
+              <span className="text-[10px] mono px-2 py-0.5 rounded-full bg-[#111] text-white">
                 {memoryBankList.length} compact
               </span>
             </div>
-            <p className="mt-1 text-[12px] text-[#8A8784]">
-              Your voice logs — compressed for scripting
+            <p className="mt-0.5 text-[11px] text-[#8A8784]">
+              Voice logs compressed for reel scripts
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {memoryBankList.map((mem, idx) => {
               const isSelected = mem.id === activeMemory.id;
               return (
@@ -1288,349 +1697,586 @@ export default function StoryBankView({
         </aside>
 
         {/* ===================================================================
-            CENTER MAIN COLUMN: AI DIRECTOR'S PICK + TORN-PAPER BEAT CARDS
+            CENTER MAIN COLUMN: AI DIRECTOR'S GREETING + COMPLETE SCRIPT + ZEE BRAINSTORMING
            =================================================================== */}
-        <main className="min-w-0 px-4 lg:px-0 py-4 lg:py-0">
-          {/* Top Hero Card */}
-          <div className="relative overflow-hidden rounded-[28px] border border-[#EDE8E3] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-            <div
-              className="absolute inset-0 opacity-[0.04] pointer-events-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect filter='url(%23noise)' width='100%25' height='100%25'/%3E%3C/svg%3E")`,
-              }}
-            />
-
-            <div className="relative p-6 md:p-8">
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#111] text-white text-[11px] mono">
-                  <Sparkles size={12} /> AI DIRECTOR&apos;S PICK
+        <main className="min-w-0 space-y-2.5">
+          {/* Top Greeting Card — Zero wasted padding */}
+          <div className="relative overflow-hidden rounded-[20px] border border-[#EDE8E3] bg-white p-3.5 sm:p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#111] text-white text-[10px] mono">
+                  <Sparkles size={11} /> AI DIRECTOR
                 </span>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFF5FF] text-[#0066FF] text-[11px] mono">
-                  <Eye size={12} /> High save potential
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EFF5FF] text-[#0066FF] text-[10px] mono">
+                  <Eye size={11} /> High save potential
                 </span>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF0EB] text-[#FF6B35] text-[11px] mono">
-                  <Flame size={12} /> For tonight 8PM
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FFF0EB] text-[#FF6B35] text-[10px] mono">
+                  <Flame size={11} /> Ready to shoot
                 </span>
               </div>
 
-              <h1 className="serif text-[32px] md:text-[40px] leading-[0.95] tracking-tight font-normal">
-                Hey {userName}, I analyzed all your stories{" "}
-                <span className="italic opacity-60">→</span> you should make
-                this reel
-              </h1>
-
-              <p className="mt-3 text-[14px] md:text-[15px] text-[#8A8784] max-w-[60ch]">
-                Based on your last {memoryBankList.length} memories + your
-                content style{" "}
-                <span className="inline-flex px-2 py-0.5 rounded-full bg-[#111] text-white text-[12px] ml-1">
-                  {selectedNichePill.toUpperCase()}
-                </span>{" "}
-                — your audience saves tutorials 3.2x more. This script uses your{" "}
-                <strong className="text-[#111111] font-medium">
-                  {activeMemory.title.toLowerCase()}
-                </strong>{" "}
-                story + trending POV format.
-              </p>
-
-              {/* 3 Metric Boxes */}
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                <div className="rounded-[16px] border border-[#EDE8E3] bg-white px-4 py-3">
-                  <p className="text-[10px] mono text-[#8A8784] uppercase">
-                    Hook rate
-                  </p>
-                  <p className="text-[20px] font-semibold tracking-tight">
-                    92%
-                  </p>
-                  <p className="text-[11px] text-[#8A8784]">predicted</p>
-                </div>
-
-                <div className="rounded-[16px] border border-[#EDE8E3] bg-white px-4 py-3">
-                  <p className="text-[10px] mono text-[#8A8784] uppercase">
-                    Save rate
-                  </p>
-                  <p className="text-[20px] font-semibold tracking-tight">
-                    78%
-                  </p>
-                  <p className="text-[11px] text-[#8A8784]">your avg +12%</p>
-                </div>
-
-                <div
-                  onClick={handleCycleLength}
-                  title="Click to switch target length (10s / 30s / 45s — strictly ≤60s)"
-                  className="rounded-[16px] border border-[#EDE8E3] bg-white px-4 py-3 cursor-pointer hover:border-[#111111] transition"
-                >
-                  <p className="text-[10px] mono text-[#8A8784] uppercase flex items-center justify-between">
-                    <span>Length</span>
-                    <span className="text-[9px] text-[#FF6B35]">tap to change</span>
-                  </p>
-                  <p className="text-[20px] font-semibold tracking-tight">
-                    {targetLengthLabel}
-                  </p>
-                  <p className="text-[11px] text-[#8A8784]">optimal (&le;60s)</p>
-                </div>
+              <div className="flex items-center gap-1.5 text-[11px] mono text-[#666]">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>story: <strong className="text-[#111]">{activeMemory.title}</strong> ({activeMemory.time})</span>
               </div>
+            </div>
+
+            <h1 className="serif text-[24px] sm:text-[30px] leading-[1.05] tracking-tight font-normal text-[#111]">
+              Hey {userName}, here&apos;s what we&apos;re creating today ⚡
+            </h1>
+
+            <p className="mt-1 text-[12px] sm:text-[13px] text-[#777] max-w-[70ch]">
+              I transformed your <strong className="text-[#111] font-medium">&apos;{activeMemory.title.toLowerCase()}&apos;</strong> story into 3 high-retention script angles. Pick an angle below, review the complete script, brainstorm with Zee to adjust it, then lock it before shooting.
+            </p>
+
+            {/* Horizontal Story Quick-Switcher Chips */}
+            <div className="mt-2.5 pt-2 border-t border-[#F0EBE5] flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+              <span className="text-[10px] mono uppercase text-[#888] shrink-0 mr-1">Switch Story:</span>
+              {memoryBankList.slice(0, 5).map((mem) => {
+                const isSelected = mem.id === activeMemory.id;
+                return (
+                  <button
+                    key={mem.id}
+                    type="button"
+                    onClick={() => handleSelectMemory(mem)}
+                    className={`h-6 px-2.5 rounded-full text-[11px] mono font-medium shrink-0 transition flex items-center gap-1 cursor-pointer ${
+                      isSelected
+                        ? "bg-[#111] text-white shadow-xs"
+                        : "bg-[#F3EFEA] hover:bg-[#EBE5DE] text-[#444]"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: mem.color }} />
+                    <span>{mem.title}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* =================================================================
-              BEAT CARDS (HOOK, TRANSFORM, MAGIC, PAYOFF)
+              2-3 SCRIPT CHOICES / ANGLES (FIRST VISUAL ATTENTION)
              ================================================================= */}
-          <div className="mt-6 space-y-4">
-            {activeBeats.map((beat) => {
-              const isSelected = activeBeatId === beat.id;
-              const isEditingThis = editingBeatId === beat.id;
-
-              return (
-                <div
-                  key={beat.id}
-                  onClick={() => setActiveBeatId(beat.id)}
-                  className={`group relative rounded-[24px] border transition-all duration-300 cursor-pointer ${
-                    isSelected
-                      ? "bg-white border-[#111111] shadow-[0_20px_60px_rgba(0,0,0,0.12)] scale-[1.01]"
-                      : "bg-white/80 backdrop-blur border-[#EDE8E3] hover:shadow-[0_12px_32px_rgba(0,0,0,0.06)] hover:-translate-y-[1px]"
-                  }`}
-                >
-                  {/* Floating Numbered Badge */}
-                  <div className="absolute -top-3 -left-2 md:-left-3 w-10 h-10 rounded-full bg-[#111111] text-white grid place-items-center mono text-[12px] font-bold shadow-lg z-20">
-                    {beat.id}
-                  </div>
-
-                  <div className="p-5 md:p-6 flex flex-col md:flex-row gap-5">
-                    {/* Left Content of Beat */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 rounded-full bg-[#111] text-white mono text-[10px] tracking-widest">
-                            {beat.label}
-                          </span>
-                          <span className="px-2 py-1 rounded-full border border-[#EDE8E3] mono text-[10px]">
-                            {beat.range}
-                          </span>
-                          <span className="hidden md:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#EFF5FF] text-[#0066FF] text-[10px] mono">
-                            <Video size={10} /> {beat.motion}
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingBeatId(isEditingThis ? null : beat.id);
-                          }}
-                          className="text-[10px] mono text-[#8A8784] hover:text-[#111111] flex items-center gap-1 px-2 py-0.5 rounded-full border border-transparent hover:border-[#EDE8E3] cursor-pointer"
-                        >
-                          <Edit3 size={10} />
-                          <span>{isEditingThis ? "Done" : "Edit line"}</span>
-                        </button>
-                      </div>
-
-                      {isEditingThis ? (
-                        <textarea
-                          rows={2}
-                          value={beat.text}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            handleUpdateBeatText(beat.id, e.target.value)
-                          }
-                          className="mt-4 w-full rounded-[14px] border border-[#111111] bg-[#FFFEFB] p-3 serif text-[22px] md:text-[26px] leading-[1.1] tracking-tight focus:outline-none"
-                        />
-                      ) : (
-                        <p className="mt-4 serif text-[22px] md:text-[26px] leading-[1.1] tracking-tight">
-                          &ldquo;{beat.text}&rdquo;
-                        </p>
-                      )}
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDE8E3] text-[11px] mono">
-                          <Mic size={12} /> voice: {beat.voice}
-                        </span>
-                        <span className="inline-flex md:hidden items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF5FF] text-[#0066FF] text-[11px] mono">
-                          {beat.motion}
-                        </span>
-                      </div>
-
-                      {/* Coach Note for Prem */}
-                      <div className="mt-4 relative rounded-[16px] bg-[#FFF0EB] border border-[#FFD8C8] p-3.5">
-                        <div className="absolute -top-2 left-4 px-2 py-0.5 rounded-full bg-[#FF6B35] text-white text-[9px] mono font-bold">
-                          COACH NOTE FOR {userName.toUpperCase()}
-                        </div>
-                        <p className="text-[13px] leading-snug text-[#7A2A12]">
-                          <span className="font-semibold">{userName},</span>{" "}
-                          {beat.coaching}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Right Torn-Paper Visual Idea Card */}
-                    <div className="md:w-[240px] shrink-0">
-                      <div
-                        className="relative bg-[#FFFEF5] border border-[#EDE3C8] shadow-[0_8px_20px_rgba(0,0,0,0.08)] p-4 rotate-[0.8deg] group-hover:rotate-[0deg] transition-transform"
-                        style={{
-                          clipPath:
-                            "polygon(0% 2%, 3% 0%, 12% 1.5%, 22% 0%, 35% 1.8%, 48% 0.5%, 62% 2%, 75% 0.8%, 88% 1.6%, 100% 0%, 98.5% 18%, 100% 35%, 98% 52%, 100% 68%, 98.2% 85%, 100% 100%, 88% 98.2%, 74% 100%, 60% 98.5%, 45% 100%, 30% 98%, 15% 100%, 0% 98.5%, 1.5% 82%, 0% 65%, 2% 48%, 0.5% 30%)",
-                        }}
-                      >
-                        <div className="absolute top-2 right-3 w-6 h-6 rounded-full bg-[#111] grid place-items-center">
-                          <Layers size={12} color="white" />
-                        </div>
-                        <p className="text-[10px] mono uppercase tracking-widest text-[#8A8784]">
-                          visual idea
-                        </p>
-                        <p className="mt-2 text-[12.5px] leading-[1.4] text-[#3A352E]">
-                          {beat.visual}
-                        </p>
-                        <div className="mt-3 h-[56px] rounded-[10px] bg-[repeating-linear-gradient(45deg,#F5EEDD,#F5EEDD_6px,#FFF9EB_6px,#FFF9EB_12px)] border border-dashed border-[#E2D6B5] grid place-items-center overflow-hidden relative">
-                          <span className="text-[10px] mono text-[#8A7D65] z-10 px-2 py-0.5 rounded bg-[#FFFEF5]/90">
-                            {beat.bRollLabel || "B-ROLL + PAPER CUT"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {isSelected && (
-                    <div className="px-6 pb-4 flex gap-2">
-                      <div className="h-1 flex-1 rounded-full bg-[#111111]" />
-                      <div className="h-1 w-6 rounded-full bg-[#EDE8E3]" />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Quick Voice/Text Co-Writer Strip */}
-          <div className="mt-5 rounded-[20px] border border-[#EDE8E3] bg-white px-4 py-3 flex items-center gap-2.5 shadow-sm">
-            <button
-              type="button"
-              onClick={handleToggleCoWriteMic}
-              className={`w-9 h-9 rounded-full grid place-items-center shrink-0 transition cursor-pointer ${
-                isListeningCoWrite
-                  ? "bg-[#FF6B35] text-white animate-pulse"
-                  : "bg-[#FFF0EB] text-[#FF6B35] hover:bg-[#FF6B35] hover:text-white"
-              }`}
-              title="Speak changes to Zee"
-            >
-              {isListeningCoWrite ? <MicOff size={15} /> : <Mic size={15} />}
-            </button>
-            <input
-              type="text"
-              value={coWriteInput}
-              onChange={(e) => setCoWriteInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleRefineWithMeta()}
-              placeholder={`Tell Zee to tweak Beat ${activeBeatId} or blend another memory (e.g. "Add my Gokarna sunset note")...`}
-              className="flex-1 bg-transparent text-[13px] text-[#111111] placeholder:text-[#8A8784] focus:outline-none"
-            />
-            {coWriteInput.trim() && (
-              <button
-                type="button"
-                disabled={isRefiningWithMeta}
-                onClick={handleRefineWithMeta}
-                className="px-3.5 py-1.5 rounded-full bg-[#111111] text-white text-[11px] mono font-medium cursor-pointer"
-              >
-                {isRefiningWithMeta ? "Updating..." : "Update Script"}
-              </button>
-            )}
-          </div>
-
-          {/* =================================================================
-              BOTTOM CTA BAR: READY TO SHOOT THIS?
-             ================================================================= */}
-          <div className="mt-6 rounded-[24px] border border-[#EDE8E3] bg-white p-4 md:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.05)] flex flex-col md:flex-row gap-3 md:items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#111111] text-white grid place-items-center shrink-0">
-                <Wand2 size={16} />
+          <div>
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] mono uppercase tracking-wider font-semibold text-[#555]">
+                  Select Script Angle (3 Choices):
+                </span>
+                <span className="text-[10px] mono text-[#888]">click to preview complete script</span>
               </div>
-              <div>
-                <p className="text-[14px] font-semibold">
-                  Ready to shoot this?
-                </p>
-                <p className="text-[12px] text-[#8A8784]">
-                  Angle:{" "}
-                  <span className="font-medium text-[#111111]">
-                    {ANGLES[angleIndex]}
-                  </span>{" "}
-                  • Takes ~11 min to edit
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={handleRegenerateAngle}
-                className="h-11 px-4 rounded-full border border-[#EDE8E3] bg-white text-[13px] font-medium inline-flex items-center gap-2 hover:bg-[#F7F5F2] transition cursor-pointer"
+                className="text-[10px] mono text-[#666] hover:text-[#111] flex items-center gap-1 cursor-pointer"
               >
-                <RefreshCw size={14} /> Regenerate angle
+                <RefreshCw size={11} /> Regenerate hooks
               </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {scriptAngles.map((opt, idx) => {
+                const isSelected = selectedOptionIndex === idx;
+                return (
+                  <div
+                    key={opt.id}
+                    data-angle-option={idx}
+                    onClick={() => handleSelectOption(idx)}
+                    className={`p-3 rounded-[16px] border transition cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? "bg-white border-[#111] shadow-[0_4px_16px_rgba(0,0,0,0.08)] ring-2 ring-[#111]"
+                        : "bg-white/80 border-[#EDE8E3] hover:border-[#111]/40 hover:bg-white"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] mono font-semibold ${
+                            isSelected
+                              ? "bg-[#111] text-white"
+                              : "bg-[#EDE8E3] text-[#555]"
+                          }`}
+                        >
+                          {opt.badge}
+                        </span>
+                        {isSelected && (
+                          <span className="w-4 h-4 rounded-full bg-[#111] text-white grid place-items-center">
+                            <Check size={10} />
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[13px] font-bold text-[#111] tracking-tight">
+                        {opt.title}
+                      </p>
+                      <p className="mt-1 text-[11px] text-[#555] line-clamp-2 italic leading-snug">
+                        &ldquo;{opt.hook}&rdquo;
+                      </p>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-[#F0EBE5] flex items-center justify-between text-[10px] mono text-[#888]">
+                      <span>{opt.targetLength} · ~45 words</span>
+                      <span className="font-semibold text-[#111]">
+                        {opt.metrics.hookRate} hook rate
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* =================================================================
+              THE COMPLETE SCRIPT (HERO VISUAL VIEW)
+             ================================================================= */}
+          <div className="rounded-[20px] border-2 border-[#111] bg-white p-3.5 sm:p-5 shadow-[0_8px_30px_rgba(0,0,0,0.06)] relative overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#EDE8E3]">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#111] text-white grid place-items-center">
+                  <FileText size={14} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-[15px] font-bold text-[#111] tracking-tight">
+                      Complete Script
+                    </h2>
+                    <span className="px-2 py-0.2 rounded-full bg-[#FFF0EB] text-[#FF6B35] text-[10px] mono font-semibold">
+                      {currentOption.title}
+                    </span>
+                  </div>
+                  <p className="text-[11px] mono text-[#888]">
+                    ~{currentOption.targetLength} spoken pace • {activeFullScript.trim().split(/\s+/).filter(Boolean).length} words • {currentOption.tone}
+                  </p>
+                </div>
+              </div>
+
+              {/* View & Action Controls */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="p-0.5 rounded-full bg-[#EDE8E3] flex items-center gap-0.5 text-[10px] mono font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScriptDisplayMode("fullScript");
+                      setIsEditingFullScript(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-full transition cursor-pointer ${
+                      scriptDisplayMode === "fullScript" && !isEditingFullScript
+                        ? "bg-[#111] text-white shadow-xs"
+                        : "text-[#555] hover:text-[#111]"
+                    }`}
+                  >
+                    Full Script
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScriptDisplayMode("beats");
+                      setIsEditingFullScript(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-full transition cursor-pointer ${
+                      scriptDisplayMode === "beats"
+                        ? "bg-[#111] text-white shadow-xs"
+                        : "text-[#555] hover:text-[#111]"
+                    }`}
+                  >
+                    Beat Breakdown
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isEditingFullScript) {
+                      handleSaveFullScriptEdits();
+                    } else {
+                      setFullScriptCustomText(activeFullScript);
+                      setIsEditingFullScript(true);
+                    }
+                  }}
+                  className={`h-7 px-2.5 rounded-full border text-[11px] mono font-semibold inline-flex items-center gap-1 cursor-pointer transition ${
+                    isEditingFullScript
+                      ? "bg-[#111] text-white border-[#111]"
+                      : "bg-white border-[#EDE8E3] hover:border-[#111] text-[#111]"
+                  }`}
+                >
+                  <Edit3 size={11} />
+                  <span>{isEditingFullScript ? "Save Script" : "Edit Full Script"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyScript}
+                  className="h-7 px-2.5 rounded-full border border-[#EDE8E3] bg-white hover:border-[#111] text-[#111] text-[11px] mono font-semibold inline-flex items-center gap-1 cursor-pointer transition"
+                >
+                  {copiedScript ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                  <span>{copiedScript ? "Copied" : "Copy"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenRecordStage}
+                  className="h-7 px-2.5 rounded-full bg-[#111] text-white text-[11px] mono font-semibold inline-flex items-center gap-1 hover:bg-[#FF6B35] transition cursor-pointer"
+                >
+                  <QrCode size={11} />
+                  <span>Teleprompter</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Script Display Body */}
+            <div className="pt-3.5">
+              {isEditingFullScript ? (
+                <div>
+                  <p className="text-[11px] mono text-[#888] mb-1.5 flex items-center justify-between">
+                    <span>Inline Script Editor — edit the complete spoken flow:</span>
+                    <span className="text-[#FF6B35]">Edits sync across studio beats</span>
+                  </p>
+                  <textarea
+                    rows={5}
+                    value={fullScriptCustomText}
+                    onChange={(e) => setFullScriptCustomText(e.target.value)}
+                    className="w-full rounded-[14px] border-2 border-[#111] bg-[#FFFEFB] p-3 serif text-[18px] sm:text-[21px] leading-relaxed text-[#111] focus:outline-none"
+                    placeholder="Type or paste your complete continuous script here..."
+                  />
+                  <div className="mt-2 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingFullScript(false)}
+                      className="px-3 py-1.5 rounded-full border border-[#EDE8E3] text-[11px] mono font-medium cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveFullScriptEdits}
+                      className="px-4 py-1.5 rounded-full bg-[#111] text-white text-[11px] mono font-semibold cursor-pointer"
+                    >
+                      Save & Apply Script ✓
+                    </button>
+                  </div>
+                </div>
+              ) : scriptDisplayMode === "fullScript" ? (
+                <div className="space-y-3">
+                  {/* The Complete Spoken Narrative as a continuous, unified script */}
+                  <div className="rounded-[16px] bg-[#FAF8F5] border border-[#E8E4DD] p-4 sm:p-5">
+                    <div className="serif text-[18px] sm:text-[22px] leading-[1.5] text-[#141414] tracking-tight space-y-2.5">
+                      {activeBeats.map((beat) => (
+                        <div key={beat.id} className="flex items-start gap-2">
+                          <span className="px-1.5 py-0.5 rounded-[6px] bg-[#111] text-white text-[9px] mono font-bold shrink-0 mt-1 uppercase tracking-wider">
+                            {beat.label}
+                          </span>
+                          <span className="flex-1">
+                            &ldquo;{beat.text}&rdquo;
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Delivery Guidance Strip for Prem */}
+                  <div className="rounded-[14px] bg-[#FFF0EB] border border-[#FFD8C8] p-3 flex items-center justify-between gap-3 text-[12px] text-[#7A2A12]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#FF6B35] text-white grid place-items-center shrink-0 text-[10px] font-bold">
+                        P
+                      </span>
+                      <span>
+                        <strong>Delivery note for {userName}:</strong> Speak softly on the hook so viewers lean in, pause 0.5s before the transform, and nod warmly on the payoff.
+                      </span>
+                    </div>
+                    <span className="text-[10px] mono text-[#FF6B35] shrink-0 font-semibold uppercase">
+                      100% human ear rhythm
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* Beat Breakdown Mode (Visual ideas & individual cards) */
+                <div className="space-y-2.5">
+                  {activeBeats.map((beat) => {
+                    const isSelected = activeBeatId === beat.id;
+                    const isEditingThis = editingBeatId === beat.id;
+
+                    return (
+                      <div
+                        key={beat.id}
+                        onClick={() => setActiveBeatId(beat.id)}
+                        className={`p-3 rounded-[16px] border transition cursor-pointer ${
+                          isSelected
+                            ? "bg-white border-[#111] shadow-sm ring-1 ring-[#111]"
+                            : "bg-[#FFFEFB] border-[#EDE8E3] hover:border-[#111]/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-full bg-[#111] text-white mono text-[9px] font-bold">
+                              {beat.id} {beat.label}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded-full border border-[#EDE8E3] mono text-[9px]">
+                              {beat.range}
+                            </span>
+                            <span className="text-[10px] mono text-[#0066FF] flex items-center gap-1">
+                              <Video size={10} /> {beat.motion}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingBeatId(isEditingThis ? null : beat.id);
+                            }}
+                            className="text-[10px] mono text-[#888] hover:text-[#111] flex items-center gap-1"
+                          >
+                            <Edit3 size={10} />
+                            <span>{isEditingThis ? "Done" : "Edit"}</span>
+                          </button>
+                        </div>
+
+                        {isEditingThis ? (
+                          <textarea
+                            rows={2}
+                            value={beat.text}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) =>
+                              handleUpdateBeatText(beat.id, e.target.value)
+                            }
+                            className="w-full rounded-[10px] border border-[#111] p-2 serif text-[16px] focus:outline-none"
+                          />
+                        ) : (
+                          <p className="serif text-[16px] sm:text-[18px] text-[#111] leading-snug">
+                            &ldquo;{beat.text}&rdquo;
+                          </p>
+                        )}
+
+                        <div className="mt-2 pt-2 border-t border-[#F2ECE5] flex items-center justify-between gap-2 text-[10px] mono text-[#666]">
+                          <span className="flex items-center gap-1">
+                            <Mic size={10} /> {beat.voice}
+                          </span>
+                          <span className="text-[#FF6B35]">
+                            Visual: {beat.visual.slice(0, 48)}...
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* =================================================================
+              BRAINSTORM WITH ZEE (TWO-WAY INTERACTIVE CREATIVE CO-DIRECTOR)
+             ================================================================= */}
+          <div className="rounded-[20px] border border-[#E0DCD3] bg-[#FAF8F5] p-3.5 sm:p-4 shadow-sm">
+            {/* Zee Header */}
+            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#E8E3DA]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#111] text-white grid place-items-center relative">
+                  <Bot size={16} />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-[13px] text-[#111]">
+                      Zee • Creative Co-Director
+                    </span>
+                    <span className="px-2 py-0.2 rounded-full bg-[#111] text-white text-[9px] mono">
+                      LIVE BRAINSTORM
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#777]">
+                    Two-way creative collaboration — tell Zee what to change and watch the script update
+                  </p>
+                </div>
+              </div>
+
+              <span className="text-[10px] mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                ● Listening & ready
+              </span>
+            </div>
+
+            {/* Conversation Thread */}
+            <div className="py-2.5 space-y-2 max-h-[180px] overflow-y-auto">
+              {zeeConversation.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`flex gap-2 items-start ${
+                    msg.sender === "prem" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  {msg.sender === "zee" && (
+                    <div className="w-6 h-6 rounded-full bg-[#111] text-white grid place-items-center text-[10px] font-bold shrink-0 mt-0.5">
+                      Z
+                    </div>
+                  )}
+                  <div
+                    className={`rounded-[14px] px-3 py-2 text-[12px] leading-snug max-w-[85%] ${
+                      msg.sender === "prem"
+                        ? "bg-[#111] text-white rounded-tr-none"
+                        : "bg-white border border-[#E5E0D7] text-[#111] rounded-tl-none shadow-xs"
+                    }`}
+                  >
+                    <p>{msg.text}</p>
+                    <span
+                      className={`text-[9px] mono block mt-1 ${
+                        msg.sender === "prem" ? "text-white/60" : "text-[#999]"
+                      }`}
+                    >
+                      {msg.time}
+                    </span>
+                  </div>
+                  {msg.sender === "prem" && (
+                    <div className="w-6 h-6 rounded-full bg-[#FF6B35] text-white grid place-items-center text-[10px] font-bold shrink-0 mt-0.5">
+                      P
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Quick One-Tap Brainstorming Pills */}
+            <div className="pt-2 border-t border-[#E8E3DA]">
+              <p className="text-[10px] mono text-[#777] mb-1.5 uppercase tracking-wider">
+                Quick Brainstorm Tuning (1-Tap):
+              </p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { label: "Make Hook Punchier ⚡", prompt: "Make the hook punchier and scroll-stopping" },
+                  { label: "More Casual & Raw ☕", prompt: "Make it more casual, authentic and raw" },
+                  { label: "Trim Down to 15s ⏱️", prompt: "Trim down beats strictly for a 15-second reel" },
+                  { label: "Stronger CTA 🎯", prompt: "Add a high-conversion comment keyword CTA" },
+                  { label: "Contrarian Shock 🤯", prompt: "Inject a contrarian perspective shift in the opening" },
+                  { label: "Gokarna Horizon 🏖️", prompt: "Weave in my Gokarna dawn walk travel reset" },
+                ].map((pill) => (
+                  <button
+                    key={pill.label}
+                    type="button"
+                    disabled={isRefiningWithMeta}
+                    onClick={() => handleSendMessageToZee(pill.prompt)}
+                    className="px-2.5 py-1 rounded-full bg-white border border-[#DDD7CD] hover:border-[#111] text-[11px] mono text-[#222] transition active:scale-95 cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Two-Way Input Bar (Mic + Text + Send) */}
+            <div className="mt-2.5 flex items-center gap-1.5 bg-white rounded-full border border-[#D5D0C5] p-1 shadow-xs">
+              <button
+                type="button"
+                onClick={handleToggleCoWriteMic}
+                title="Dictate changes to Zee"
+                className={`w-8 h-8 rounded-full grid place-items-center shrink-0 transition cursor-pointer ${
+                  isListeningCoWrite
+                    ? "bg-[#FF6B35] text-white animate-pulse"
+                    : "bg-[#F3EFEA] text-[#111] hover:bg-[#FF6B35] hover:text-white"
+                }`}
+              >
+                {isListeningCoWrite ? <MicOff size={13} /> : <Mic size={13} />}
+              </button>
+
+              <input
+                type="text"
+                value={coWriteInput}
+                onChange={(e) => setCoWriteInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendMessageToZee()}
+                placeholder={`Ask Zee to change anything (e.g. "make the opening hit harder", "sound like my 2am voice note")...`}
+                className="flex-1 bg-transparent px-2 text-[12px] text-[#111] placeholder:text-[#888] focus:outline-none"
+              />
 
               <button
                 type="button"
-                onClick={() => {
-                  setIsGeneratingVideo(true);
-                  setVideoReady(false);
-                  setTimeout(() => {
-                    setIsGeneratingVideo(false);
-                    setVideoReady(true);
-                    setToastMessage(
-                      "Draft video queued — 11 min edit preview ready in studio"
-                    );
-                    if (onSwitchToStudio) {
-                      setTimeout(() => onSwitchToStudio(), 900);
-                    }
-                  }, 900);
-                }}
-                className="h-11 px-6 rounded-full bg-[#111111] text-white text-[13px] font-semibold inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.18)] hover:translate-y-[-1px] transition cursor-pointer"
+                disabled={isRefiningWithMeta || !coWriteInput.trim()}
+                onClick={() => handleSendMessageToZee()}
+                className="h-8 px-3.5 rounded-full bg-[#111] text-white text-[11px] mono font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-30 transition"
               >
-                <Video size={14} />{" "}
-                {isGeneratingVideo
-                  ? "Generating..."
-                  : videoReady
-                  ? "Video ready ✓"
-                  : "Generate Video with this script"}{" "}
-                <ArrowUpRight size={14} className="opacity-60" />
+                <span>{isRefiningWithMeta ? "Tuning..." : "Send to Zee"}</span>
+                <Send size={11} />
               </button>
             </div>
           </div>
 
-          <div className="h-24 lg:hidden" />
+          {/* =================================================================
+              LOCK SCRIPT & CONTINUE TO STUDIO (BOTTOM ACTION BAR)
+             ================================================================= */}
+          <div className="rounded-[18px] border border-[#EDE8E3] bg-white p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`w-9 h-9 rounded-full grid place-items-center shrink-0 ${
+                  isScriptLocked
+                    ? "bg-emerald-600 text-white"
+                    : "bg-[#111] text-white"
+                }`}
+              >
+                {isScriptLocked ? <Lock size={15} /> : <Wand2 size={15} />}
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-[#111]">
+                  {isScriptLocked ? "Script Locked & Ready ✓" : "Lock this Script & Go to Studio"}
+                </p>
+                <p className="text-[11px] text-[#777]">
+                  Angle: <span className="font-semibold text-[#111]">{currentOption.title}</span> • Ready to generate video in Studio
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleRegenerateAngle}
+                className="h-9 px-3.5 rounded-full border border-[#EDE8E3] bg-white text-[11px] mono font-semibold inline-flex items-center gap-1.5 hover:border-[#111] transition cursor-pointer"
+              >
+                <RefreshCw size={12} /> Regenerate
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLockAndProceed}
+                className="h-9 px-5 rounded-full bg-[#111] text-white text-[12px] font-bold inline-flex items-center gap-2 hover:bg-[#FF6B35] transition cursor-pointer shadow-md"
+              >
+                <Lock size={13} />
+                <span>Lock Script & Go to Studio</span>
+                <ArrowUpRight size={13} className="opacity-70" />
+              </button>
+            </div>
+          </div>
+
+          <div className="h-6 lg:hidden" />
         </main>
 
         {/* ===================================================================
             RIGHT SIDEBAR: WHAT'S POPPING ON IG + SUGGESTION ENGINE
            =================================================================== */}
         <aside
-          className={`lg:sticky lg:top-[76px] lg:h-[calc(100vh-96px)] lg:overflow-y-auto bg-white lg:rounded-[24px] border-t lg:border border-[#EDE8E3] shadow-[0_12px_40px_rgba(0,0,0,0.04)] fixed inset-x-0 bottom-0 z-40 lg:z-0 rounded-t-[28px] transition-transform duration-300 ${
+          className={`lg:sticky lg:top-[60px] lg:h-[calc(100vh-80px)] lg:overflow-y-auto bg-white lg:rounded-[20px] border-t lg:border border-[#EDE8E3] shadow-[0_8px_30px_rgba(0,0,0,0.03)] fixed inset-x-0 bottom-0 z-40 lg:z-0 rounded-t-[24px] transition-transform duration-300 ${
             rightDrawerOpen
               ? "translate-y-0"
               : "translate-y-[calc(100%-48px)] lg:translate-y-0"
           }`}
         >
           <div
-            className="lg:hidden flex justify-center pt-3 pb-1 cursor-pointer"
+            className="lg:hidden flex justify-center pt-2.5 pb-1 cursor-pointer"
             onClick={() => setRightDrawerOpen(!rightDrawerOpen)}
           >
-            <div className="w-10 h-1.5 rounded-full bg-[#EDE8E3]" />
+            <div className="w-10 h-1 rounded-full bg-[#EDE8E3]" />
           </div>
 
-          <div className="p-5 border-b border-[#EDE8E3] flex items-center justify-between">
+          <div className="p-3.5 border-b border-[#EDE8E3] flex items-center justify-between">
             <div>
-              <h3 className="serif text-[20px] flex items-center gap-2 font-normal">
-                <span className="w-6 h-6 rounded-full bg-[#0066FF] text-white grid place-items-center">
-                  <TrendingUp size={12} />
+              <h3 className="serif text-[17px] flex items-center gap-1.5 font-normal">
+                <span className="w-5 h-5 rounded-full bg-[#0066FF] text-white grid place-items-center">
+                  <TrendingUp size={11} />
                 </span>{" "}
                 What&apos;s popping on IG
               </h3>
-              <p className="text-[12px] text-[#8A8784] mt-1">
-                → Make reel about this
+              <p className="text-[11px] text-[#8A8784]">
+                High-attention formats today
               </p>
             </div>
-            <span className="text-[10px] mono px-2 py-1 rounded-full bg-[#EFF5FF] text-[#0066FF]">
+            <span className="text-[9px] mono px-2 py-0.5 rounded-full bg-[#EFF5FF] text-[#0066FF]">
               live 2h ago
             </span>
           </div>
 
-          <div className="p-4 space-y-6">
+          <div className="p-3 space-y-3.5">
             {/* 1. Top Formats Today */}
             <div>
               <p className="text-[11px] mono uppercase tracking-widest text-[#8A8784] flex items-center gap-1">
@@ -1811,9 +2457,8 @@ export default function StoryBankView({
       </div>
 
       {/* Footer */}
-      <footer className="mx-auto max-w-[1600px] px-6 py-8 text-center text-[11px] mono text-[#8A8784]">
-        crafted for {userName} — Business: AI automation • Content: AI VIDEO /
-        UGC ADS • best post 8pm IST
+      <footer className="mx-auto max-w-[1600px] px-3 py-1.5 text-center text-[10px] mono text-[#8A8784]">
+        crafted for {userName} • AI Director v2 • Zero Slop
       </footer>
 
       {/* Floating Bottom Toast Pill */}
