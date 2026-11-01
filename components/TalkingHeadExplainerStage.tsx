@@ -567,14 +567,13 @@ export default function TalkingHeadExplainerStage({
 
   return (
     <div
-      ref={containerRef}
-      className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.45)] overflow-hidden relative bg-[#0B0C10] select-none flex flex-col ${
+      className={`w-full flex flex-col gap-2.5 select-none ${
         compact ? "scale-[0.98]" : ""
-      } ${isDraggingCaptions ? "cursor-grabbing" : ""}`}
+      }`}
     >
       {/* Export Error Alert Banner */}
       {exportError && (
-        <div className="absolute top-12 inset-x-3 z-55 rounded-xl bg-rose-950/95 border border-rose-500/60 p-2.5 text-white backdrop-blur-md flex items-center justify-between shadow-xl animate-fade-in">
+        <div className="rounded-xl bg-rose-950/95 border border-rose-500/60 p-2.5 text-white backdrop-blur-md flex items-center justify-between shadow-xl animate-fade-in">
           <div className="flex items-center gap-2 text-[10px] font-medium text-rose-200 min-w-0 pr-2">
             <AlertCircle size={14} className="text-rose-400 shrink-0" />
             <span className="truncate">{exportError}</span>
@@ -590,15 +589,15 @@ export default function TalkingHeadExplainerStage({
       )}
 
       {/* =====================================================================
-          1. PERMANENT TOP SETTINGS TOOLBAR (Always Visible: Colors, CC Position, Slider)
+          1. EXTERNAL TOP SETTINGS TOOLBAR (Placed Above the 9:16 Preview Card)
          ===================================================================== */}
-      <div className="absolute top-0 inset-x-0 z-50 bg-[#0B0C10]/95 backdrop-blur-md border-b border-white/15 px-2.5 py-2 flex flex-col gap-1.5 shadow-xl select-none">
-        {/* Row 1: Colors, Format Mode & Edit Mode */}
+      <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2.5 flex flex-col gap-2 shadow-lg text-white">
+        {/* Row 1: Colors & Format Mode */}
         <div className="flex items-center justify-between gap-1.5">
           {/* Color Palette Swatches (Always visible) */}
-          <div className="flex items-center gap-1.5 bg-white/10 px-2 py-0.5 rounded-full border border-white/15">
+          <div className="flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-full border border-white/10">
             <Palette size={11} className="text-white/70 shrink-0" />
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               {(
                 [
                   ["editorial_warm", "#E4491B", "Warm Orange"],
@@ -636,11 +635,11 @@ export default function TalkingHeadExplainerStage({
 
           {/* Right: Format Mode & Edit Toggle */}
           <div className="flex items-center gap-1">
-            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-full border border-white/15">
+            <div className="inline-flex items-center gap-0.5 bg-black/40 p-0.5 rounded-full border border-white/10">
               <button
                 type="button"
                 onClick={() => setLayoutMode("auto_reel")}
-                className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
+                className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
                   layoutMode === "auto_reel"
                     ? "bg-white text-black shadow-sm font-extrabold"
                     : "text-white/75 hover:text-white"
@@ -651,7 +650,7 @@ export default function TalkingHeadExplainerStage({
               <button
                 type="button"
                 onClick={() => setLayoutMode("speaker_only")}
-                className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
+                className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
                   layoutMode === "speaker_only"
                     ? "bg-white text-black shadow-sm font-extrabold"
                     : "text-white/75 hover:text-white"
@@ -670,339 +669,26 @@ export default function TalkingHeadExplainerStage({
                 }
                 setIsEditMode(!isEditMode);
               }}
-              className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 border shadow-sm ${
+              className={`px-2.5 py-1 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 border shadow-sm ${
                 isEditMode
-                  ? "bg-amber-400 text-black border-amber-300 font-extrabold"
+                  ? "bg-amber-400 text-black border-amber-300 font-extrabold animate-pulse"
                   : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
               }`}
               title="Toggle interactive element deletion & editing"
             >
               <Edit3 size={10} className={isEditMode ? "text-black" : "text-amber-400"} />
-              <span>{isEditMode ? "Done" : "Edit"}</span>
+              <span>{isEditMode ? "Done" : "Edit Elements"}</span>
             </button>
           </div>
         </div>
 
-        {/* Row 2: CC Subtitle Placement & Mouse Drag Slider (Always visible!) */}
-        <div className="flex items-center justify-between gap-1.5 bg-black/60 px-2 py-1 rounded-xl border border-white/10">
-          {/* Direct Position Switching Buttons */}
-          <div className="flex items-center gap-1">
-            <span className="mono text-[9px] font-extrabold text-sky-400 uppercase">
+        {/* Row 2: CC Subtitle Placement & Mouse Drag Slider */}
+        <div className="flex items-center justify-between gap-2 bg-black/50 px-2.5 py-1 rounded-xl border border-white/10">
+          <div className="flex items-center gap-1.5">
+            <span className="mono text-[9px] font-extrabold text-sky-400 uppercase tracking-wider">
               CC:
             </span>
-            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/15">
-              {(
-                [
-                  ["bottom", "Bottom", 84.6],
-                  ["center", "Center", 50.0],
-                  ["top", "Top", 14.5],
-                ] as const
-              ).map(([pos, label, yPct]) => {
-                const isSel = captionPosition === pos;
-                return (
-                  <button
-                    key={pos}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCaptionPosition(pos);
-                      setCaptionYPercent(yPct);
-                      setCaptionYOffset(0);
-                    }}
-                    className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
-                      isSel
-                        ? "bg-sky-500 text-black font-extrabold shadow-sm"
-                        : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Mouse Drag Slider */}
-          <div className="flex items-center gap-1 flex-1 max-w-[125px]">
-            <input
-              type="range"
-              min="12"
-              max="88"
-              step="0.5"
-              value={captionYPercent}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                setCaptionYPercent(val);
-                setCaptionYOffset(0);
-                if (Math.abs(val - 14.5) < 5) setCaptionPosition("top");
-                else if (Math.abs(val - 50.0) < 5) setCaptionPosition("center");
-                else if (Math.abs(val - 84.6) < 5) setCaptionPosition("bottom");
-                else setCaptionPosition(val < 32 ? "top" : val < 68 ? "center" : "bottom");
-              }}
-              className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-sky-400"
-              title="Slide to move CC titles up or down with mouse"
-            />
-            <span className="mono text-[8px] font-bold text-white/70 min-w-[22px] text-right">
-              {captionYPercent.toFixed(0)}%
-            </span>
-          </div>
-
-          {/* Visibility toggle */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setHideCaptions(!hideCaptions);
-            }}
-            className={`p-1 rounded-md text-[9px] font-bold flex items-center transition cursor-pointer ${
-              hideCaptions
-                ? "bg-rose-500/80 text-white"
-                : "bg-white/10 hover:bg-white/20 text-white"
-            }`}
-            title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
-          >
-            {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
-          </button>
-        </div>
-      </div>
-
-      {/* =====================================================================
-          2. HARDWARE AUDIO & VIDEO DECODER ELEMENT (Hidden, active in DOM)
-         ===================================================================== */}
-      <video
-        ref={videoRef}
-        key={activeVideoSrc}
-        src={activeVideoSrc}
-        crossOrigin="anonymous"
-        playsInline
-        muted={isMuted}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={(e) => {
-          currentTimeRef.current = e.currentTarget.currentTime;
-        }}
-        onLoadedMetadata={(e) => {
-          if (e.currentTarget.duration && Number.isFinite(e.currentTarget.duration)) {
-            setDuration(e.currentTarget.duration);
-          }
-        }}
-        onEnded={() => setIsPlaying(false)}
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-        style={{ opacity: 0.001, zIndex: 0 }}
-      />
-
-      {/* =====================================================================
-          3. 100% EXACT SHARED CANVAS PREVIEW STAGE
-         ===================================================================== */}
-      <div className="absolute inset-0 z-10 overflow-hidden bg-[#0B0C10] flex items-center justify-center">
-        <canvas
-          ref={canvasRef}
-          width={1080}
-          height={1920}
-          onClick={() => {
-            if (!isEditMode) togglePlay();
-          }}
-          className={`w-full h-full object-cover ${isEditMode ? "cursor-default" : "cursor-pointer"}`}
-        />
-      </div>
-
-      {/* Direct On-Video Subtitle Drag Hotspot (Available even when Edit Mode is OFF) */}
-      {!hideCaptions && !isEditMode && (
-        <div
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            hasDraggedRef.current = false;
-            setIsDraggingCaptions(true);
-          }}
-          className="pointer-events-auto absolute left-6 right-6 z-25 flex items-center justify-center select-none opacity-85 hover:opacity-100 transition-opacity"
-          style={{
-            top: `${captionYPercent}%`,
-            transform: "translateY(-50%)",
-          }}
-        >
-          <div
-            className={`cursor-grab active:cursor-grabbing px-2.5 py-1 rounded-full border shadow-xl flex items-center gap-1.5 transition-all ${
-              isDraggingCaptions
-                ? "bg-sky-500 text-black border-white ring-2 ring-sky-300 scale-105"
-                : "bg-black/80 hover:bg-black/95 text-sky-300 border-sky-400/40 hover:border-sky-400"
-            }`}
-            title="Click and drag with mouse pointer to move CC titles up or down"
-          >
-            <GripVertical
-              size={12}
-              className={isDraggingCaptions ? "text-black" : "text-sky-400"}
-            />
-            <span className="text-[9px] font-mono font-bold uppercase tracking-wider">
-              {isDraggingCaptions
-                ? `CC: ${captionYPercent.toFixed(0)}%`
-                : `↕ Drag CC (${captionPosition})`}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          4. INTERACTIVE MOUSE EDIT OVERLAYS (Active in Edit Mode)
-         ===================================================================== */}
-      {isEditMode && (
-        <div className="absolute inset-0 z-35 pointer-events-none flex flex-col justify-between p-3">
-          {/* Top Banner Notice */}
-          <div className="mt-20 flex items-center justify-between bg-black/90 backdrop-blur-md rounded-xl p-2 border border-amber-400/40 pointer-events-auto shadow-xl">
-            <div className="flex items-center gap-1.5 text-[10px] text-amber-200">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
-              <span className="font-bold">Interactive Edit Mode</span>
-              <span className="text-white/60">
-                (Scene {activeSceneIndex + 1}/{activeScenes.length})
-              </span>
-            </div>
-            {hiddenCalloutIds.size > 0 && (
-              <button
-                type="button"
-                onClick={handleRestoreAll}
-                className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCw size={9} />
-                <span>Restore ({hiddenCalloutIds.size})</span>
-              </button>
-            )}
-          </div>
-
-          {/* Interactive Callout Bounding Capsule */}
-          {activeFaceCallout && !hiddenCalloutIds.has(activeFaceCallout.id) && (
-            <div
-              className="pointer-events-auto absolute left-4 right-4 rounded-2xl border-2 border-dashed border-amber-400/80 bg-amber-400/10 backdrop-blur-xs p-2 flex items-center justify-between shadow-2xl transition animate-fade-in"
-              style={{ bottom: "24.5%" }}
-            >
-              <div className="min-w-0 pr-2">
-                <div className="flex items-center gap-1 text-[9px] uppercase font-mono font-bold text-amber-300">
-                  <span>Badge Callout</span>
-                  <span className="opacity-60">• Click to edit or trash</span>
-                </div>
-                <div className="text-[11px] font-bold text-white truncate">
-                  {activeFaceCallout.title}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingCallout({
-                      sceneIdx: activeSceneIndex,
-                      calloutId: activeFaceCallout.id,
-                      title: activeFaceCallout.title,
-                      subtitle: activeFaceCallout.subtitle,
-                    })
-                  }
-                  className="px-2 py-1 rounded-lg bg-black/80 hover:bg-black text-amber-300 hover:text-white border border-amber-400/50 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
-                  title="Edit callout text"
-                >
-                  <Edit3 size={11} />
-                  <span>Edit</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteElement(activeFaceCallout.id, e)}
-                  className="w-7 h-7 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white grid place-items-center cursor-pointer transition shadow-md"
-                  title="Delete this callout"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Magnetic Guidelines while Dragging with Mouse */}
-          {isDraggingCaptions && (
-            <div className="absolute inset-0 pointer-events-none z-30 flex flex-col justify-between">
-              {/* Top Guideline */}
-              <div
-                className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
-                  captionPosition === "top"
-                    ? "border-sky-400 bg-sky-500/15 py-1"
-                    : "border-white/20 py-0.5"
-                }`}
-                style={{ top: "14.5%" }}
-              >
-                <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
-                  Top Header (Face Clear)
-                </span>
-                <span className="mono text-[8px] text-white/60">14.5%</span>
-              </div>
-
-              {/* Center Guideline */}
-              <div
-                className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
-                  captionPosition === "center"
-                    ? "border-sky-400 bg-sky-500/15 py-1"
-                    : "border-white/20 py-0.5"
-                }`}
-                style={{ top: "50%" }}
-              >
-                <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
-                  Center Kinetic (Viral Pop)
-                </span>
-                <span className="mono text-[8px] text-white/60">50.0%</span>
-              </div>
-
-              {/* Bottom Guideline */}
-              <div
-                className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
-                  captionPosition === "bottom"
-                    ? "border-sky-400 bg-sky-500/15 py-1"
-                    : "border-white/20 py-0.5"
-                }`}
-                style={{ top: "84.6%" }}
-              >
-                <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
-                  Bottom Lower-Third (Default)
-                </span>
-                <span className="mono text-[8px] text-white/60">84.6%</span>
-              </div>
-            </div>
-          )}
-
-          {/* Interactive CC Captions Placement Bar with Direct Mouse Pointer Dragging */}
-          <div
-            className={`pointer-events-auto absolute left-3 right-3 rounded-2xl border-2 border-dashed ${
-              isDraggingCaptions
-                ? "border-sky-400 bg-sky-950/95 shadow-[0_0_30px_rgba(56,189,248,0.5)] ring-2 ring-sky-400/60"
-                : "border-sky-400/80 bg-black/90 hover:border-sky-300"
-            } backdrop-blur-md p-2 flex items-center justify-between shadow-2xl transition-all duration-75 select-none z-35`}
-            style={{
-              top: `${captionYPercent}%`,
-              transform: "translateY(-50%)",
-            }}
-          >
-            {/* Left: Drag Handle with Mouse Pointer */}
-            <div
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDraggingCaptions(true);
-              }}
-              className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing hover:bg-sky-400/15 px-2 py-1 rounded-lg transition"
-              title="Click and drag with mouse pointer to move CC titles up or down"
-            >
-              <GripVertical size={14} className="text-sky-400 shrink-0" />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-mono font-extrabold text-sky-400 uppercase tracking-wider flex items-center gap-1">
-                  <span>CC Titles</span>
-                  {isDraggingCaptions && (
-                    <span className="text-[9px] text-amber-300 font-bold">
-                      ({captionYPercent.toFixed(0)}%)
-                    </span>
-                  )}
-                </span>
-                <span className="text-[8px] text-white/60 font-medium">
-                  {isDraggingCaptions ? "Release to drop" : "Drag with mouse"}
-                </span>
-              </div>
-            </div>
-
-            {/* Middle: 1-Click Direct Position Switching Buttons */}
-            <div className="inline-flex items-center gap-1 bg-white/10 p-0.5 rounded-lg border border-white/15">
+            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/10">
               {(
                 [
                   ["bottom", "Bottom", 84.6],
@@ -1032,153 +718,373 @@ export default function TalkingHeadExplainerStage({
                 );
               })}
             </div>
+          </div>
 
-            {/* Right: Fine Nudge & Visibility */}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCaptionYPercent((prev) => Math.max(12, +(prev - 3).toFixed(1)));
-                }}
-                className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center text-[10px] cursor-pointer"
-                title="Nudge upward"
-              >
-                <ArrowUp size={11} />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCaptionYPercent((prev) => Math.min(88, +(prev + 3).toFixed(1)));
-                }}
-                className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center text-[10px] cursor-pointer"
-                title="Nudge downward"
-              >
-                <ArrowDown size={11} />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setHideCaptions(!hideCaptions);
-                }}
-                className={`px-2 py-0.5 rounded-md text-[9px] font-bold flex items-center gap-1 cursor-pointer transition ${
-                  hideCaptions
-                    ? "bg-rose-500/80 text-white"
-                    : "bg-white/10 hover:bg-white/20 text-white"
-                }`}
-                title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
-              >
-                {hideCaptions ? <EyeOff size={10} /> : <Eye size={10} />}
-                <span>{hideCaptions ? "Hidden" : "Hide"}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Center Play Button Overlay when Paused */}
-      {!isPlaying && !isDownloading && !isEditMode && (
-        <div
-          onClick={togglePlay}
-          className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer bg-black/15 hover:bg-black/25 transition-colors"
-        >
-          <div
-            className="w-13 h-13 rounded-full flex items-center justify-center shadow-2xl text-white transform active:scale-90 transition-transform"
-            style={{ backgroundColor: palette.accent }}
-          >
-            <Play size={22} className="ml-0.5 fill-white" />
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          5. EXPORT PROGRESS OVERLAY (When downloading exact MP4)
-         ===================================================================== */}
-      {isDownloading && (
-        <div className="absolute inset-0 z-45 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white select-none">
-          <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 grid place-items-center mb-3 shadow-lg">
-            <Loader2 size={24} className="animate-spin text-white" />
-          </div>
-          <div className="mono text-[12px] font-bold uppercase tracking-wider mb-1">
-            Rendering 1080×1920 Reel
-          </div>
-          <div className="text-[11px] text-white/70 max-w-[240px] mb-3">
-            Deterministic seek-and-render encoding matching live preview with your exact deletions & shifted CC titles...
-          </div>
-          <div className="w-48 bg-white/15 h-2 rounded-full overflow-hidden border border-white/20">
-            <div
-              className="h-full rounded-full transition-all duration-150"
-              style={{
-                width: `${downloadProgress}%`,
-                backgroundColor: palette.highlight,
+          {/* Mouse Drag Slider */}
+          <div className="flex items-center gap-1.5 flex-1 max-w-[130px]">
+            <input
+              type="range"
+              min="12"
+              max="88"
+              step="0.5"
+              value={captionYPercent}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setCaptionYPercent(val);
+                setCaptionYOffset(0);
+                if (Math.abs(val - 14.5) < 5) setCaptionPosition("top");
+                else if (Math.abs(val - 50.0) < 5) setCaptionPosition("center");
+                else if (Math.abs(val - 84.6) < 5) setCaptionPosition("bottom");
+                else setCaptionPosition(val < 32 ? "top" : val < 68 ? "center" : "bottom");
               }}
+              className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-sky-400"
+              title="Slide to move CC titles up or down with mouse"
             />
+            <span className="mono text-[8px] font-bold text-white/70 min-w-[24px] text-right">
+              {captionYPercent.toFixed(0)}%
+            </span>
           </div>
-          <div className="mono text-[10px] font-bold text-white/90 mt-2">
-            {downloadProgress}% complete
-          </div>
+
+          {/* Visibility toggle */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setHideCaptions(!hideCaptions);
+            }}
+            className={`p-1 rounded-md text-[9px] font-bold flex items-center transition cursor-pointer ${
+              hideCaptions
+                ? "bg-rose-500/80 text-white"
+                : "bg-white/10 hover:bg-white/20 text-white"
+            }`}
+            title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
+          >
+            {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
+          </button>
         </div>
-      )}
-
-      {/* =====================================================================
-          6. EXACT SCENE-BY-SCENE SCRUBBER PILL BAR
-         ===================================================================== */}
-      <div className="absolute bottom-11 inset-x-2 z-40 flex items-center gap-1 overflow-x-auto py-1 px-1 bg-black/85 backdrop-blur-md rounded-xl border border-white/15 scrollbar-none shadow-xl">
-        {activeScenes.map((sc, idx) => {
-          const isActive = idx === activeSceneIndex;
-          const durSec = Math.max(0.5, sc.end - sc.start).toFixed(1);
-          return (
-            <div
-              key={sc.id || idx}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg shrink-0 transition cursor-pointer border ${
-                isActive
-                  ? "bg-white/20 text-white border-white/40 shadow-sm"
-                  : "bg-white/5 text-white/75 hover:bg-white/10 border-transparent"
-              }`}
-              onClick={() => handleSeekScene(idx)}
-            >
-              <div className="flex flex-col text-left">
-                <div className="flex items-center gap-1">
-                  <span className="mono text-[9px] font-extrabold text-amber-400">
-                    S{idx + 1}
-                  </span>
-                  <span className="mono text-[8px] text-white/60">
-                    {durSec}s
-                  </span>
-                </div>
-                <span className="text-[9px] font-bold truncate max-w-[70px]">
-                  {sc.headlineText || `Scene ${idx + 1}`}
-                </span>
-              </div>
-
-              {/* Pin Recreate button per scene */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setRecreateModalSceneIdx(idx);
-                }}
-                className="ml-0.5 p-1 rounded-md bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black transition cursor-pointer"
-                title={`Pin & Recreate Scene ${idx + 1}`}
-              >
-                <Sparkles size={10} />
-              </button>
-            </div>
-          );
-        })}
       </div>
 
       {/* =====================================================================
-          7. BOTTOM PLAYBACK & DOWNLOAD CONTROL BAR
+          2. PURE CLEAN 9:16 PREVIEW SCREEN (Unobstructed Canvas Video View)
          ===================================================================== */}
-      <div className="absolute bottom-2 inset-x-2 z-40 flex items-center justify-between gap-2 bg-black/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 shadow-lg">
+      <div
+        ref={containerRef}
+        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#1E2028] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.6)] overflow-hidden relative bg-[#0B0C10] select-none flex flex-col items-center justify-center ${
+          isDraggingCaptions ? "cursor-grabbing" : ""
+        }`}
+      >
+        {/* Hardware Audio & Video Decoder */}
+        <video
+          ref={videoRef}
+          key={activeVideoSrc}
+          src={activeVideoSrc}
+          crossOrigin="anonymous"
+          playsInline
+          muted={isMuted}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onTimeUpdate={(e) => {
+            currentTimeRef.current = e.currentTarget.currentTime;
+          }}
+          onLoadedMetadata={(e) => {
+            if (e.currentTarget.duration && Number.isFinite(e.currentTarget.duration)) {
+              setDuration(e.currentTarget.duration);
+            }
+          }}
+          onEnded={() => setIsPlaying(false)}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          style={{ opacity: 0.001, zIndex: 0 }}
+        />
+
+        {/* 100% Exact Shared Canvas Preview */}
+        <div className="absolute inset-0 z-10 overflow-hidden bg-[#0B0C10] flex items-center justify-center">
+          <canvas
+            ref={canvasRef}
+            width={1080}
+            height={1920}
+            onClick={() => {
+              if (!isEditMode) togglePlay();
+            }}
+            className={`w-full h-full object-cover ${
+              isEditMode ? "cursor-default" : "cursor-pointer"
+            }`}
+          />
+        </div>
+
+        {/* On-Video Subtitle Drag Hotspot */}
+        {!hideCaptions && (
+          <div
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              hasDraggedRef.current = false;
+              setIsDraggingCaptions(true);
+            }}
+            className="pointer-events-auto absolute left-6 right-6 z-25 flex items-center justify-center select-none opacity-80 hover:opacity-100 transition-opacity"
+            style={{
+              top: `${captionYPercent}%`,
+              transform: "translateY(-50%)",
+            }}
+          >
+            <div
+              className={`cursor-grab active:cursor-grabbing px-2.5 py-1 rounded-full border shadow-xl flex items-center gap-1.5 transition-all ${
+                isDraggingCaptions
+                  ? "bg-sky-500 text-black border-white ring-2 ring-sky-300 scale-105"
+                  : "bg-black/80 hover:bg-black/95 text-sky-300 border-sky-400/40 hover:border-sky-400"
+              }`}
+              title="Click and drag with mouse pointer to move CC titles up or down"
+            >
+              <GripVertical
+                size={12}
+                className={isDraggingCaptions ? "text-black" : "text-sky-400"}
+              />
+              <span className="text-[9px] font-mono font-bold uppercase tracking-wider">
+                {isDraggingCaptions
+                  ? `CC: ${captionYPercent.toFixed(0)}%`
+                  : `↕ Drag CC (${captionPosition})`}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Interactive Mouse Edit Overlays (Active when Edit Mode is ON) */}
+        {isEditMode && (
+          <div className="absolute inset-0 z-35 pointer-events-none flex flex-col justify-between p-3">
+            {/* Top Banner Notice */}
+            <div className="flex items-center justify-between bg-black/90 backdrop-blur-md rounded-xl p-2 border border-amber-400/40 pointer-events-auto shadow-xl">
+              <div className="flex items-center gap-1.5 text-[10px] text-amber-200">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
+                <span className="font-bold">Interactive Edit Mode</span>
+                <span className="text-white/60">
+                  (Scene {activeSceneIndex + 1}/{activeScenes.length})
+                </span>
+              </div>
+              {hiddenCalloutIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRestoreAll}
+                  className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw size={9} />
+                  <span>Restore ({hiddenCalloutIds.size})</span>
+                </button>
+              )}
+            </div>
+
+            {/* Interactive Callout Bounding Capsule */}
+            {activeFaceCallout && !hiddenCalloutIds.has(activeFaceCallout.id) && (
+              <div
+                className="pointer-events-auto absolute left-4 right-4 rounded-2xl border-2 border-dashed border-amber-400/80 bg-amber-400/10 backdrop-blur-xs p-2 flex items-center justify-between shadow-2xl transition animate-fade-in"
+                style={{ bottom: "24.5%" }}
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="flex items-center gap-1 text-[9px] uppercase font-mono font-bold text-amber-300">
+                    <span>Badge Callout</span>
+                    <span className="opacity-60">• Click to edit or trash</span>
+                  </div>
+                  <div className="text-[11px] font-bold text-white truncate">
+                    {activeFaceCallout.title}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingCallout({
+                        sceneIdx: activeSceneIndex,
+                        calloutId: activeFaceCallout.id,
+                        title: activeFaceCallout.title,
+                        subtitle: activeFaceCallout.subtitle,
+                      })
+                    }
+                    className="px-2 py-1 rounded-lg bg-black/80 hover:bg-black text-amber-300 hover:text-white border border-amber-400/50 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
+                    title="Edit callout text"
+                  >
+                    <Edit3 size={11} />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteElement(activeFaceCallout.id, e)}
+                    className="w-7 h-7 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white grid place-items-center cursor-pointer transition shadow-md"
+                    title="Delete this callout"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Magnetic Guidelines while Dragging with Mouse */}
+            {isDraggingCaptions && (
+              <div className="absolute inset-0 pointer-events-none z-30 flex flex-col justify-between">
+                {/* Top Guideline */}
+                <div
+                  className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
+                    captionPosition === "top"
+                      ? "border-sky-400 bg-sky-500/15 py-1"
+                      : "border-white/20 py-0.5"
+                  }`}
+                  style={{ top: "14.5%" }}
+                >
+                  <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
+                    Top Header (Face Clear)
+                  </span>
+                  <span className="mono text-[8px] text-white/60">14.5%</span>
+                </div>
+
+                {/* Center Guideline */}
+                <div
+                  className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
+                    captionPosition === "center"
+                      ? "border-sky-400 bg-sky-500/15 py-1"
+                      : "border-white/20 py-0.5"
+                  }`}
+                  style={{ top: "50%" }}
+                >
+                  <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
+                    Center Kinetic (Viral Pop)
+                  </span>
+                  <span className="mono text-[8px] text-white/60">50.0%</span>
+                </div>
+
+                {/* Bottom Guideline */}
+                <div
+                  className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
+                    captionPosition === "bottom"
+                      ? "border-sky-400 bg-sky-500/15 py-1"
+                      : "border-white/20 py-0.5"
+                  }`}
+                  style={{ top: "84.6%" }}
+                >
+                  <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
+                    Bottom Lower-Third (Default)
+                  </span>
+                  <span className="mono text-[8px] text-white/60">84.6%</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Center Play Button Overlay when Paused */}
+        {!isPlaying && !isDownloading && !isEditMode && (
+          <div
+            onClick={togglePlay}
+            className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer bg-black/15 hover:bg-black/25 transition-colors"
+          >
+            <div
+              className="w-13 h-13 rounded-full flex items-center justify-center shadow-2xl text-white transform active:scale-90 transition-transform"
+              style={{ backgroundColor: palette.accent }}
+            >
+              <Play size={22} className="ml-0.5 fill-white" />
+            </div>
+          </div>
+        )}
+
+        {/* Export Progress Overlay */}
+        {isDownloading && (
+          <div className="absolute inset-0 z-45 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white select-none">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 grid place-items-center mb-3 shadow-lg">
+              <Loader2 size={24} className="animate-spin text-white" />
+            </div>
+            <div className="mono text-[12px] font-bold uppercase tracking-wider mb-1">
+              Rendering 1080×1920 Reel
+            </div>
+            <div className="text-[11px] text-white/70 max-w-[240px] mb-3">
+              Deterministic seek-and-render encoding matching live preview with your exact deletions & shifted CC titles...
+            </div>
+            <div className="w-48 bg-white/15 h-2 rounded-full overflow-hidden border border-white/20">
+              <div
+                className="h-full rounded-full transition-all duration-150"
+                style={{
+                  width: `${downloadProgress}%`,
+                  backgroundColor: palette.highlight,
+                }}
+              />
+            </div>
+            <div className="mono text-[10px] font-bold text-white/90 mt-2">
+              {downloadProgress}% complete
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* =====================================================================
+          3. EXTERNAL SCENE TIMELINE SCRUBBER (Placed directly below 9:16 screen)
+         ===================================================================== */}
+      <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2.5 flex flex-col gap-1.5 shadow-md text-white">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span className="mono text-[10px] font-extrabold uppercase text-amber-300 tracking-wider">
+              Scene Timeline
+            </span>
+            <span className="mono text-[9px] text-white/50">
+              ({activeSceneIndex + 1}/{activeScenes.length})
+            </span>
+          </div>
+          <span className="mono text-[8px] text-white/40">
+            Click scene to seek & edit
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-thin">
+          {activeScenes.map((sc, idx) => {
+            const isActive = idx === activeSceneIndex;
+            const durSec = Math.max(0.5, sc.end - sc.start).toFixed(1);
+            return (
+              <div
+                key={sc.id || idx}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0 transition cursor-pointer border ${
+                  isActive
+                    ? "bg-white/20 text-white border-white/40 shadow-md ring-1 ring-white/30"
+                    : "bg-white/5 text-white/75 hover:bg-white/10 hover:text-white border-transparent"
+                }`}
+                onClick={() => handleSeekScene(idx)}
+              >
+                <div className="flex flex-col text-left">
+                  <div className="flex items-center gap-1">
+                    <span className="mono text-[9px] font-black text-amber-400">
+                      S{idx + 1}
+                    </span>
+                    <span className="mono text-[8px] text-white/60">
+                      {durSec}s
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-bold truncate max-w-[85px]">
+                    {sc.headlineText || `Scene ${idx + 1}`}
+                  </span>
+                </div>
+
+                {/* Pin Recreate button per scene */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRecreateModalSceneIdx(idx);
+                  }}
+                  className="p-1 rounded-md bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black transition cursor-pointer"
+                  title={`Pin & Recreate Scene ${idx + 1}`}
+                >
+                  <Sparkles size={11} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* =====================================================================
+          4. EXTERNAL PLAYBACK & DOWNLOAD BAR (Placed directly below timeline)
+         ===================================================================== */}
+      <div className="w-full bg-[#12141C] border border-white/15 rounded-full px-3 py-1.5 flex items-center justify-between gap-2 shadow-md text-white">
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={togglePlay}
-            className="w-7 h-7 rounded-full text-white grid place-items-center transition active:scale-95 cursor-pointer"
+            className="w-7 h-7 rounded-full text-white grid place-items-center transition active:scale-95 cursor-pointer shadow-md"
             style={{ backgroundColor: palette.accent }}
             title={isPlaying ? "Pause" : "Play"}
           >
@@ -1209,7 +1115,7 @@ export default function TalkingHeadExplainerStage({
           type="button"
           onClick={handleDownloadMp4}
           disabled={isDownloading}
-          className="px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white text-[10px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer"
+          className="px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white text-[10px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
           title="Download verified 1080×1920 MP4 reel matching preview frame-by-frame"
         >
           {isDownloading ? (
@@ -1217,7 +1123,7 @@ export default function TalkingHeadExplainerStage({
           ) : (
             <Download size={11} />
           )}
-          <span>{isDownloading ? `${downloadProgress}%` : "MP4"}</span>
+          <span>{isDownloading ? `${downloadProgress}%` : "Download MP4"}</span>
         </button>
       </div>
 

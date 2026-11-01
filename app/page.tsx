@@ -4360,8 +4360,8 @@ export default function ProperMobileResponsiveChat() {
         </main>
 
         {/* Right Desktop Preview & Timeline */}
-        <aside className="hidden lg:flex w-[400px] shrink-0 border-l border-[#D5D2C8] bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] flex-col items-center sticky top-0 h-screen overflow-hidden shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.04)]">
-          <div className="py-4" style={{ width: "min(352px, calc((100dvh - 160px) * 9 / 16))" }}>
+        <aside className="hidden lg:flex w-[400px] shrink-0 border-l border-[#D5D2C8] bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] flex-col items-center sticky top-0 h-screen overflow-y-auto scrollbar-none shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.04)]">
+          <div className="py-3 px-2 w-full max-w-[365px] flex flex-col">
             <div className="flex items-center justify-between mb-4 px-1">
               <div className="flex items-center gap-1.5 mono text-[11px] uppercase tracking-widest text-[#6B6A64] font-semibold">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#E4491B] animate-pulse" />
