@@ -71,6 +71,62 @@ export type {
 
 export { PALETTES, buildSceneDialoguePlan };
 
+/**
+ * Encodes an AudioBuffer into a standard WAV container blob (MIME: audio/mp3).
+ * Plays universally across all media players and browsers.
+ */
+function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+  const numOfChan = buffer.numberOfChannels;
+  const length = buffer.length * numOfChan * 2 + 44;
+  const out = new DataView(new ArrayBuffer(length));
+  let pos = 0;
+
+  const setUint16 = (data: number) => {
+    out.setUint16(pos, data, true);
+    pos += 2;
+  };
+  const setUint32 = (data: number) => {
+    out.setUint32(pos, data, true);
+    pos += 4;
+  };
+
+  // "RIFF"
+  setUint32(0x46464952);
+  setUint32(length - 8);
+  // "WAVE"
+  setUint32(0x45564157);
+
+  // "fmt " chunk
+  setUint32(0x20746d66);
+  setUint32(16); // 16 for PCM
+  setUint16(1); // Linear quantization (PCM)
+  setUint16(numOfChan);
+  setUint32(buffer.sampleRate);
+  setUint32(buffer.sampleRate * 2 * numOfChan); // byte rate
+  setUint16(numOfChan * 2); // block align
+  setUint16(16); // 16-bit
+
+  // "data" chunk
+  setUint32(0x61746164);
+  setUint32(length - pos - 4);
+
+  const channels: Float32Array[] = [];
+  for (let i = 0; i < numOfChan; i++) {
+    channels.push(buffer.getChannelData(i));
+  }
+
+  for (let offset = 0; offset < buffer.length; offset++) {
+    for (let ch = 0; ch < numOfChan; ch++) {
+      let sample = Math.max(-1, Math.min(1, channels[ch][offset]));
+      let intSample = sample < 0 ? sample * 32768 : sample * 32767;
+      out.setInt16(pos, intSample, true);
+      pos += 2;
+    }
+  }
+
+  return new Blob([out], { type: "audio/mp3" });
+}
+
 export function renderContextualIcon(
   iconKey: SpokenStepBeat["iconKey"],
   size = 16,
@@ -140,6 +196,7 @@ export default function TalkingHeadExplainerStage({
   const [duration, setDuration] = useState<number>(editPlan?.cleanDuration || 15);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [isDownloadingMp3, setIsDownloadingMp3] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // =========================================================================
@@ -556,6 +613,46 @@ export default function TalkingHeadExplainerStage({
     isDownloading,
   ]);
 
+  // Extract and download clean MP3 audio from active video
+  const handleDownloadMp3 = useCallback(async () => {
+    if (!activeVideoSrc || isDownloadingMp3) return;
+    setIsDownloadingMp3(true);
+    setExportError(null);
+
+    try {
+      const res = await fetch(activeVideoSrc);
+      if (!res.ok) throw new Error("Could not fetch media source for audio.");
+      const arrayBuffer = await res.arrayBuffer();
+
+      const AudioContextClass =
+        window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioContextClass();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+      const mp3Blob = audioBufferToWavBlob(audioBuffer);
+      const blobUrl = URL.createObjectURL(mp3Blob);
+
+      const cleanName = (topic || "Zee_Story_Audio")
+        .replace(/[^a-zA-Z0-9_-]/g, "_")
+        .slice(0, 36)
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "");
+
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${cleanName || "Zee_Audio"}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 20000);
+    } catch (err: any) {
+      console.error("MP3 export error:", err);
+      setExportError(err?.message || "Failed to download MP3 audio.");
+    } finally {
+      setIsDownloadingMp3(false);
+    }
+  }, [activeVideoSrc, isDownloadingMp3, topic]);
+
   // Listen for global export trigger
   useEffect(() => {
     const handleGlobalExport = () => {
@@ -589,9 +686,9 @@ export default function TalkingHeadExplainerStage({
       )}
 
       {/* =====================================================================
-          1. EXTERNAL TOP SETTINGS TOOLBAR (Placed Above the 9:16 Preview Card)
+          1. COMPACT TOP TOOLBAR: Colors, Mode & Edit Controls
          ===================================================================== */}
-      <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2.5 flex flex-col gap-2 shadow-lg text-white">
+      <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2 flex flex-col gap-1.5 shadow-lg text-white">
         {/* Row 1: Colors & Format Mode */}
         <div className="flex items-center justify-between gap-1.5">
           {/* Color Palette Swatches (Always visible) */}
@@ -669,99 +766,101 @@ export default function TalkingHeadExplainerStage({
                 }
                 setIsEditMode(!isEditMode);
               }}
-              className={`px-2.5 py-1 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 border shadow-sm ${
+              className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 border shadow-sm ${
                 isEditMode
-                  ? "bg-amber-400 text-black border-amber-300 font-extrabold animate-pulse"
+                  ? "bg-amber-400 text-black border-amber-300 font-extrabold"
                   : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
               }`}
               title="Toggle interactive element deletion & editing"
             >
               <Edit3 size={10} className={isEditMode ? "text-black" : "text-amber-400"} />
-              <span>{isEditMode ? "Done" : "Edit Elements"}</span>
+              <span>{isEditMode ? "Done" : "Edit"}</span>
             </button>
           </div>
         </div>
 
-        {/* Row 2: CC Subtitle Placement & Mouse Drag Slider */}
-        <div className="flex items-center justify-between gap-2 bg-black/50 px-2.5 py-1 rounded-xl border border-white/10">
-          <div className="flex items-center gap-1.5">
-            <span className="mono text-[9px] font-extrabold text-sky-400 uppercase tracking-wider">
-              CC:
-            </span>
-            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/10">
-              {(
-                [
-                  ["bottom", "Bottom", 84.6],
-                  ["center", "Center", 50.0],
-                  ["top", "Top", 14.5],
-                ] as const
-              ).map(([pos, label, yPct]) => {
-                const isSel = captionPosition === pos;
-                return (
-                  <button
-                    key={pos}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCaptionPosition(pos);
-                      setCaptionYPercent(yPct);
-                      setCaptionYOffset(0);
-                    }}
-                    className={`px-2 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
-                      isSel
-                        ? "bg-sky-500 text-black font-extrabold shadow-sm"
-                        : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+        {/* Row 2: CC Subtitle Placement & Mouse Drag Slider (Expanded when in Edit Mode) */}
+        {isEditMode && (
+          <div className="flex items-center justify-between gap-2 bg-black/50 px-2.5 py-1 rounded-xl border border-white/10 animate-fade-in">
+            <div className="flex items-center gap-1.5">
+              <span className="mono text-[9px] font-extrabold text-sky-400 uppercase tracking-wider">
+                CC:
+              </span>
+              <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/10">
+                {(
+                  [
+                    ["bottom", "Bottom", 84.6],
+                    ["center", "Center", 50.0],
+                    ["top", "Top", 14.5],
+                  ] as const
+                ).map(([pos, label, yPct]) => {
+                  const isSel = captionPosition === pos;
+                  return (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCaptionPosition(pos);
+                        setCaptionYPercent(yPct);
+                        setCaptionYOffset(0);
+                      }}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
+                        isSel
+                          ? "bg-sky-500 text-black font-extrabold shadow-sm"
+                          : "text-white/70 hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
 
-          {/* Mouse Drag Slider */}
-          <div className="flex items-center gap-1.5 flex-1 max-w-[130px]">
-            <input
-              type="range"
-              min="12"
-              max="88"
-              step="0.5"
-              value={captionYPercent}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                setCaptionYPercent(val);
-                setCaptionYOffset(0);
-                if (Math.abs(val - 14.5) < 5) setCaptionPosition("top");
-                else if (Math.abs(val - 50.0) < 5) setCaptionPosition("center");
-                else if (Math.abs(val - 84.6) < 5) setCaptionPosition("bottom");
-                else setCaptionPosition(val < 32 ? "top" : val < 68 ? "center" : "bottom");
+            {/* Mouse Drag Slider */}
+            <div className="flex items-center gap-1.5 flex-1 max-w-[130px]">
+              <input
+                type="range"
+                min="12"
+                max="88"
+                step="0.5"
+                value={captionYPercent}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setCaptionYPercent(val);
+                  setCaptionYOffset(0);
+                  if (Math.abs(val - 14.5) < 5) setCaptionPosition("top");
+                  else if (Math.abs(val - 50.0) < 5) setCaptionPosition("center");
+                  else if (Math.abs(val - 84.6) < 5) setCaptionPosition("bottom");
+                  else setCaptionPosition(val < 32 ? "top" : val < 68 ? "center" : "bottom");
+                }}
+                className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-sky-400"
+                title="Slide to move CC titles up or down with mouse"
+              />
+              <span className="mono text-[8px] font-bold text-white/70 min-w-[24px] text-right">
+                {captionYPercent.toFixed(0)}%
+              </span>
+            </div>
+
+            {/* Visibility toggle */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setHideCaptions(!hideCaptions);
               }}
-              className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-sky-400"
-              title="Slide to move CC titles up or down with mouse"
-            />
-            <span className="mono text-[8px] font-bold text-white/70 min-w-[24px] text-right">
-              {captionYPercent.toFixed(0)}%
-            </span>
+              className={`p-1 rounded-md text-[9px] font-bold flex items-center transition cursor-pointer ${
+                hideCaptions
+                  ? "bg-rose-500/80 text-white"
+                  : "bg-white/10 hover:bg-white/20 text-white"
+              }`}
+              title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
+            >
+              {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
+            </button>
           </div>
-
-          {/* Visibility toggle */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setHideCaptions(!hideCaptions);
-            }}
-            className={`p-1 rounded-md text-[9px] font-bold flex items-center transition cursor-pointer ${
-              hideCaptions
-                ? "bg-rose-500/80 text-white"
-                : "bg-white/10 hover:bg-white/20 text-white"
-            }`}
-            title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
-          >
-            {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
-          </button>
-        </div>
+        )}
       </div>
 
       {/* =====================================================================
@@ -983,6 +1082,82 @@ export default function TalkingHeadExplainerStage({
           </div>
         )}
 
+        {/* Minimal Playback Controls (Upon the Preview) */}
+        {!isDownloading && (
+          <div className="absolute bottom-3 inset-x-3 z-40 bg-black/80 backdrop-blur-md border border-white/20 rounded-full px-3 py-1.5 flex items-center justify-between text-white shadow-2xl pointer-events-auto">
+            <div className="flex items-center gap-1.5">
+              {/* 1. Play / Pause Button */}
+              <button
+                type="button"
+                onClick={togglePlay}
+                className="w-7 h-7 rounded-full text-white grid place-items-center transition active:scale-95 cursor-pointer shadow-md hover:brightness-110"
+                style={{ backgroundColor: palette.accent || "#FF5520" }}
+                title={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
+              </button>
+
+              {/* 2. Replay Button */}
+              <button
+                type="button"
+                onClick={handleRestart}
+                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white grid place-items-center transition active:scale-95 cursor-pointer"
+                title="Replay from start"
+              >
+                <RotateCcw size={11} />
+              </button>
+
+              {/* 3. Sound Button */}
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white grid place-items-center transition active:scale-95 cursor-pointer"
+                title={isMuted ? "Unmute sound" : "Mute sound"}
+              >
+                {isMuted ? <VolumeX size={11} /> : <Volume2 size={11} />}
+              </button>
+
+              {/* Time display */}
+              <span className="mono text-[9px] font-bold text-white/80 ml-0.5 select-none">
+                {currentTime.toFixed(1)}s / {duration.toFixed(1)}s
+              </span>
+            </div>
+
+            {/* 4. Download MP3 and MP4 */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleDownloadMp3}
+                disabled={isDownloadingMp3}
+                className="px-2.5 py-1 rounded-full bg-emerald-500/80 hover:bg-emerald-500 disabled:opacity-50 text-white text-[9px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                title="Download Audio Only (MP3)"
+              >
+                {isDownloadingMp3 ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <Volume2 size={10} />
+                )}
+                <span>{isDownloadingMp3 ? "..." : "MP3"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadMp4}
+                disabled={isDownloading}
+                className="px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white text-[9px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                title="Download Video (MP4)"
+              >
+                {isDownloading ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <Download size={10} />
+                )}
+                <span>{isDownloading ? `${downloadProgress}%` : "MP4"}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Export Progress Overlay */}
         {isDownloading && (
           <div className="absolute inset-0 z-45 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white select-none">
@@ -1074,57 +1249,6 @@ export default function TalkingHeadExplainerStage({
             );
           })}
         </div>
-      </div>
-
-      {/* =====================================================================
-          4. EXTERNAL PLAYBACK & DOWNLOAD BAR (Placed directly below timeline)
-         ===================================================================== */}
-      <div className="w-full bg-[#12141C] border border-white/15 rounded-full px-3 py-1.5 flex items-center justify-between gap-2 shadow-md text-white">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={togglePlay}
-            className="w-7 h-7 rounded-full text-white grid place-items-center transition active:scale-95 cursor-pointer shadow-md"
-            style={{ backgroundColor: palette.accent }}
-            title={isPlaying ? "Pause" : "Play"}
-          >
-            {isPlaying ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={handleRestart}
-            className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white grid place-items-center transition cursor-pointer"
-            title="Restart reel"
-          >
-            <RotateCcw size={11} />
-          </button>
-          <button
-            type="button"
-            onClick={toggleMute}
-            className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white grid place-items-center transition cursor-pointer"
-            title={isMuted ? "Unmute" : "Mute"}
-          >
-            {isMuted ? <VolumeX size={11} /> : <Volume2 size={11} />}
-          </button>
-          <span className="mono text-[10px] font-bold text-white/85 ml-1">
-            {currentTime.toFixed(1)}s / {duration.toFixed(1)}s
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleDownloadMp4}
-          disabled={isDownloading}
-          className="px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white text-[10px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
-          title="Download verified 1080×1920 MP4 reel matching preview frame-by-frame"
-        >
-          {isDownloading ? (
-            <Loader2 size={11} className="animate-spin" />
-          ) : (
-            <Download size={11} />
-          )}
-          <span>{isDownloading ? `${downloadProgress}%` : "Download MP4"}</span>
-        </button>
       </div>
 
       {/* =====================================================================
