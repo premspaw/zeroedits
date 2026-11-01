@@ -1393,12 +1393,12 @@ export default function TalkingHeadExplainerStage({
         <>
           {/* Subtle mobile backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs lg:hidden"
+            className="fixed inset-0 z-[9998] bg-black/60 lg:hidden"
             onClick={() => setShowCCStudio(false)}
           />
 
           <div
-            className="fixed top-12 right-[412px] w-[370px] h-[calc(100vh-64px)] max-h-[760px] z-50 border-2 border-[#2A2E3D] rounded-[24px] shadow-[0_25px_80px_rgba(0,0,0,0.95)] p-4 flex flex-col justify-between text-white animate-fade-in overflow-y-auto scrollbar-thin select-none max-lg:fixed max-lg:inset-x-3 max-lg:bottom-3 max-lg:top-16 max-lg:w-auto max-lg:h-auto"
+            className="fixed top-8 bottom-6 right-[412px] w-[370px] max-h-[calc(100vh-56px)] z-[9999] border-2 border-[#2A2E3D] rounded-[24px] shadow-[0_25px_80px_rgba(0,0,0,0.98)] p-4 flex flex-col justify-between text-white animate-fade-in overflow-y-auto scrollbar-thin select-none max-lg:fixed max-lg:inset-x-3 max-lg:bottom-3 max-lg:top-14 max-lg:w-auto max-lg:max-h-[calc(100vh-32px)]"
             style={{ backgroundColor: "#0C0E14" }}
           >
             {/* Header */}
