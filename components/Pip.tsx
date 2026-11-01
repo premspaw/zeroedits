@@ -81,9 +81,14 @@ export function cleanZeeDialogue(
     return "Making the video for you...";
   }
 
+  // Starting point: analyzing / uploading / checking video
+  if (/(analyz|getting.*ready|checking your video|inspecting|uploading)/i.test(t)) {
+    return isAutoEdit ? "Analyzing your video..." : "Your video is getting ready...";
+  }
+
   // Cutting / trimming / auto-edit
   if (
-    /(clean.*video|trimming|cutting|ffmpeg|retake|silence|putting your edit|shaping the cut|checking your video|finding the best take)/i.test(t)
+    /(clean.*video|trimming|cutting|ffmpeg|retake|silence|putting your edit|shaping the cut|finding the best take)/i.test(t)
   ) {
     return isAutoEdit ? "Putting your edits together..." : "Putting your video together...";
   }
@@ -93,8 +98,11 @@ export function cleanZeeDialogue(
     return "Recreating this scene for you...";
   }
 
-  // Ready / finished
-  if (/(ready|complete|all done|finished)/i.test(t)) {
+  // Ready / finished (only when generation is genuinely complete)
+  if (
+    !/(getting|analyz|checking|inspecting|preparing|transcrib|listen)/i.test(t) &&
+    /(preview_ready|your video is ready|all done|finished|complete)/i.test(t)
+  ) {
     return "Your video is ready!";
   }
 

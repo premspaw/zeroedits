@@ -2167,7 +2167,7 @@ export default function ProperMobileResponsiveChat() {
       }
 
       setIsGenerating(true);
-      setGeneratingStep("Getting your video ready");
+      setGeneratingStep("Analyzing your video...");
 
       const userNote = input.trim();
       const userScriptContent = editScript.trim();
@@ -2211,7 +2211,7 @@ export default function ProperMobileResponsiveChat() {
         }
         formData.append("templateId", autoEditTemplate === "auto" ? "storyExplainer" : autoEditTemplate);
 
-        setGeneratingStep("Getting your video ready");
+        setGeneratingStep("Analyzing your video...");
 
         // Poll run status to update UI step in real-time as Wonder AI processes stages
         pollTimer = setInterval(async () => {
