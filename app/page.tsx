@@ -805,7 +805,7 @@ function PreviewCard({
     );
   }
 
-  if (isGenerating && !sparkCode && !storyboard) {
+  if (isGenerating && !activeVideoUrl) {
     const stageMood = inferPipMoodFromContext(generatingStep, "thinking");
     const stageAction = stageMood === "thinking" ? "spin-up" : stageMood === "idea" ? "spin-right" : "float";
     const cleanSpeech = cleanZeeDialogue(generatingStep, stageMood);
@@ -853,7 +853,7 @@ function PreviewCard({
   if (sparkCode || errorMessage || storyboard) {
     return (
       <div
-        className={`aspect-[9/16] w-full rounded-[22px] ${isGenerating ? "border-2 border-[#1E2028] bg-[#0B0C10]" : "border border-[#D5D2C8]"} shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative ${compact ? "scale-[0.98]" : ""}`}
+        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#1E2028] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.6)] overflow-hidden relative bg-[#0B0C10] ${compact ? "scale-[0.98]" : ""}`}
       >
         <SparkLiveRunner
           code={sparkCode}
@@ -888,8 +888,8 @@ function PreviewCard({
 
   return (
     <div
-      className={`aspect-[9/16] w-full rounded-[22px] border border-[#D5D2C8] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative ${textColor} ${compact ? "scale-[0.98]" : ""}`}
-      style={{ perspective: "1000px", backgroundColor: cardBg }}
+      className={`aspect-[9/16] w-full rounded-[22px] border-2 ${isGenerating ? "border-[#1E2028] bg-[#0B0C10]" : "border-[#D5D2C8]"} shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative ${textColor} ${compact ? "scale-[0.98]" : ""}`}
+      style={{ perspective: "1000px", backgroundColor: isGenerating ? "#0B0C10" : cardBg }}
     >
       {/* Paper texture overlay */}
       {isPaper && (

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useId } from "react";
 import { Play, Pause, RotateCcw, Maximize2, Minimize2, Download, Loader2, AlertCircle, RefreshCw, Move } from "lucide-react";
 import { createSparkPreviewDocument } from "./spark-preview-document";
-import Pip from "./Pip";
+import Pip, { inferPipMoodFromContext, cleanZeeDialogue } from "./Pip";
 
 interface SparkLiveRunnerProps {
   code: string;
@@ -184,7 +184,7 @@ export default function SparkLiveRunner({
   };
 
   return (
-    <div ref={containerRef} className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] ${(isGenerating || !isLoaded) ? "bg-[#0B0C10] border-[#1E2028]" : "bg-[#ECEAE3] border-[#D5D2C8]"} ${className}`} style={{ aspectRatio }}>
+    <div ref={containerRef} className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] bg-[#0B0C10] border-2 border-[#1E2028] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] text-white ${className}`} style={{ aspectRatio }}>
       <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between">
         <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/60 border border-white/10 text-white">
           <span className={`w-2 h-2 rounded-full ${visibleError ? "bg-rose-400" : isLoaded ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
@@ -228,18 +228,18 @@ export default function SparkLiveRunner({
           </div>
         )}
         {visibleError ? (
-          <div className="absolute inset-0 z-20 bg-[#F7F5EF] text-[#141414] px-5 pt-14 pb-5 flex flex-col items-center justify-center text-center" role="alert">
+          <div className="absolute inset-0 z-20 bg-[#12141C] text-white px-5 pt-14 pb-5 flex flex-col items-center justify-center text-center" role="alert">
             <AlertCircle size={28} className="text-rose-500 mb-3 shrink-0" />
-            <h3 className="serif text-[22px] mb-2 text-[#141414]">Preview couldn’t finish</h3>
-            <p className="text-[12px] text-[#6B6A64] max-w-[300px] leading-relaxed max-h-40 overflow-y-auto break-words">{visibleError}</p>
+            <h3 className="serif text-[22px] mb-2 text-white">Preview couldn’t finish</h3>
+            <p className="text-[12px] text-white/60 max-w-[300px] leading-relaxed max-h-40 overflow-y-auto break-words">{visibleError}</p>
             <div className="flex flex-wrap justify-center gap-2 mt-4">
               {!errorMessage && (
-                <button onClick={() => setReloadKey((previous) => previous + 1)} className="px-3 py-2 rounded-full bg-[#ECEAE3] border border-[#D5D2C8] text-[#141414] text-[11px] flex items-center gap-1.5">
+                <button onClick={() => setReloadKey((previous) => previous + 1)} className="px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white text-[11px] flex items-center gap-1.5 transition">
                   <RotateCcw size={12} /> Reload preview
                 </button>
               )}
               {onRetry && (
-                <button onClick={onRetry} className="px-3 py-2 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white text-[11px] flex items-center gap-1.5 shadow-xs">
+                <button onClick={onRetry} className="px-3 py-2 rounded-full bg-[#E4491B] hover:bg-[#C93D14] text-white text-[11px] flex items-center gap-1.5 shadow-xs transition">
                   <RefreshCw size={12} /> Regenerate video
                 </button>
               )}
@@ -247,14 +247,26 @@ export default function SparkLiveRunner({
           </div>
         ) : (isGenerating || !isLoaded) && (
           <div className="absolute inset-0 z-20 bg-[#0B0C10] text-white flex flex-col items-center justify-center p-6 text-center select-none" role="status">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(228,73,27,0.12)_0%,transparent_65%)] pointer-events-none" />
-            <Pip
-              mood="writing"
-              size={64}
-              showDialogue={true}
-              userInstruction={topic}
-              dialogue={generatingStep || "Adding motion to your video"}
-            />
+            {/* Ambient Dark Glow Background */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(228,73,27,0.14)_0%,transparent_65%)] pointer-events-none" />
+            <div className="absolute inset-0 opacity-[0.035] pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
+
+            <div className="w-full max-w-[270px] flex flex-col items-center relative z-10">
+              <Pip
+                mood={inferPipMoodFromContext(generatingStep, "thinking")}
+                size={80}
+                showDialogue={true}
+                userInstruction={topic}
+                dialogue={cleanZeeDialogue(generatingStep, inferPipMoodFromContext(generatingStep, "thinking"), false)}
+              />
+            </div>
+
+            {/* Subtle Progress Bar */}
+            <div className="absolute bottom-3.5 inset-x-5 flex items-center justify-center z-10">
+              <div className="w-24 h-1 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-transparent via-[#E4491B] to-transparent w-full animate-pulse" />
+              </div>
+            </div>
           </div>
         )}
       </div>
