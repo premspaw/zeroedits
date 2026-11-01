@@ -184,7 +184,7 @@ export default function SparkLiveRunner({
   };
 
   return (
-    <div ref={containerRef} className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] bg-[#ECEAE3] border border-[#D5D2C8] ${className}`} style={{ aspectRatio }}>
+    <div ref={containerRef} className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] ${(isGenerating || !isLoaded) ? "bg-[#0B0C10] border-[#1E2028]" : "bg-[#ECEAE3] border-[#D5D2C8]"} ${className}`} style={{ aspectRatio }}>
       <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between">
         <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/60 border border-white/10 text-white">
           <span className={`w-2 h-2 rounded-full ${visibleError ? "bg-rose-400" : isLoaded ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
@@ -246,7 +246,8 @@ export default function SparkLiveRunner({
             </div>
           </div>
         ) : (isGenerating || !isLoaded) && (
-          <div className="absolute inset-0 z-20 bg-[#F7F5EF] text-[#141414] flex flex-col items-center justify-center p-6 text-center" role="status">
+          <div className="absolute inset-0 z-20 bg-[#0B0C10] text-white flex flex-col items-center justify-center p-6 text-center select-none" role="status">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(228,73,27,0.12)_0%,transparent_65%)] pointer-events-none" />
             <Pip
               mood="writing"
               size={64}

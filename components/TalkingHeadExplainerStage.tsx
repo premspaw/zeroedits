@@ -199,6 +199,148 @@ export function renderContextualIcon(
   }
 }
 
+/** Visual Mosaic Previews for all 10 caption styles */
+const MOSAIC_PREVIEWS: Record<
+  CaptionStyleId,
+  {
+    title: string;
+    tagline: string;
+    badgeBg: string;
+    badgeBorder: string;
+    renderPreview: () => React.ReactNode;
+  }
+> = {
+  hormozi: {
+    title: "Hormozi Pop",
+    tagline: "Bold Montserrat 900 · High Retention",
+    badgeBg: "bg-yellow-400/10",
+    badgeBorder: "border-yellow-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 font-black uppercase tracking-tight text-[10.5px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+        <span className="text-white drop-shadow-[0_1px_2px_#000]">SCALE</span>
+        <span className="text-[#FFE814] bg-black/60 px-1 py-0.5 rounded drop-shadow-[0_1px_2px_#000]">VIRAL</span>
+        <span className="text-[#00FF66] drop-shadow-[0_1px_2px_#000]">OUTPUT</span>
+      </div>
+    ),
+  },
+  beast: {
+    title: "Beast 3D",
+    tagline: "Heavy 3D Pop · MrBeast Energy",
+    badgeBg: "bg-amber-400/10",
+    badgeBorder: "border-amber-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 font-black uppercase text-[11px] tracking-wide" style={{ fontFamily: "Anton, sans-serif" }}>
+        <span className="text-[#FFE600] drop-shadow-[0_2px_0px_#000]">100%</span>
+        <span className="text-white drop-shadow-[0_2px_0px_#000]">INSANE</span>
+        <span className="text-[#FFE600] drop-shadow-[0_2px_0px_#000]">HOOK</span>
+      </div>
+    ),
+  },
+  pinterest: {
+    title: "Pinterest",
+    tagline: "DM Serif Display · Editorial Grace",
+    badgeBg: "bg-stone-400/10",
+    badgeBorder: "border-stone-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 font-serif italic text-[11px] tracking-normal">
+        <span className="text-[#FFF9F0]">modern</span>
+        <span className="text-[#E6C687] font-semibold underline decoration-[#E6C687]/50">aesthetic</span>
+        <span className="text-[#FFF9F0]/80">journey</span>
+      </div>
+    ),
+  },
+  pill: {
+    title: "Pill Capsule",
+    tagline: "Frosted Pill · Active Word Glow",
+    badgeBg: "bg-emerald-400/10",
+    badgeBorder: "border-emerald-400/40",
+    renderPreview: () => (
+      <div className="px-2 py-0.5 rounded-full bg-black/80 border border-white/30 backdrop-blur-sm flex items-center gap-1 text-[9.5px] font-bold">
+        <span className="text-white/80">SMART</span>
+        <span className="text-[#FFE814] font-extrabold">FOCUSED</span>
+        <span className="text-white/80">MOVE</span>
+      </div>
+    ),
+  },
+  neon: {
+    title: "Cyber Neon",
+    tagline: "Electric Cyan Glow · High Voltage",
+    badgeBg: "bg-cyan-400/10",
+    badgeBorder: "border-cyan-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 uppercase tracking-wider text-[10.5px] font-extrabold">
+        <span className="text-white drop-shadow-[0_0_8px_#00F0FF]">FUTURE</span>
+        <span className="text-[#00F0FF] drop-shadow-[0_0_10px_#00F0FF]">NEON</span>
+        <span className="text-white drop-shadow-[0_0_8px_#00F0FF]">GLOW</span>
+      </div>
+    ),
+  },
+  cinzel: {
+    title: "Cinzel Gold",
+    tagline: "Roman Serif · Luxury Metallic Gold",
+    badgeBg: "bg-yellow-500/10",
+    badgeBorder: "border-yellow-500/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1.5 uppercase tracking-[0.18em] text-[9.5px] font-serif font-bold">
+        <span className="text-[#FAF5E8]/80">LEGACY</span>
+        <span className="text-[#E5C378] font-extrabold drop-shadow-[0_1px_3px_rgba(229,195,120,0.5)]">EMPIRE</span>
+      </div>
+    ),
+  },
+  editorial: {
+    title: "Editorial",
+    tagline: "Bodoni Moda · High Fashion Noir",
+    badgeBg: "bg-rose-400/10",
+    badgeBorder: "border-rose-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 font-serif italic text-[11px]">
+        <span className="text-white">The</span>
+        <span className="text-[#E5A88B] font-bold">Refined</span>
+        <span className="text-white/80">Perspective</span>
+      </div>
+    ),
+  },
+  trailer: {
+    title: "Trailer",
+    tagline: "Impactful Block Caps · Cinematic Trailer",
+    badgeBg: "bg-red-500/10",
+    badgeBorder: "border-red-500/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 uppercase tracking-[0.15em] text-[10px] font-black" style={{ fontFamily: "Anton, sans-serif" }}>
+        <span className="text-white">DON&apos;T</span>
+        <span className="text-[#FF2D20] drop-shadow-[0_0_6px_rgba(255,45,32,0.8)]">MISS</span>
+        <span className="text-white">THIS</span>
+      </div>
+    ),
+  },
+  clean: {
+    title: "Minimal Clean",
+    tagline: "Inter SemiBold · Professional Neutral",
+    badgeBg: "bg-blue-400/10",
+    badgeBorder: "border-blue-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 text-[10.5px] font-medium text-white/90">
+        <span className="bg-white/10 px-1 rounded">simple</span>
+        <span>clear</span>
+        <span className="text-sky-300 font-semibold">captions</span>
+      </div>
+    ),
+  },
+  whisper: {
+    title: "Whisper Glow",
+    tagline: "Dynamic Karaoke · Active Word Light",
+    badgeBg: "bg-purple-400/10",
+    badgeBorder: "border-purple-400/40",
+    renderPreview: () => (
+      <div className="flex items-center gap-1 text-[10.5px] font-light text-white/50">
+        <span>every</span>
+        <span className="text-white font-bold drop-shadow-[0_0_6px_#FFF] scale-105 px-0.5">word</span>
+        <span>illuminated</span>
+      </div>
+    ),
+  },
+};
+
 interface TalkingHeadExplainerStageProps {
   cleanVideoUrl?: string;
   finalVideoUrl?: string;
@@ -260,7 +402,7 @@ export default function TalkingHeadExplainerStage({
   // CC Subtitles Studio State
   const [captionStyleId, setCaptionStyleId] = useState<CaptionStyleId>("hormozi");
   const [captionSizeScale, setCaptionSizeScale] = useState<number>(1.0);
-  const [showCCStudio, setShowCCStudio] = useState<boolean>(false);
+  const [showCCStudio, setShowCCStudio] = useState<boolean>(true);
   const [customWords, setCustomWords] = useState<WordItem[] | null>(null);
   const [customTranscriptInput, setCustomTranscriptInput] = useState<string>("");
   const [showTranscriptPasteBox, setShowTranscriptPasteBox] = useState<boolean>(false);
@@ -935,7 +1077,7 @@ export default function TalkingHeadExplainerStage({
          ===================================================================== */}
       <div
         ref={containerRef}
-        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#1E2028] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.6)] overflow-hidden relative bg-[#0B0C10] select-none flex flex-col items-center justify-center ${
+        className={`aspect-[9/16] w-full max-h-[490px] max-w-[276px] mx-auto rounded-[22px] border-2 border-[#1E2028] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.6)] overflow-hidden relative bg-[#0B0C10] select-none flex flex-col items-center justify-center ${
           isDraggingCaptions ? "cursor-grabbing" : ""
         }`}
       >
@@ -1035,16 +1177,29 @@ export default function TalkingHeadExplainerStage({
                   (Scene {activeSceneIndex + 1}/{activeScenes.length})
                 </span>
               </div>
-              {hiddenCalloutIds.size > 0 && (
-                <button
-                  type="button"
-                  onClick={handleRestoreAll}
-                  className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <RefreshCw size={9} />
-                  <span>Restore ({hiddenCalloutIds.size})</span>
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {onRecreateScene && (
+                  <button
+                    type="button"
+                    onClick={() => setRecreateModalSceneIdx(activeSceneIndex)}
+                    className="px-2 py-0.5 rounded-full bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black text-[9px] font-bold flex items-center gap-1 cursor-pointer transition shadow-xs"
+                    title={`Pin & Recreate Scene ${activeSceneIndex + 1}`}
+                  >
+                    <Sparkles size={9} />
+                    <span>Recreate S{activeSceneIndex + 1}</span>
+                  </button>
+                )}
+                {hiddenCalloutIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRestoreAll}
+                    className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={9} />
+                    <span>Restore ({hiddenCalloutIds.size})</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Interactive Callout Bounding Capsule */}
@@ -1250,254 +1405,6 @@ export default function TalkingHeadExplainerStage({
           </div>
         )}
 
-        {/* =====================================================================
-            CC SUBTITLES STUDIO OVERLAY (Opens when clicking CC)
-           ===================================================================== */}
-        {showCCStudio && (
-          <div className="absolute inset-0 z-50 bg-[#0C0E14]/95 backdrop-blur-md p-3.5 flex flex-col justify-between text-white animate-fade-in overflow-y-auto scrollbar-thin select-none">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/15 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-amber-400 text-black grid place-items-center font-black text-[11px]">
-                  CC
-                </div>
-                <div>
-                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                    <span>Subtitle Studio</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-400/20 text-amber-300 font-mono">
-                      {CAPTION_STYLES[captionStyleId]?.label}
-                    </span>
-                  </div>
-                  <div className="text-[9px] text-white/50">
-                    Style, scale, and move captions in real-time
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCCStudio(false)}
-                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer transition"
-              >
-                <X size={12} />
-              </button>
-            </div>
-
-            {/* Content Section: 1. Position & 2. Size Stepper */}
-            <div className="flex flex-col gap-2.5 py-2">
-              {/* Position Row */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold uppercase text-sky-400 tracking-wider">
-                    Position
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setCaptionYPercent((prev) => Math.max(12, +(prev - 3).toFixed(1)))}
-                      className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[9px] font-mono flex items-center gap-0.5 cursor-pointer"
-                      title="Nudge Up"
-                    >
-                      <ArrowUp size={10} /> Up
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCaptionYPercent((prev) => Math.min(88, +(prev + 3).toFixed(1)))}
-                      className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[9px] font-mono flex items-center gap-0.5 cursor-pointer"
-                      title="Nudge Down"
-                    >
-                      <ArrowDown size={10} /> Down
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1">
-                  {(
-                    [
-                      ["top", "Top", 14.5],
-                      ["center", "Center", 50.0],
-                      ["bottom", "Bottom", 84.6],
-                    ] as const
-                  ).map(([pos, label, yPct]) => {
-                    const isSel = captionPosition === pos;
-                    return (
-                      <button
-                        key={pos}
-                        type="button"
-                        onClick={() => {
-                          setCaptionPosition(pos);
-                          setCaptionYPercent(yPct);
-                          setCaptionYOffset(0);
-                        }}
-                        className={`py-1 rounded-lg text-[9px] font-bold transition cursor-pointer border ${
-                          isSel
-                            ? "bg-sky-500 text-black border-sky-400 font-extrabold shadow-md"
-                            : "bg-white/5 text-white/70 hover:bg-white/15 border-transparent"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Size Row (NO slider - Easy Steppers & Chips) */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold uppercase text-amber-400 tracking-wider">
-                    Size
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setCaptionSizeScale((s) => Math.max(0.7, +(s - 0.1).toFixed(1)))}
-                      className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer active:scale-95"
-                      title="Smaller"
-                    >
-                      <Minus size={11} />
-                    </button>
-                    <span className="mono text-[10px] font-bold text-amber-300 min-w-[38px] text-center">
-                      {Math.round(captionSizeScale * 100)}%
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setCaptionSizeScale((s) => Math.min(1.8, +(s + 0.1).toFixed(1)))}
-                      className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer active:scale-95"
-                      title="Bigger"
-                    >
-                      <Plus size={11} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1">
-                  {[
-                    { label: "S (80%)", scale: 0.8 },
-                    { label: "M (100%)", scale: 1.0 },
-                    { label: "L (125%)", scale: 1.25 },
-                    { label: "XL (150%)", scale: 1.5 },
-                  ].map((preset) => {
-                    const isSel = Math.abs(captionSizeScale - preset.scale) < 0.05;
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => setCaptionSizeScale(preset.scale)}
-                        className={`py-1 rounded-lg text-[9px] font-bold transition cursor-pointer border ${
-                          isSel
-                            ? "bg-amber-400 text-black border-amber-300 font-extrabold shadow-md"
-                            : "bg-white/5 text-white/70 hover:bg-white/15 border-transparent"
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Subtitle Style Picker (10 Presets from Bundle) */}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-mono font-bold uppercase text-white/60 tracking-wider">
-                  Select Subtitle Style (10 Presets)
-                </span>
-                <div className="grid grid-cols-2 gap-1.5 max-h-[160px] overflow-y-auto pr-0.5 scrollbar-thin">
-                  {CAPTION_STYLE_LIST.map((style) => {
-                    const isSel = captionStyleId === style.id;
-                    return (
-                      <div
-                        key={style.id}
-                        onClick={() => setCaptionStyleId(style.id)}
-                        className={`p-1.5 rounded-xl border transition cursor-pointer text-left flex flex-col justify-between gap-0.5 ${
-                          isSel
-                            ? "bg-amber-400/20 border-amber-400 ring-1 ring-amber-400 shadow-md"
-                            : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={`text-[10px] font-bold ${isSel ? "text-amber-300 font-black" : "text-white"}`}>
-                            {style.label}
-                          </span>
-                          {isSel && <Check size={10} className="text-amber-400 shrink-0" />}
-                        </div>
-                        <p className="text-[8px] text-white/60 line-clamp-1 leading-tight">
-                          {style.description}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Custom CC / Transcript Accordion */}
-              <div className="border border-white/10 bg-black/40 rounded-xl p-2 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-mono font-bold text-white/80">
-                    Custom Transcript / CC Codes
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowTranscriptPasteBox(!showTranscriptPasteBox)}
-                    className="text-[9px] text-amber-400 hover:underline cursor-pointer"
-                  >
-                    {showTranscriptPasteBox ? "Hide" : "Paste Codes"}
-                  </button>
-                </div>
-
-                {showTranscriptPasteBox && (
-                  <div className="flex flex-col gap-1.5 animate-fade-in pt-1">
-                    <textarea
-                      rows={3}
-                      value={customTranscriptInput}
-                      onChange={(e) => setCustomTranscriptInput(e.target.value)}
-                      placeholder="Paste Whisper JSON, SRT, or plain transcript text here..."
-                      className="bg-black/80 border border-white/20 rounded-lg p-1.5 text-[9px] font-mono text-white outline-none focus:border-amber-400 resize-none"
-                    />
-                    <div className="flex items-center justify-end gap-1.5">
-                      {customWords && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustomWords(null);
-                            setCustomTranscriptInput("");
-                          }}
-                          className="px-2 py-0.5 rounded text-[9px] bg-white/10 hover:bg-white/20 text-white cursor-pointer"
-                        >
-                          Reset
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const parsed = parseCustomTranscriptInput(customTranscriptInput, duration);
-                          if (parsed.length > 0) {
-                            setCustomWords(parsed);
-                            setShowTranscriptPasteBox(false);
-                          }
-                        }}
-                        className="px-2.5 py-0.5 rounded text-[9px] font-bold bg-amber-400 hover:bg-amber-300 text-black cursor-pointer shadow-sm"
-                      >
-                        Apply Subtitles
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Done button */}
-            <div className="border-t border-white/15 pt-2 flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setShowCCStudio(false)}
-                className="w-full py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-[11px] shadow-lg cursor-pointer transition active:scale-98"
-              >
-                Apply & Done
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Export Progress Overlay */}
         {isDownloading && (
           <div className="absolute inset-0 z-45 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white select-none">
@@ -1527,69 +1434,286 @@ export default function TalkingHeadExplainerStage({
       </div>
 
       {/* =====================================================================
-          3. EXTERNAL SCENE TIMELINE SCRUBBER (Placed directly below 9:16 screen)
+          3. EXTERNAL CC SUBTITLE STUDIO & MOSAIC PICKER (Below 9:16 Preview)
          ===================================================================== */}
-      <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2.5 flex flex-col gap-1.5 shadow-md text-white">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400" />
-            <span className="mono text-[10px] font-extrabold uppercase text-amber-300 tracking-wider">
-              Scene Timeline
-            </span>
-            <span className="mono text-[9px] text-white/50">
-              ({activeSceneIndex + 1}/{activeScenes.length})
-            </span>
-          </div>
-          <span className="mono text-[8px] text-white/40">
-            Click scene to seek & edit
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-thin">
-          {activeScenes.map((sc, idx) => {
-            const isActive = idx === activeSceneIndex;
-            const durSec = Math.max(0.5, sc.end - sc.start).toFixed(1);
-            return (
-              <div
-                key={sc.id || idx}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0 transition cursor-pointer border ${
-                  isActive
-                    ? "bg-white/20 text-white border-white/40 shadow-md ring-1 ring-white/30"
-                    : "bg-white/5 text-white/75 hover:bg-white/10 hover:text-white border-transparent"
-                }`}
-                onClick={() => handleSeekScene(idx)}
-              >
-                <div className="flex flex-col text-left">
-                  <div className="flex items-center gap-1">
-                    <span className="mono text-[9px] font-black text-amber-400">
-                      S{idx + 1}
-                    </span>
-                    <span className="mono text-[8px] text-white/60">
-                      {durSec}s
-                    </span>
-                  </div>
-                  <span className="text-[9px] font-bold truncate max-w-[85px]">
-                    {sc.headlineText || `Scene ${idx + 1}`}
+      {showCCStudio ? (
+        <div className="w-full bg-[#12141C] border border-amber-400/30 rounded-2xl p-3 flex flex-col gap-2.5 shadow-xl text-white animate-fade-in select-none">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-amber-400 text-black grid place-items-center font-black text-[11px]">
+                CC
+              </div>
+              <div className="flex flex-col">
+                <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                  <span>Subtitle Studio</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-mono font-bold">
+                    {CAPTION_STYLES[captionStyleId]?.label || captionStyleId}
                   </span>
                 </div>
-
-                {/* Pin Recreate button per scene */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRecreateModalSceneIdx(idx);
-                  }}
-                  className="p-1 rounded-md bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black transition cursor-pointer"
-                  title={`Pin & Recreate Scene ${idx + 1}`}
-                >
-                  <Sparkles size={11} />
-                </button>
+                <span className="text-[8.5px] text-white/50">
+                  Unobstructed preview & 100% MP4 export match
+                </span>
               </div>
-            );
-          })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCCStudio(false)}
+              className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer transition"
+            >
+              <X size={10} />
+              <span>Close</span>
+            </button>
+          </div>
+
+          {/* Quick Position & Size Controls */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* Position Box */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[9.5px] font-mono font-bold uppercase text-sky-400 tracking-wider">
+                  Position ({captionYPercent.toFixed(0)}%)
+                </span>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCaptionYPercent((prev) => Math.max(12, +(prev - 3).toFixed(1)))}
+                    className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[8.5px] font-mono flex items-center gap-0.5 cursor-pointer active:scale-95"
+                    title="Nudge Up 3%"
+                  >
+                    <ArrowUp size={9} /> Up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCaptionYPercent((prev) => Math.min(88, +(prev + 3).toFixed(1)))}
+                    className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[8.5px] font-mono flex items-center gap-0.5 cursor-pointer active:scale-95"
+                    title="Nudge Down 3%"
+                  >
+                    <ArrowDown size={9} /> Down
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1">
+                {(
+                  [
+                    ["top", "Top", 14.5],
+                    ["center", "Center", 50.0],
+                    ["bottom", "Bottom", 84.6],
+                  ] as const
+                ).map(([pos, label, yPct]) => {
+                  const isSel = captionPosition === pos;
+                  return (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => {
+                        setCaptionPosition(pos);
+                        setCaptionYPercent(yPct);
+                        setCaptionYOffset(0);
+                      }}
+                      className={`py-1 rounded-lg text-[9px] font-bold transition cursor-pointer border text-center ${
+                        isSel
+                          ? "bg-sky-500 text-black border-sky-400 font-extrabold shadow-sm"
+                          : "bg-white/5 text-white/70 hover:bg-white/15 border-transparent"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Size Box (Steppers + Presets, No Sliders) */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[9.5px] font-mono font-bold uppercase text-amber-400 tracking-wider">
+                  Size ({Math.round(captionSizeScale * 100)}%)
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCaptionSizeScale((s) => Math.max(0.7, +(s - 0.1).toFixed(1)))}
+                    className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer active:scale-95"
+                    title="Smaller"
+                  >
+                    <Minus size={9} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCaptionSizeScale((s) => Math.min(1.8, +(s + 0.1).toFixed(1)))}
+                    className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer active:scale-95"
+                    title="Bigger"
+                  >
+                    <Plus size={9} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  { label: "S", scale: 0.8 },
+                  { label: "M", scale: 1.0 },
+                  { label: "L", scale: 1.25 },
+                  { label: "XL", scale: 1.5 },
+                ].map((preset) => {
+                  const isSel = Math.abs(captionSizeScale - preset.scale) < 0.05;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setCaptionSizeScale(preset.scale)}
+                      className={`py-1 rounded-lg text-[9px] font-bold transition cursor-pointer border text-center ${
+                        isSel
+                          ? "bg-amber-400 text-black border-amber-300 font-extrabold shadow-sm"
+                          : "bg-white/5 text-white/70 hover:bg-white/15 border-transparent"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Mosaic Style Cards (10 Presets) */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between px-0.5">
+              <span className="text-[9.5px] font-mono font-bold uppercase text-white/70 tracking-wider">
+                Select Style (Mosaic Previews)
+              </span>
+              <span className="text-[8.5px] text-amber-400 font-mono">
+                {captionStyleId.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-0.5 scrollbar-thin">
+              {CAPTION_STYLE_LIST.map((style) => {
+                const isSel = captionStyleId === style.id;
+                const mosaic = MOSAIC_PREVIEWS[style.id];
+                return (
+                  <div
+                    key={style.id}
+                    onClick={() => setCaptionStyleId(style.id)}
+                    className={`rounded-xl border p-2 transition cursor-pointer flex flex-col justify-between gap-1.5 relative overflow-hidden group ${
+                      isSel
+                        ? "bg-amber-400/15 border-amber-400 ring-2 ring-amber-400/80 shadow-lg shadow-amber-500/10"
+                        : "bg-black/40 border-white/10 hover:bg-white/10 hover:border-white/25"
+                    }`}
+                  >
+                    {/* Visual Mosaic Tile */}
+                    <div className="w-full h-8 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center overflow-hidden px-1">
+                      {mosaic ? mosaic.renderPreview() : <span className="text-[10px] font-bold text-white">{style.label}</span>}
+                    </div>
+
+                    {/* Style Meta */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className={`text-[10px] font-extrabold ${isSel ? "text-amber-300" : "text-white"}`}>
+                          {style.label}
+                        </span>
+                        <span className="text-[7.5px] text-white/50 line-clamp-1">
+                          {mosaic?.tagline || style.description}
+                        </span>
+                      </div>
+                      {isSel && (
+                        <div className="w-4 h-4 rounded-full bg-amber-400 text-black grid place-items-center shrink-0">
+                          <Check size={9} strokeWidth={3} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Transcript / CC Codes Accordion */}
+          <div className="border border-white/10 bg-black/40 rounded-xl p-2 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-mono font-bold text-white/80">
+                Custom Transcript / CC Codes
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTranscriptPasteBox(!showTranscriptPasteBox)}
+                className="text-[9px] text-amber-400 hover:underline cursor-pointer font-bold"
+              >
+                {showTranscriptPasteBox ? "Hide" : "Paste Codes"}
+              </button>
+            </div>
+
+            {showTranscriptPasteBox && (
+              <div className="flex flex-col gap-1.5 animate-fade-in pt-1">
+                <textarea
+                  rows={3}
+                  value={customTranscriptInput}
+                  onChange={(e) => setCustomTranscriptInput(e.target.value)}
+                  placeholder="Paste Whisper JSON, SRT, or plain transcript text here..."
+                  className="bg-black/80 border border-white/20 rounded-lg p-1.5 text-[9px] font-mono text-white outline-none focus:border-amber-400 resize-none"
+                />
+                <div className="flex items-center justify-end gap-1.5">
+                  {customWords && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomWords(null);
+                        setCustomTranscriptInput("");
+                      }}
+                      className="px-2 py-0.5 rounded text-[9px] bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parsed = parseCustomTranscriptInput(customTranscriptInput, duration);
+                      if (parsed.length > 0) {
+                        setCustomWords(parsed);
+                        setShowTranscriptPasteBox(false);
+                      }
+                    }}
+                    className="px-2.5 py-0.5 rounded text-[9px] font-bold bg-amber-400 hover:bg-amber-300 text-black cursor-pointer shadow-sm"
+                  >
+                    Apply Subtitles
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        /* Collapsed Minimal CC Bar */
+        <div className="w-full bg-[#12141C] border border-white/10 rounded-2xl p-2.5 flex items-center justify-between text-white shadow-md">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-amber-400 text-black grid place-items-center font-black text-[10px]">
+              CC
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-white flex items-center gap-1.5">
+                <span>Subtitles:</span>
+                <span className="text-amber-400 font-mono capitalize">
+                  {CAPTION_STYLES[captionStyleId]?.label || captionStyleId}
+                </span>
+              </span>
+              <span className="text-[8px] text-white/50">
+                {captionPosition.toUpperCase()} ({captionYPercent.toFixed(0)}%) • Size {Math.round(captionSizeScale * 100)}%
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCCStudio(true)}
+            className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-[9px] flex items-center gap-1 cursor-pointer transition shadow"
+          >
+            <Sliders size={10} />
+            <span>Edit CC & Styles</span>
+          </button>
+        </div>
+      )}
 
       {/* =====================================================================
           8. INLINE CALLOUT TEXT EDITOR MODAL

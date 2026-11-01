@@ -853,7 +853,7 @@ function PreviewCard({
   if (sparkCode || errorMessage || storyboard) {
     return (
       <div
-        className={`aspect-[9/16] w-full rounded-[22px] border border-[#D5D2C8] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative ${compact ? "scale-[0.98]" : ""}`}
+        className={`aspect-[9/16] w-full rounded-[22px] ${isGenerating ? "border-2 border-[#1E2028] bg-[#0B0C10]" : "border border-[#D5D2C8]"} shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative ${compact ? "scale-[0.98]" : ""}`}
       >
         <SparkLiveRunner
           code={sparkCode}
