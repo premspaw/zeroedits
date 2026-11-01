@@ -1398,7 +1398,8 @@ export default function TalkingHeadExplainerStage({
           />
 
           <div
-            className="fixed top-12 right-[412px] w-[370px] h-[calc(100vh-64px)] max-h-[760px] z-50 bg-[#0C0E14]/98 border border-white/20 rounded-[24px] shadow-[0_24px_70px_rgba(0,0,0,0.85)] backdrop-blur-xl p-4 flex flex-col justify-between text-white animate-fade-in overflow-y-auto scrollbar-thin select-none max-lg:fixed max-lg:inset-x-3 max-lg:bottom-3 max-lg:top-16 max-lg:w-auto max-lg:h-auto"
+            className="fixed top-12 right-[412px] w-[370px] h-[calc(100vh-64px)] max-h-[760px] z-50 border-2 border-[#2A2E3D] rounded-[24px] shadow-[0_25px_80px_rgba(0,0,0,0.95)] p-4 flex flex-col justify-between text-white animate-fade-in overflow-y-auto scrollbar-thin select-none max-lg:fixed max-lg:inset-x-3 max-lg:bottom-3 max-lg:top-16 max-lg:w-auto max-lg:h-auto"
+            style={{ backgroundColor: "#0C0E14" }}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-white/15 pb-2.5">
@@ -1431,7 +1432,7 @@ export default function TalkingHeadExplainerStage({
             {/* Content Section: 1. Position & 2. Size Stepper & 3. Style Picker with Live Previews */}
             <div className="flex flex-col gap-3 py-2.5 flex-1 overflow-y-auto pr-0.5 scrollbar-thin">
               {/* Position Row */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex flex-col gap-1.5">
+              <div className="bg-[#151824] border border-[#262C3E] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono font-bold uppercase text-sky-400 tracking-wider">
                     Position ({captionYPercent.toFixed(0)}%)
@@ -1440,7 +1441,7 @@ export default function TalkingHeadExplainerStage({
                     <button
                       type="button"
                       onClick={() => setCaptionYPercent((prev) => Math.max(12, +(prev - 3).toFixed(1)))}
-                      className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[9px] font-mono flex items-center gap-0.5 cursor-pointer active:scale-95 transition"
+                      className="px-2 py-0.5 rounded bg-[#1E2333] hover:bg-[#282F45] border border-white/10 text-white text-[9px] font-mono flex items-center gap-0.5 cursor-pointer active:scale-95 transition"
                       title="Nudge Up"
                     >
                       <ArrowUp size={10} /> Up
@@ -1448,7 +1449,7 @@ export default function TalkingHeadExplainerStage({
                     <button
                       type="button"
                       onClick={() => setCaptionYPercent((prev) => Math.min(88, +(prev + 3).toFixed(1)))}
-                      className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[9px] font-mono flex items-center gap-0.5 cursor-pointer active:scale-95 transition"
+                      className="px-2 py-0.5 rounded bg-[#1E2333] hover:bg-[#282F45] border border-white/10 text-white text-[9px] font-mono flex items-center gap-0.5 cursor-pointer active:scale-95 transition"
                       title="Nudge Down"
                     >
                       <ArrowDown size={10} /> Down
@@ -1477,7 +1478,7 @@ export default function TalkingHeadExplainerStage({
                         className={`py-1.5 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
                           isSel
                             ? "bg-sky-500 text-black border-sky-400 font-extrabold shadow-md"
-                            : "bg-white/5 text-white/70 hover:bg-white/15 border-transparent"
+                            : "bg-[#1E2333] text-white/90 hover:bg-[#282F45] border-white/10"
                         }`}
                       >
                         {label}
@@ -1488,7 +1489,7 @@ export default function TalkingHeadExplainerStage({
               </div>
 
               {/* Size Row (NO slider - Easy Steppers & Chips) */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex flex-col gap-1.5">
+              <div className="bg-[#151824] border border-[#262C3E] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono font-bold uppercase text-amber-400 tracking-wider">
                     Font Size Scale
@@ -1497,7 +1498,7 @@ export default function TalkingHeadExplainerStage({
                     <button
                       type="button"
                       onClick={() => setCaptionSizeScale((s) => Math.max(0.7, +(s - 0.1).toFixed(1)))}
-                      className="w-7 h-7 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer active:scale-95 transition"
+                      className="w-7 h-7 rounded-md bg-[#1E2333] hover:bg-[#282F45] border border-white/10 text-white grid place-items-center cursor-pointer active:scale-95 transition"
                       title="Smaller"
                     >
                       <Minus size={12} />
@@ -1508,7 +1509,7 @@ export default function TalkingHeadExplainerStage({
                     <button
                       type="button"
                       onClick={() => setCaptionSizeScale((s) => Math.min(1.8, +(s + 0.1).toFixed(1)))}
-                      className="w-7 h-7 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center cursor-pointer active:scale-95 transition"
+                      className="w-7 h-7 rounded-md bg-[#1E2333] hover:bg-[#282F45] border border-white/10 text-white grid place-items-center cursor-pointer active:scale-95 transition"
                       title="Bigger"
                     >
                       <Plus size={12} />
@@ -1532,7 +1533,7 @@ export default function TalkingHeadExplainerStage({
                         className={`py-1 rounded-lg text-[9.5px] font-bold transition cursor-pointer border ${
                           isSel
                             ? "bg-amber-400 text-black border-amber-300 font-extrabold shadow-md"
-                            : "bg-white/5 text-white/70 hover:bg-white/15 border-transparent"
+                            : "bg-[#1E2333] text-white/90 hover:bg-[#282F45] border-white/10"
                         }`}
                       >
                         {preset.label}
@@ -1545,7 +1546,7 @@ export default function TalkingHeadExplainerStage({
               {/* Subtitle Style Picker (10 Presets with Live Rendered Typography Previews) */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold uppercase text-white/70 tracking-wider">
+                  <span className="text-[10px] font-mono font-bold uppercase text-white/80 tracking-wider">
                     Select Caption Style (10 Presets)
                   </span>
                   <span className="text-[9px] text-white/40">Visual font preview</span>
@@ -1558,10 +1559,10 @@ export default function TalkingHeadExplainerStage({
                       <div
                         key={style.id}
                         onClick={() => setCaptionStyleId(style.id)}
-                        className={`p-2 rounded-xl border transition cursor-pointer text-left flex flex-col justify-between gap-1.5 ${
+                        className={`p-2.5 rounded-xl border transition cursor-pointer text-left flex flex-col justify-between gap-1.5 shadow-sm ${
                           isSel
-                            ? "bg-amber-400/15 border-amber-400 ring-2 ring-amber-400/50 shadow-md"
-                            : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                            ? "bg-[#1C2234] border-2 border-amber-400 ring-2 ring-amber-400/50 shadow-md"
+                            : "bg-[#151824] border-[#262C3E] hover:bg-[#1A1F2E] hover:border-amber-400/40"
                         }`}
                       >
                         <div className="flex items-center justify-between">
@@ -1578,7 +1579,7 @@ export default function TalkingHeadExplainerStage({
                         </div>
 
                         {/* Rendered live typography preview */}
-                        <div className="w-full py-1.5 px-2 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center min-h-[34px] overflow-hidden select-none">
+                        <div className="w-full py-1.5 px-2 rounded-lg bg-[#08090E] border border-white/15 flex items-center justify-center min-h-[34px] overflow-hidden select-none">
                           {visual?.renderText()}
                         </div>
 
@@ -1592,7 +1593,7 @@ export default function TalkingHeadExplainerStage({
               </div>
 
               {/* Custom CC / Transcript Accordion */}
-              <div className="border border-white/10 bg-black/40 rounded-xl p-2.5 flex flex-col gap-1.5">
+              <div className="bg-[#151824] border border-[#262C3E] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[9.5px] font-mono font-bold text-white/80">
                     Custom Transcript / CC Codes
@@ -1613,7 +1614,7 @@ export default function TalkingHeadExplainerStage({
                       value={customTranscriptInput}
                       onChange={(e) => setCustomTranscriptInput(e.target.value)}
                       placeholder="Paste Whisper JSON, SRT, or plain transcript text here..."
-                      className="bg-black/80 border border-white/20 rounded-lg p-2 text-[9.5px] font-mono text-white outline-none focus:border-amber-400 resize-none"
+                      className="bg-[#08090E] border border-white/20 rounded-lg p-2 text-[9.5px] font-mono text-white outline-none focus:border-amber-400 resize-none"
                     />
                     <div className="flex items-center justify-end gap-1.5">
                       {customWords && (
