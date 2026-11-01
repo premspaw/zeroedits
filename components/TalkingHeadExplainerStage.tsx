@@ -169,6 +169,7 @@ export default function TalkingHeadExplainerStage({
 
   const currentTimeRef = useRef(0);
   const lastUiScrubUpdateRef = useRef(0);
+  const hasDraggedRef = useRef(false);
 
   const palette = useMemo(
     () => resolveActivePalette(paletteChoice, topic, editPlan),
@@ -280,6 +281,7 @@ export default function TalkingHeadExplainerStage({
 
     const handlePointerMove = (e: PointerEvent) => {
       if (!containerRef.current) return;
+      hasDraggedRef.current = true;
       const rect = containerRef.current.getBoundingClientRect();
       let pct = ((e.clientY - rect.top) / rect.height) * 100;
       pct = Math.max(12, Math.min(88, pct));
@@ -307,6 +309,9 @@ export default function TalkingHeadExplainerStage({
 
     const handlePointerUp = () => {
       setIsDraggingCaptions(false);
+      setTimeout(() => {
+        hasDraggedRef.current = false;
+      }, 200);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -371,6 +376,10 @@ export default function TalkingHeadExplainerStage({
   ]);
 
   const togglePlay = () => {
+    if (hasDraggedRef.current) {
+      hasDraggedRef.current = false;
+      return;
+    }
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
@@ -581,89 +590,179 @@ export default function TalkingHeadExplainerStage({
       )}
 
       {/* =====================================================================
-          1. TOP CONTROL BAR (Format Mode, Edit Toggle & Theme Swatches)
+          1. PERMANENT TOP SETTINGS TOOLBAR (Always Visible: Colors, CC Position, Slider)
          ===================================================================== */}
-      <div className="absolute top-2.5 inset-x-2.5 z-50 flex items-center justify-between gap-1.5 transition-opacity duration-200">
-        <div className="inline-flex items-center gap-1 bg-black/85 backdrop-blur-md p-1 rounded-full border border-white/15 shadow-md">
-          <button
-            type="button"
-            onClick={() => setLayoutMode("auto_reel")}
-            className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 ${
-              layoutMode === "auto_reel" ? "text-white" : "text-white/75 hover:text-white"
-            }`}
-            style={{
-              backgroundColor: layoutMode === "auto_reel" ? palette.accent : "transparent",
-            }}
-          >
-            <Film size={10} />
-            <span>Story</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setLayoutMode("speaker_only")}
-            className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 ${
-              layoutMode === "speaker_only" ? "text-white" : "text-white/75 hover:text-white"
-            }`}
-            style={{
-              backgroundColor: layoutMode === "speaker_only" ? palette.accent : "transparent",
-            }}
-          >
-            <UserCheck size={10} />
-            <span>Face</span>
-          </button>
+      <div className="absolute top-0 inset-x-0 z-50 bg-[#0B0C10]/95 backdrop-blur-md border-b border-white/15 px-2.5 py-2 flex flex-col gap-1.5 shadow-xl select-none">
+        {/* Row 1: Colors, Format Mode & Edit Mode */}
+        <div className="flex items-center justify-between gap-1.5">
+          {/* Color Palette Swatches (Always visible) */}
+          <div className="flex items-center gap-1.5 bg-white/10 px-2 py-0.5 rounded-full border border-white/15">
+            <Palette size={11} className="text-white/70 shrink-0" />
+            <div className="flex items-center gap-1">
+              {(
+                [
+                  ["editorial_warm", "#E4491B", "Warm Orange"],
+                  ["midnight_neon", "#FF5520", "Neon Flame"],
+                  ["cyber_blue", "#38BDF8", "Cyber Blue"],
+                  ["emerald_growth", "#10B981", "Emerald Growth"],
+                  ["royal_violet", "#A855F7", "Royal Violet"],
+                ] as const
+              ).map(([id, hex, label]) => {
+                const isSel = palette.id === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPaletteChoice(id);
+                    }}
+                    className={`w-4 h-4 rounded-full transition-all transform cursor-pointer flex items-center justify-center ${
+                      isSel
+                        ? "scale-125 ring-2 ring-white shadow-lg"
+                        : "opacity-75 hover:opacity-100 hover:scale-110"
+                    }`}
+                    style={{ backgroundColor: hex }}
+                    title={label}
+                  >
+                    {isSel && (
+                      <Check size={8} className="text-white drop-shadow stroke-[3]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Format Mode & Edit Toggle */}
+          <div className="flex items-center gap-1">
+            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-full border border-white/15">
+              <button
+                type="button"
+                onClick={() => setLayoutMode("auto_reel")}
+                className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
+                  layoutMode === "auto_reel"
+                    ? "bg-white text-black shadow-sm font-extrabold"
+                    : "text-white/75 hover:text-white"
+                }`}
+              >
+                Story
+              </button>
+              <button
+                type="button"
+                onClick={() => setLayoutMode("speaker_only")}
+                className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
+                  layoutMode === "speaker_only"
+                    ? "bg-white text-black shadow-sm font-extrabold"
+                    : "text-white/75 hover:text-white"
+                }`}
+              >
+                Face
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!isEditMode && videoRef.current && !videoRef.current.paused) {
+                  videoRef.current.pause();
+                  setIsPlaying(false);
+                }
+                setIsEditMode(!isEditMode);
+              }}
+              className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 border shadow-sm ${
+                isEditMode
+                  ? "bg-amber-400 text-black border-amber-300 font-extrabold"
+                  : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
+              }`}
+              title="Toggle interactive element deletion & editing"
+            >
+              <Edit3 size={10} className={isEditMode ? "text-black" : "text-amber-400"} />
+              <span>{isEditMode ? "Done" : "Edit"}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Center / Right: Interactive Edit Mode Toggle */}
-        <div className="inline-flex items-center gap-1">
+        {/* Row 2: CC Subtitle Placement & Mouse Drag Slider (Always visible!) */}
+        <div className="flex items-center justify-between gap-1.5 bg-black/60 px-2 py-1 rounded-xl border border-white/10">
+          {/* Direct Position Switching Buttons */}
+          <div className="flex items-center gap-1">
+            <span className="mono text-[9px] font-extrabold text-sky-400 uppercase">
+              CC:
+            </span>
+            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/15">
+              {(
+                [
+                  ["bottom", "Bottom", 84.6],
+                  ["center", "Center", 50.0],
+                  ["top", "Top", 14.5],
+                ] as const
+              ).map(([pos, label, yPct]) => {
+                const isSel = captionPosition === pos;
+                return (
+                  <button
+                    key={pos}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCaptionPosition(pos);
+                      setCaptionYPercent(yPct);
+                      setCaptionYOffset(0);
+                    }}
+                    className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
+                      isSel
+                        ? "bg-sky-500 text-black font-extrabold shadow-sm"
+                        : "text-white/70 hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Mouse Drag Slider */}
+          <div className="flex items-center gap-1 flex-1 max-w-[125px]">
+            <input
+              type="range"
+              min="12"
+              max="88"
+              step="0.5"
+              value={captionYPercent}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setCaptionYPercent(val);
+                setCaptionYOffset(0);
+                if (Math.abs(val - 14.5) < 5) setCaptionPosition("top");
+                else if (Math.abs(val - 50.0) < 5) setCaptionPosition("center");
+                else if (Math.abs(val - 84.6) < 5) setCaptionPosition("bottom");
+                else setCaptionPosition(val < 32 ? "top" : val < 68 ? "center" : "bottom");
+              }}
+              className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-sky-400"
+              title="Slide to move CC titles up or down with mouse"
+            />
+            <span className="mono text-[8px] font-bold text-white/70 min-w-[22px] text-right">
+              {captionYPercent.toFixed(0)}%
+            </span>
+          </div>
+
+          {/* Visibility toggle */}
           <button
             type="button"
-            onClick={() => {
-              if (!isEditMode && videoRef.current && !videoRef.current.paused) {
-                videoRef.current.pause();
-                setIsPlaying(false);
-              }
-              setIsEditMode(!isEditMode);
+            onClick={(e) => {
+              e.stopPropagation();
+              setHideCaptions(!hideCaptions);
             }}
-            className={`px-2.5 py-1 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 shadow-md border ${
-              isEditMode
-                ? "bg-amber-400 text-black border-amber-300 font-extrabold animate-pulse"
-                : "bg-black/85 text-white/90 border-white/20 hover:bg-black/95 hover:text-white"
+            className={`p-1 rounded-md text-[9px] font-bold flex items-center transition cursor-pointer ${
+              hideCaptions
+                ? "bg-rose-500/80 text-white"
+                : "bg-white/10 hover:bg-white/20 text-white"
             }`}
-            title="Toggle interactive mouse editing of callouts, captions, and scenes"
+            title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
           >
-            <Edit3 size={11} className={isEditMode ? "text-black" : "text-amber-400"} />
-            <span>{isEditMode ? "Done Editing" : "Edit Elements"}</span>
+            {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
           </button>
-
-          {/* Color Palette Swatches */}
-          <div
-            className="inline-flex items-center gap-1 bg-black/85 backdrop-blur-md px-2 py-1 rounded-full border border-white/15 shadow-md"
-            title="Customize format color palette"
-          >
-            {(
-              [
-                ["editorial_warm", "#E4491B"],
-                ["midnight_neon", "#FF5520"],
-                ["cyber_blue", "#38BDF8"],
-                ["emerald_growth", "#10B981"],
-                ["royal_violet", "#A855F7"],
-              ] as const
-            ).map(([id, hex]) => {
-              const isSel = palette.id === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setPaletteChoice(id)}
-                  className={`w-3.5 h-3.5 rounded-full transition transform cursor-pointer ${
-                    isSel ? "scale-125 ring-2 ring-white" : "opacity-75 hover:opacity-100"
-                  }`}
-                  style={{ backgroundColor: hex }}
-                  title={PALETTES[id].label}
-                />
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -707,13 +806,49 @@ export default function TalkingHeadExplainerStage({
         />
       </div>
 
+      {/* Direct On-Video Subtitle Drag Hotspot (Available even when Edit Mode is OFF) */}
+      {!hideCaptions && !isEditMode && (
+        <div
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            hasDraggedRef.current = false;
+            setIsDraggingCaptions(true);
+          }}
+          className="pointer-events-auto absolute left-6 right-6 z-25 flex items-center justify-center select-none opacity-85 hover:opacity-100 transition-opacity"
+          style={{
+            top: `${captionYPercent}%`,
+            transform: "translateY(-50%)",
+          }}
+        >
+          <div
+            className={`cursor-grab active:cursor-grabbing px-2.5 py-1 rounded-full border shadow-xl flex items-center gap-1.5 transition-all ${
+              isDraggingCaptions
+                ? "bg-sky-500 text-black border-white ring-2 ring-sky-300 scale-105"
+                : "bg-black/80 hover:bg-black/95 text-sky-300 border-sky-400/40 hover:border-sky-400"
+            }`}
+            title="Click and drag with mouse pointer to move CC titles up or down"
+          >
+            <GripVertical
+              size={12}
+              className={isDraggingCaptions ? "text-black" : "text-sky-400"}
+            />
+            <span className="text-[9px] font-mono font-bold uppercase tracking-wider">
+              {isDraggingCaptions
+                ? `CC: ${captionYPercent.toFixed(0)}%`
+                : `↕ Drag CC (${captionPosition})`}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* =====================================================================
           4. INTERACTIVE MOUSE EDIT OVERLAYS (Active in Edit Mode)
          ===================================================================== */}
       {isEditMode && (
         <div className="absolute inset-0 z-35 pointer-events-none flex flex-col justify-between p-3">
           {/* Top Banner Notice */}
-          <div className="mt-11 flex items-center justify-between bg-black/90 backdrop-blur-md rounded-xl p-2 border border-amber-400/40 pointer-events-auto shadow-xl">
+          <div className="mt-20 flex items-center justify-between bg-black/90 backdrop-blur-md rounded-xl p-2 border border-amber-400/40 pointer-events-auto shadow-xl">
             <div className="flex items-center gap-1.5 text-[10px] text-amber-200">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
               <span className="font-bold">Interactive Edit Mode</span>
