@@ -1003,6 +1003,7 @@ export interface RenderExplainerFrameOptions {
   brollImages?: Record<string, HTMLImageElement>;
   captionPosition?: "bottom" | "center" | "top";
   captionYOffset?: number;
+  captionYPercent?: number;
   hideCaptions?: boolean;
   hiddenCalloutIds?: string[] | Set<string>;
 }
@@ -1884,16 +1885,21 @@ export function renderExplainerFrameToCanvas(
     const pillPadX = 38;
     const pillH = 98;
     
-    // Shiftable CC title positions: bottom (default 1625), center (960), top (280)
+    // Shiftable CC title positions: direct percentage from mouse drag OR discrete presets
     let pillY = 1625;
-    if (options.captionPosition === "top") {
-      pillY = 280;
-    } else if (options.captionPosition === "center") {
-      pillY = 960;
+    if (typeof options.captionYPercent === "number") {
+      pillY = Math.round((options.captionYPercent / 100) * (H - pillH));
+    } else {
+      if (options.captionPosition === "top") {
+        pillY = 280;
+      } else if (options.captionPosition === "center") {
+        pillY = 960;
+      }
     }
     if (typeof options.captionYOffset === "number") {
       pillY += options.captionYOffset;
     }
+    pillY = Math.max(60, Math.min(H - pillH - 60, pillY));
 
     const measured = currentChunk.map((w) => {
       const upper = w.word.toUpperCase();
@@ -2064,6 +2070,7 @@ export async function exportExactExplainerMp4(params: {
   brollImages?: Record<string, HTMLImageElement>;
   captionPosition?: "bottom" | "center" | "top";
   captionYOffset?: number;
+  captionYPercent?: number;
   hideCaptions?: boolean;
   hiddenCalloutIds?: string[] | Set<string>;
   onProgress?: (pct: number) => void;
@@ -2078,6 +2085,7 @@ export async function exportExactExplainerMp4(params: {
     layoutMode,
     captionPosition,
     captionYOffset,
+    captionYPercent,
     hideCaptions,
     hiddenCalloutIds,
     onProgress,
@@ -2208,6 +2216,7 @@ export async function exportExactExplainerMp4(params: {
         brollImages,
         captionPosition,
         captionYOffset,
+        captionYPercent,
         hideCaptions,
         hiddenCalloutIds,
       });

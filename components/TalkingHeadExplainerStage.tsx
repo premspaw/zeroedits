@@ -28,6 +28,7 @@ import {
   Check,
   X,
   MoveVertical,
+  GripVertical,
   Eye,
   EyeOff,
   Sliders,
@@ -128,6 +129,7 @@ export default function TalkingHeadExplainerStage({
 }: TalkingHeadExplainerStageProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const brollImagesRef = useRef<Record<string, HTMLImageElement>>({});
 
   const [layoutMode, setLayoutMode] = useState<ExplainerLayoutMode>("auto_reel");
@@ -146,6 +148,8 @@ export default function TalkingHeadExplainerStage({
   const [isEditMode, setIsEditMode] = useState(false);
   const [hiddenCalloutIds, setHiddenCalloutIds] = useState<Set<string>>(new Set());
   const [captionPosition, setCaptionPosition] = useState<"bottom" | "center" | "top">("bottom");
+  const [captionYPercent, setCaptionYPercent] = useState<number>(84.6);
+  const [isDraggingCaptions, setIsDraggingCaptions] = useState(false);
   const [captionYOffset, setCaptionYOffset] = useState<number>(0);
   const [hideCaptions, setHideCaptions] = useState(false);
 
@@ -270,6 +274,49 @@ export default function TalkingHeadExplainerStage({
     return () => window.removeEventListener("seek-pipeline-b", handleSeek);
   }, []);
 
+  // Smooth mouse pointer drag tracking for CC Titles across Top, Center, Bottom
+  useEffect(() => {
+    if (!isDraggingCaptions) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      let pct = ((e.clientY - rect.top) / rect.height) * 100;
+      pct = Math.max(12, Math.min(88, pct));
+
+      // Magnetic snap targets: Top (14.5%), Center (50.0%), Bottom (84.6%)
+      const SNAP_THRESH = 3.8;
+      if (Math.abs(pct - 14.5) < SNAP_THRESH) {
+        pct = 14.5;
+        setCaptionPosition("top");
+      } else if (Math.abs(pct - 50.0) < SNAP_THRESH) {
+        pct = 50.0;
+        setCaptionPosition("center");
+      } else if (Math.abs(pct - 84.6) < SNAP_THRESH) {
+        pct = 84.6;
+        setCaptionPosition("bottom");
+      } else {
+        if (pct < 32) setCaptionPosition("top");
+        else if (pct < 68) setCaptionPosition("center");
+        else setCaptionPosition("bottom");
+      }
+
+      setCaptionYPercent(pct);
+      setCaptionYOffset(0);
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingCaptions(false);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [isDraggingCaptions]);
+
   // Continuous 60fps RAF preview render loop decoupled from React state updates
   useEffect(() => {
     let rafId: number;
@@ -299,6 +346,7 @@ export default function TalkingHeadExplainerStage({
             brollImages: brollImagesRef.current,
             captionPosition,
             captionYOffset,
+            captionYPercent,
             hideCaptions,
             hiddenCalloutIds,
           });
@@ -317,6 +365,7 @@ export default function TalkingHeadExplainerStage({
     layoutMode,
     captionPosition,
     captionYOffset,
+    captionYPercent,
     hideCaptions,
     hiddenCalloutIds,
   ]);
@@ -454,6 +503,7 @@ export default function TalkingHeadExplainerStage({
         brollImages: brollImagesRef.current,
         captionPosition,
         captionYOffset,
+        captionYPercent,
         hideCaptions,
         hiddenCalloutIds,
         onProgress: (pct) => setDownloadProgress(pct),
@@ -490,6 +540,7 @@ export default function TalkingHeadExplainerStage({
     layoutMode,
     captionPosition,
     captionYOffset,
+    captionYPercent,
     hideCaptions,
     hiddenCalloutIds,
     topic,
@@ -507,9 +558,10 @@ export default function TalkingHeadExplainerStage({
 
   return (
     <div
+      ref={containerRef}
       className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.45)] overflow-hidden relative bg-[#0B0C10] select-none flex flex-col ${
         compact ? "scale-[0.98]" : ""
-      }`}
+      } ${isDraggingCaptions ? "cursor-grabbing" : ""}`}
     >
       {/* Export Error Alert Banner */}
       {exportError && (
@@ -726,64 +778,156 @@ export default function TalkingHeadExplainerStage({
             </div>
           )}
 
-          {/* Interactive CC Captions Placement Bar */}
+          {/* Magnetic Guidelines while Dragging with Mouse */}
+          {isDraggingCaptions && (
+            <div className="absolute inset-0 pointer-events-none z-30 flex flex-col justify-between">
+              {/* Top Guideline */}
+              <div
+                className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
+                  captionPosition === "top"
+                    ? "border-sky-400 bg-sky-500/15 py-1"
+                    : "border-white/20 py-0.5"
+                }`}
+                style={{ top: "14.5%" }}
+              >
+                <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
+                  Top Header (Face Clear)
+                </span>
+                <span className="mono text-[8px] text-white/60">14.5%</span>
+              </div>
+
+              {/* Center Guideline */}
+              <div
+                className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
+                  captionPosition === "center"
+                    ? "border-sky-400 bg-sky-500/15 py-1"
+                    : "border-white/20 py-0.5"
+                }`}
+                style={{ top: "50%" }}
+              >
+                <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
+                  Center Kinetic (Viral Pop)
+                </span>
+                <span className="mono text-[8px] text-white/60">50.0%</span>
+              </div>
+
+              {/* Bottom Guideline */}
+              <div
+                className={`absolute inset-x-0 border-b border-dashed transition-all flex items-center justify-between px-3 ${
+                  captionPosition === "bottom"
+                    ? "border-sky-400 bg-sky-500/15 py-1"
+                    : "border-white/20 py-0.5"
+                }`}
+                style={{ top: "84.6%" }}
+              >
+                <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-sky-300 bg-black/85 px-1.5 py-0.5 rounded shadow">
+                  Bottom Lower-Third (Default)
+                </span>
+                <span className="mono text-[8px] text-white/60">84.6%</span>
+              </div>
+            </div>
+          )}
+
+          {/* Interactive CC Captions Placement Bar with Direct Mouse Pointer Dragging */}
           <div
-            className="pointer-events-auto absolute left-3 right-3 rounded-2xl border-2 border-dashed border-sky-400/80 bg-black/90 backdrop-blur-md p-2 flex items-center justify-between shadow-2xl transition"
+            className={`pointer-events-auto absolute left-3 right-3 rounded-2xl border-2 border-dashed ${
+              isDraggingCaptions
+                ? "border-sky-400 bg-sky-950/95 shadow-[0_0_30px_rgba(56,189,248,0.5)] ring-2 ring-sky-400/60"
+                : "border-sky-400/80 bg-black/90 hover:border-sky-300"
+            } backdrop-blur-md p-2 flex items-center justify-between shadow-2xl transition-all duration-75 select-none z-35`}
             style={{
-              top:
-                captionPosition === "top"
-                  ? "17%"
-                  : captionPosition === "center"
-                  ? "48%"
-                  : "auto",
-              bottom: captionPosition === "bottom" ? "12%" : "auto",
+              top: `${captionYPercent}%`,
+              transform: "translateY(-50%)",
             }}
           >
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-mono font-extrabold text-sky-400 uppercase">
-                CC Titles:
-              </span>
-              <div className="inline-flex items-center gap-1 bg-white/10 p-0.5 rounded-lg border border-white/15">
-                {(["bottom", "center", "top"] as const).map((pos) => {
-                  const isSel = captionPosition === pos;
-                  return (
-                    <button
-                      key={pos}
-                      type="button"
-                      onClick={() => setCaptionPosition(pos)}
-                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
-                        isSel
-                          ? "bg-sky-500 text-black font-extrabold"
-                          : "text-white/70 hover:text-white"
-                      }`}
-                    >
-                      {pos}
-                    </button>
-                  );
-                })}
+            {/* Left: Drag Handle with Mouse Pointer */}
+            <div
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingCaptions(true);
+              }}
+              className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing hover:bg-sky-400/15 px-2 py-1 rounded-lg transition"
+              title="Click and drag with mouse pointer to move CC titles up or down"
+            >
+              <GripVertical size={14} className="text-sky-400 shrink-0" />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono font-extrabold text-sky-400 uppercase tracking-wider flex items-center gap-1">
+                  <span>CC Titles</span>
+                  {isDraggingCaptions && (
+                    <span className="text-[9px] text-amber-300 font-bold">
+                      ({captionYPercent.toFixed(0)}%)
+                    </span>
+                  )}
+                </span>
+                <span className="text-[8px] text-white/60 font-medium">
+                  {isDraggingCaptions ? "Release to drop" : "Drag with mouse"}
+                </span>
               </div>
             </div>
 
+            {/* Middle: 1-Click Direct Position Switching Buttons */}
+            <div className="inline-flex items-center gap-1 bg-white/10 p-0.5 rounded-lg border border-white/15">
+              {(
+                [
+                  ["bottom", "Bottom", 84.6],
+                  ["center", "Center", 50.0],
+                  ["top", "Top", 14.5],
+                ] as const
+              ).map(([pos, label, yPct]) => {
+                const isSel = captionPosition === pos;
+                return (
+                  <button
+                    key={pos}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCaptionPosition(pos);
+                      setCaptionYPercent(yPct);
+                      setCaptionYOffset(0);
+                    }}
+                    className={`px-2 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
+                      isSel
+                        ? "bg-sky-500 text-black font-extrabold shadow-sm"
+                        : "text-white/70 hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right: Fine Nudge & Visibility */}
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setCaptionYOffset((prev) => prev - 20)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCaptionYPercent((prev) => Math.max(12, +(prev - 3).toFixed(1)));
+                }}
                 className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center text-[10px] cursor-pointer"
-                title="Nudge titles upward"
+                title="Nudge upward"
               >
                 <ArrowUp size={11} />
               </button>
               <button
                 type="button"
-                onClick={() => setCaptionYOffset((prev) => prev + 20)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCaptionYPercent((prev) => Math.min(88, +(prev + 3).toFixed(1)));
+                }}
                 className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white grid place-items-center text-[10px] cursor-pointer"
-                title="Nudge titles downward"
+                title="Nudge downward"
               >
                 <ArrowDown size={11} />
               </button>
               <button
                 type="button"
-                onClick={() => setHideCaptions(!hideCaptions)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHideCaptions(!hideCaptions);
+                }}
                 className={`px-2 py-0.5 rounded-md text-[9px] font-bold flex items-center gap-1 cursor-pointer transition ${
                   hideCaptions
                     ? "bg-rose-500/80 text-white"
