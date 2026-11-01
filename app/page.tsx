@@ -811,17 +811,40 @@ function PreviewCard({
     const cleanSpeech = cleanZeeDialogue(generatingStep, stageMood);
     return (
       <div
-        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#141414] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.35)] overflow-hidden relative bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] text-[#141414] flex flex-col items-center justify-center p-6 text-center ${compact ? "scale-[0.98]" : ""}`}
+        className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#1E2028] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] overflow-hidden relative bg-[#0B0C10] text-white flex flex-col items-center justify-center p-6 text-center select-none ${
+          compact ? "scale-[0.98]" : ""
+        }`}
       >
-        <div className="w-full max-w-[270px] flex flex-col items-center">
+        {/* Ambient Dark Glow Background */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(228,73,27,0.12)_0%,transparent_65%)] pointer-events-none" />
+        <div className="absolute inset-0 opacity-[0.035] pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
+
+        {/* Top Header Badge */}
+        <div className="absolute top-3.5 inset-x-3.5 flex items-center justify-between text-[9px] mono uppercase tracking-wider text-white/50 px-1 z-10">
+          <div className="flex items-center gap-1.5 font-bold text-amber-400">
+            <span className="w-2 h-2 rounded-full bg-[#E4491B] animate-ping" />
+            <span>Generating Reel</span>
+          </div>
+          <span className="text-white/40 font-mono">9:16</span>
+        </div>
+
+        {/* Zee / Pip Character with Dialogue */}
+        <div className="w-full max-w-[270px] flex flex-col items-center relative z-10">
           <Pip
             mood={stageMood}
             action={stageAction}
-            size={76}
+            size={84}
             interactive={true}
             showDialogue={true}
             question={cleanSpeech}
           />
+        </div>
+
+        {/* Bottom subtle progress pulse */}
+        <div className="absolute bottom-3.5 inset-x-5 flex items-center justify-center z-10">
+          <div className="w-24 h-1 bg-white/10 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-transparent via-[#E4491B] to-transparent w-full animate-pulse" />
+          </div>
         </div>
       </div>
     );
@@ -900,7 +923,8 @@ function PreviewCard({
 
       {/* Generating State Screen */}
       {isGenerating ? (
-        <div className="absolute inset-0 p-5 flex flex-col items-center justify-center text-center z-20 bg-[#F5F1E8]/95 backdrop-blur-md">
+        <div className="absolute inset-0 p-5 flex flex-col items-center justify-center text-center z-20 bg-[#0B0C10] text-white">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(228,73,27,0.12)_0%,transparent_65%)] pointer-events-none" />
           {/* 3D Rotating Card Mockup */}
           <motion.div
             animate={{
@@ -913,23 +937,23 @@ function PreviewCard({
               duration: 2.4,
               ease: "easeInOut",
             }}
-            className="w-36 h-52 rounded-[18px] bg-[#FFFEFB] border-2 border-[#111] shadow-[0_16px_36px_rgba(0,0,0,0.18)] p-3.5 flex flex-col justify-between mb-5 relative overflow-hidden"
+            className="w-36 h-52 rounded-[18px] bg-[#141620] border-2 border-white/20 shadow-[0_16px_36px_rgba(0,0,0,0.5)] p-3.5 flex flex-col justify-between mb-5 relative overflow-hidden"
           >
             <div className="flex items-center justify-between">
               <Disc3 className="w-4 h-4 text-[#E4491B] animate-spin" />
-              <span className="mono text-[8px] font-bold tracking-wider text-[#E4491B] bg-[#F6D9CC] px-1.5 py-0.5 rounded-full">
+              <span className="mono text-[8px] font-bold tracking-wider text-[#E4491B] bg-[#E4491B]/20 border border-[#E4491B]/30 px-1.5 py-0.5 rounded-full">
                 AI ENGINE
               </span>
             </div>
             <div className="my-auto">
-              <div className="serif text-[20px] font-medium leading-none text-[#111]">
-                Paper Reel
+              <div className="serif text-[20px] font-medium leading-none text-white">
+                Studio Reel
               </div>
-              <div className="mono text-[9px] text-[#6B6A64] mt-1">
+              <div className="mono text-[9px] text-white/60 mt-1">
                 Meta Muse Model
               </div>
             </div>
-            <div className="w-full bg-[#D5D2C8] h-1 rounded-full overflow-hidden">
+            <div className="w-full bg-white/15 h-1 rounded-full overflow-hidden">
               <motion.div
                 animate={{ x: ["-100%", "100%"] }}
                 transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
@@ -938,17 +962,17 @@ function PreviewCard({
             </div>
           </motion.div>
 
-          <div className="flex items-center gap-2 mono text-[11px] font-bold text-[#111] uppercase tracking-wider mb-1.5">
+          <div className="flex items-center gap-2 mono text-[11px] font-bold text-white uppercase tracking-wider mb-1.5 z-10">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E4491B]" />
             <span>Stitching All {beats.length || 6} Beats...</span>
           </div>
-          <div className="mono text-[10px] text-[#6B6A64] max-w-[220px] leading-snug">
+          <div className="mono text-[10px] text-white/70 max-w-[220px] leading-snug z-10">
             {generatingStep || `Rendering complete ${timing} timeline. Holding preview until all beats are stitched...`}
           </div>
         </div>
       ) : !currentBeat ? (
-        <div className="aspect-[9/16] rounded-[22px] bg-[#F5F1E8] border border-dashed border-[#D5D2C8] grid place-items-center p-8 text-center">
-          <div className="mono text-[12px] text-[#6B6A64]">
+        <div className="aspect-[9/16] rounded-[22px] bg-[#0B0C10] border border-dashed border-white/20 grid place-items-center p-8 text-center">
+          <div className="mono text-[12px] text-white/60">
             Type a topic to generate paper cards
           </div>
         </div>
