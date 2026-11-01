@@ -59,8 +59,8 @@ export default function SparkLiveRunner({
   const layerPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
   const [reloadKey, setReloadKey] = useState(0);
   const totalVideoDuration = Number.isFinite(duration) && duration > 0 ? duration : 10;
-  const background = String(theme?.bg || storyboard?.theme?.bg || "#FFF8F0");
-  const ink = String(theme?.ink || storyboard?.theme?.ink || "#3D2E22");
+  const background = String(theme?.bg || storyboard?.theme?.bg || "#0B0C10");
+  const ink = String(theme?.ink || storyboard?.theme?.ink || "#FFFFFF");
   const previewId = useMemo(() => {
     let hash = 2166136261;
     for (const character of code) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);

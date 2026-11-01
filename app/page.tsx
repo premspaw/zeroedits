@@ -881,9 +881,9 @@ function PreviewCard({
   const isNeon = format === "blackNeon" || (effectiveTheme ? effectiveTheme.bg === "#0A0A0A" : false);
   const isAnime = format === "anime" || (effectiveTheme ? effectiveTheme.effect.includes("anime") : false);
 
-  const cardBg = effectiveTheme?.paper || (isPaper ? "#FFFEFB" : isNeon ? "#0A0A0A" : isAnime ? "#222238" : "#FFFFFF");
-  const isDark = isNeon || isAnime || effectiveTheme?.bg === "#0A0A0A" || effectiveTheme?.bg === "#181824";
-  const textColor = isDark ? "text-white" : "text-[#111]";
+  const cardBg = effectiveTheme?.paper || (isPaper ? "#12141C" : isNeon ? "#0A0A0A" : isAnime ? "#222238" : "#0B0C10");
+  const isDark = true;
+  const textColor = "text-white";
   const accentColor = effectiveTheme?.accent || "#E4491B";
 
   return (

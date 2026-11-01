@@ -167,7 +167,7 @@ export default function CaptionLayerOverlay({
       }}
     >
       <div
-        className="w-[90%] max-w-[92%] flex flex-wrap justify-center items-center text-center select-none"
+        className="w-[90%] max-w-[92%] flex flex-wrap justify-center items-center text-center select-none px-2.5 py-1 rounded-2xl"
         style={{
           fontFamily: cfg.loadFont(),
           fontWeight: cfg.weight,
@@ -177,6 +177,7 @@ export default function CaptionLayerOverlay({
           textTransform: cfg.uppercase ? "uppercase" : "none",
           columnGap: "0.28em",
           rowGap: "0.14em",
+          filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.98)) drop-shadow(0 6px 18px rgba(0,0,0,0.9))",
         }}
       >
         {visibleWords.map((w, i) => {
@@ -184,18 +185,17 @@ export default function CaptionLayerOverlay({
           const isA = origIdx === activeIdx;
           const localTime = currentTime - w.start;
           const acc = cfg.colors.active[(pageIndex + origIdx) % cfg.colors.active.length];
-          const strokePx = Math.round(cfg.strokeRatio * fsEm * 18);
-          const outlineStyle: React.CSSProperties =
-            strokePx > 0
-              ? {
-                  WebkitTextStroke: `${strokePx}px ${cfg.colors.stroke}`,
-                  paintOrder: "stroke fill",
-                }
-              : {};
+          const strokePx = Math.max(1.5, Math.round(cfg.strokeRatio * fsEm * 18));
+          const outlineStyle: React.CSSProperties = {
+            WebkitTextStroke: `${strokePx}px ${cfg.colors.stroke || "#000000"}`,
+            paintOrder: "stroke fill",
+          };
 
           let wordStyle: React.CSSProperties = {
             display: "inline-block",
             transition: "transform 0.08s ease, color 0.08s ease, opacity 0.08s ease",
+            WebkitTextStroke: "1px rgba(0,0,0,0.85)",
+            paintOrder: "stroke fill",
           };
 
           if (styleId === "hormozi") {
@@ -205,7 +205,7 @@ export default function CaptionLayerOverlay({
               ...outlineStyle,
               color: isA ? acc : "#FFFFFF",
               transform: `scale(${isA ? 1 + 0.14 * p : 1})`,
-              textShadow: "0 3px 12px rgba(0,0,0,0.85)",
+              textShadow: "0 3px 0 #000, 0 4px 14px rgba(0,0,0,0.95)",
             };
           } else if (styleId === "beast") {
             const p = back(clamp(localTime / 0.3, 0, 1));
@@ -215,7 +215,7 @@ export default function CaptionLayerOverlay({
               ...outlineStyle,
               color: acc,
               transform: `scale(${0.4 + 0.6 * p}) rotate(${tilt}deg)`,
-              textShadow: "0 4px 0 #000000, 0 8px 16px rgba(0,0,0,0.9)",
+              textShadow: "0 4px 0 #000000, 0 8px 16px rgba(0,0,0,0.95)",
             };
           } else if (styleId === "pinterest") {
             const o = clamp((localTime + 0.07) / 0.27, 0, 1);
@@ -224,29 +224,29 @@ export default function CaptionLayerOverlay({
               color: "#FFFFFF",
               fontStyle: origIdx === emphIdx ? "italic" : "normal",
               opacity: o,
-              textShadow: "0 2px 10px rgba(0,0,0,0.75)",
+              textShadow: "0 2px 0 #000, 0 3px 12px rgba(0,0,0,0.9)",
             };
           } else if (styleId === "pill") {
             const p = isA ? clamp(back(clamp(localTime / 0.15, 0, 1)), 0, 1.2) : 0;
             wordStyle = {
               ...wordStyle,
               color: "#FFFFFF",
-              backgroundColor: isA ? acc : "transparent",
-              padding: "0.08em 0.32em",
-              borderRadius: "0.3em",
+              backgroundColor: isA ? acc : "rgba(0,0,0,0.65)",
+              padding: "0.1em 0.36em",
+              borderRadius: "0.32em",
               transform: `scale(${isA ? 0.94 + 0.08 * p : 1})`,
-              boxShadow: isA ? "0 4px 14px rgba(255,74,28,0.4)" : "none",
-              textShadow: isA ? "none" : "0 2px 8px rgba(0,0,0,0.8)",
+              boxShadow: isA ? "0 4px 14px rgba(255,74,28,0.5)" : "0 2px 8px rgba(0,0,0,0.8)",
+              textShadow: "0 2px 0 #000, 0 2px 8px rgba(0,0,0,0.9)",
             };
           } else if (styleId === "neon") {
             const fl = isA ? 0.94 + 0.06 * Math.sin(currentTime * 50) : 1;
             wordStyle = {
               ...wordStyle,
-              color: isA ? "#FFFFFF" : "rgba(255,255,255,0.45)",
+              color: isA ? "#FFFFFF" : "rgba(255,255,255,0.75)",
               opacity: fl,
               textShadow: isA
-                ? "0 0 10px #00F0FF, 0 0 25px #00F0FF, 0 0 45px #8A5CFF"
-                : "0 2px 8px rgba(0,0,0,0.8)",
+                ? "0 0 10px #00F0FF, 0 0 25px #00F0FF, 0 2px 4px #000"
+                : "0 2px 0 #000, 0 2px 8px rgba(0,0,0,0.9)",
             };
           } else if (styleId === "cinzel") {
             const o = clamp((localTime + 0.07) / 0.53, 0, 1);
@@ -255,7 +255,7 @@ export default function CaptionLayerOverlay({
               color: isA ? acc : "#F3E9D2",
               opacity: o,
               transform: `scale(${1.08 - 0.08 * o})`,
-              textShadow: "0 2px 14px rgba(0,0,0,0.8)",
+              textShadow: "0 2px 0 #000, 0 3px 14px rgba(0,0,0,0.9)",
             };
           } else if (styleId === "editorial") {
             const o = clamp((localTime + 0.07) / 0.33, 0, 1);
@@ -264,23 +264,24 @@ export default function CaptionLayerOverlay({
               color: "#FFFFFF",
               fontStyle: "italic",
               opacity: o,
-              textShadow: "0 2px 10px rgba(0,0,0,0.75)",
+              textShadow: "0 2px 0 #000, 0 3px 12px rgba(0,0,0,0.9)",
             };
           } else if (styleId === "trailer") {
             const sc = 1.14 - 0.14 * clamp(localTime / 0.2, 0, 1);
             wordStyle = {
               ...wordStyle,
+              ...outlineStyle,
               color: isA ? acc : "#F4F4F4",
               opacity: localTime >= 0 ? 1 : 0,
               transform: `scale(${sc})`,
-              textShadow: "0 3px 12px rgba(0,0,0,0.9)",
+              textShadow: "0 3px 0 #000, 0 4px 14px rgba(0,0,0,0.95)",
             };
           } else if (styleId === "clean") {
             wordStyle = {
               ...wordStyle,
               color: "#FFFFFF",
-              opacity: isA ? 1 : 0.55,
-              textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+              opacity: isA ? 1 : 0.75,
+              textShadow: "0 2px 0 #000, 0 2px 10px rgba(0,0,0,0.9)",
             };
           } else {
             // whisper
@@ -289,7 +290,7 @@ export default function CaptionLayerOverlay({
               ...wordStyle,
               color: "#FFFFFF",
               opacity: o,
-              textShadow: "0 2px 10px rgba(0,0,0,0.75)",
+              textShadow: "0 2px 0 #000, 0 2px 12px rgba(0,0,0,0.9)",
             };
           }
 
