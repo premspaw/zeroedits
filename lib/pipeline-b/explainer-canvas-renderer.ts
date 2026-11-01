@@ -1,5 +1,10 @@
 "use client";
 
+import { CaptionStyleId, CAPTION_STYLES, CAPTION_STYLE_LIST } from "@/lib/captions/styles";
+
+export type { CaptionStyleId };
+export { CAPTION_STYLES, CAPTION_STYLE_LIST };
+
 export type ExplainerLayoutMode = "auto_reel" | "speaker_only";
 export type PaletteId =
   | "auto"
@@ -1001,6 +1006,8 @@ export interface RenderExplainerFrameOptions {
   palette: VisualPalette;
   layoutMode: ExplainerLayoutMode;
   brollImages?: Record<string, HTMLImageElement>;
+  captionStyleId?: CaptionStyleId;
+  captionSizeScale?: number;
   captionPosition?: "bottom" | "center" | "top";
   captionYOffset?: number;
   captionYPercent?: number;
@@ -1872,23 +1879,17 @@ export function renderExplainerFrameToCanvas(
   }
 
   // =========================================================================
-  // LAYER 4: CONTINUOUS UNINTERRUPTED LOWER-THIRD CAPTIONS (3-WORD CHUNK)
+  // LAYER 4: MULTI-STYLE VIRAL & CINEMATIC CAPTIONS
   // =========================================================================
   if (currentChunk.length > 0 && !options.hideCaptions && !isHidden("captions") && !isHidden("cc")) {
     ctx.save();
-    ctx.font = "900 42px 'Plus Jakarta Sans', 'Montserrat', 'Inter', sans-serif";
-    ctx.textBaseline = "middle";
+    const styleId = options.captionStyleId || "hormozi";
+    const sizeScale = options.captionSizeScale || 1.0;
 
-    const wordGap = 18;
-    const wordPadX = 20;
-    const wordPadY = 14;
-    const pillPadX = 38;
-    const pillH = 98;
-    
     // Shiftable CC title positions: direct percentage from mouse drag OR discrete presets
     let pillY = 1625;
     if (typeof options.captionYPercent === "number") {
-      pillY = Math.round((options.captionYPercent / 100) * (H - pillH));
+      pillY = Math.round((options.captionYPercent / 100) * 1920);
     } else {
       if (options.captionPosition === "top") {
         pillY = 280;
@@ -1899,70 +1900,162 @@ export function renderExplainerFrameToCanvas(
     if (typeof options.captionYOffset === "number") {
       pillY += options.captionYOffset;
     }
-    pillY = Math.max(60, Math.min(H - pillH - 60, pillY));
+    pillY = Math.max(120, Math.min(1800, pillY));
 
-    const measured = currentChunk.map((w) => {
-      const upper = w.word.toUpperCase();
-      const tw = ctx.measureText(upper).width;
-      const isCurrent =
-        activeWord !== null &&
-        Math.abs(w.start - activeWord.start) < 0.02 &&
-        w.word === activeWord.word;
-      return {
-        upper,
-        tw,
-        boxW: tw + wordPadX * 2,
-        isCurrent,
-      };
-    });
-
-    const totalWordsW =
-      measured.reduce((acc, m) => acc + m.boxW, 0) +
-      Math.max(0, measured.length - 1) * wordGap;
-    const pillW = Math.min(980, totalWordsW + pillPadX * 2);
-    const pillX = (W - pillW) / 2;
-
-    // Dark outer pill
-    ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
-    ctx.shadowBlur = 32;
-    ctx.shadowOffsetY = 12;
-    ctx.fillStyle = "rgba(10, 11, 16, 0.86)";
-    ctx.beginPath();
-    ctx.roundRect(pillX, pillY, pillW, pillH, 44);
-    ctx.fill();
-
-    ctx.shadowColor = "transparent";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
-    ctx.stroke();
-
-    // Draw each word inside the pill
-    let cursorX = (W - totalWordsW) / 2;
-    const centerY = pillY + pillH / 2;
-
-    measured.forEach((m) => {
-      if (m.isCurrent) {
-        const wBoxH = 66;
-        const wBoxY = centerY - wBoxH / 2;
-        ctx.save();
-        ctx.shadowColor = palette.highlight + "80";
-        ctx.shadowBlur = 18;
-        ctx.fillStyle = palette.highlight;
-        ctx.beginPath();
-        ctx.roundRect(cursorX, wBoxY, m.boxW, wBoxH, 22);
-        ctx.fill();
-        ctx.restore();
-
-        ctx.fillStyle = "#111111";
+    if (styleId === "beast") {
+      // Beast: 1 giant word at a time, bouncy pop, thick outline, 3D shadow
+      const curWord = activeWord ? activeWord.word.toUpperCase().replace(/[.,!?;:]+$/g, "") : "";
+      if (curWord) {
+        const fs = Math.round(96 * sizeScale);
+        ctx.font = `900 ${fs}px 'Luckiest Guy', Impact, sans-serif`;
         ctx.textAlign = "center";
-        ctx.fillText(m.upper, cursorX + m.boxW / 2, centerY + 2);
-      } else {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
-        ctx.textAlign = "center";
-        ctx.fillText(m.upper, cursorX + m.boxW / 2, centerY + 2);
+        ctx.textBaseline = "middle";
+
+        // Hard black 3D shadow
+        ctx.fillStyle = "#000000";
+        ctx.fillText(curWord, W / 2 + 6, pillY + 8);
+
+        // Thick outline
+        ctx.lineWidth = Math.round(16 * sizeScale);
+        ctx.strokeStyle = "#000000";
+        ctx.strokeText(curWord, W / 2, pillY);
+
+        // Vibrant pop fill
+        ctx.fillStyle = "#FFE600";
+        ctx.fillText(curWord, W / 2, pillY);
       }
-      cursorX += m.boxW + wordGap;
-    });
+    } else if (styleId === "cinzel") {
+      // Cinzel: Cinematic capitals, wide tracking, ivory and gold
+      const fs = Math.round(44 * sizeScale);
+      ctx.font = `700 ${fs}px 'Cinzel', Georgia, serif`;
+      ctx.textBaseline = "middle";
+      const wordGap = 24 * sizeScale;
+      const measured = currentChunk.map((w) => {
+        const text = w.word.toUpperCase().replace(/[.,!?;:]+$/g, "");
+        const tw = ctx.measureText(text).width;
+        const isCurrent = activeWord !== null && w.word === activeWord.word;
+        return { text, tw, isCurrent };
+      });
+      const totalW = measured.reduce((acc, m) => acc + m.tw, 0) + (measured.length - 1) * wordGap;
+      let curX = (W - totalW) / 2;
+      measured.forEach((m) => {
+        ctx.shadowColor = "rgba(0,0,0,0.85)";
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = m.isCurrent ? "#F5D58A" : "#F3E9D2";
+        ctx.fillText(m.text, curX, pillY);
+        curX += m.tw + wordGap;
+      });
+    } else if (styleId === "editorial") {
+      // Editorial: Bodoni Moda italic, elegant magazine headline
+      const fs = Math.round(52 * sizeScale);
+      ctx.font = `italic 500 ${fs}px 'Bodoni Moda', Georgia, serif`;
+      ctx.textBaseline = "middle";
+      const wordGap = 16 * sizeScale;
+      const measured = currentChunk.map((w) => {
+        const text = w.word;
+        const tw = ctx.measureText(text).width;
+        const isCurrent = activeWord !== null && w.word === activeWord.word;
+        return { text, tw, isCurrent };
+      });
+      const totalW = measured.reduce((acc, m) => acc + m.tw, 0) + (measured.length - 1) * wordGap;
+      let curX = (W - totalW) / 2;
+      measured.forEach((m) => {
+        ctx.shadowColor = "rgba(0,0,0,0.85)";
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillText(m.text, curX, pillY);
+        curX += m.tw + wordGap;
+      });
+    } else if (styleId === "neon") {
+      // Neon: Tall Bebas Neue caps with cyan/violet glowing shadow
+      const fs = Math.round(68 * sizeScale);
+      ctx.font = `400 ${fs}px 'Bebas Neue', Impact, sans-serif`;
+      ctx.textBaseline = "middle";
+      const wordGap = 20 * sizeScale;
+      const measured = currentChunk.map((w) => {
+        const text = w.word.toUpperCase().replace(/[.,!?;:]+$/g, "");
+        const tw = ctx.measureText(text).width;
+        const isCurrent = activeWord !== null && w.word === activeWord.word;
+        return { text, tw, isCurrent };
+      });
+      const totalW = measured.reduce((acc, m) => acc + m.tw, 0) + (measured.length - 1) * wordGap;
+      let curX = (W - totalW) / 2;
+      measured.forEach((m) => {
+        if (m.isCurrent) {
+          ctx.shadowColor = "#00F0FF";
+          ctx.shadowBlur = 28;
+          ctx.fillStyle = "#FFFFFF";
+        } else {
+          ctx.shadowColor = "rgba(0,0,0,0.8)";
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = "rgba(255,255,255,0.45)";
+        }
+        ctx.fillText(m.text, curX, pillY);
+        curX += m.tw + wordGap;
+      });
+    } else {
+      // Default: Hormozi & Pill Kinetic Pop
+      const fs = Math.round(48 * sizeScale);
+      ctx.font = `900 ${fs}px 'Montserrat', 'Plus Jakarta Sans', sans-serif`;
+      ctx.textBaseline = "middle";
+      const wordGap = 18 * sizeScale;
+      const wordPadX = 18 * sizeScale;
+      const pillPadX = 32 * sizeScale;
+      const pillH = Math.round(92 * sizeScale);
+
+      const measured = currentChunk.map((w) => {
+        const upper = w.word.toUpperCase().replace(/[.,!?;:]+$/g, "");
+        const tw = ctx.measureText(upper).width;
+        const isCurrent = activeWord !== null && w.word === activeWord.word;
+        return { upper, tw, boxW: tw + wordPadX * 2, isCurrent };
+      });
+
+      const totalWordsW = measured.reduce((acc, m) => acc + m.boxW, 0) + Math.max(0, measured.length - 1) * wordGap;
+      const pillW = Math.min(1000, totalWordsW + pillPadX * 2);
+      const pillX = (W - pillW) / 2;
+      const drawY = pillY - pillH / 2;
+
+      // Outer pill capsule
+      ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 8;
+      ctx.fillStyle = "rgba(10, 11, 16, 0.88)";
+      ctx.beginPath();
+      ctx.roundRect(pillX, drawY, pillW, pillH, 40);
+      ctx.fill();
+
+      ctx.shadowColor = "transparent";
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+      ctx.stroke();
+
+      let cursorX = (W - totalWordsW) / 2;
+      const centerY = drawY + pillH / 2;
+
+      measured.forEach((m) => {
+        if (m.isCurrent) {
+          const wBoxH = Math.round(64 * sizeScale);
+          const wBoxY = centerY - wBoxH / 2;
+          ctx.save();
+          ctx.shadowColor = palette.highlight + "90";
+          ctx.shadowBlur = 18;
+          ctx.fillStyle = palette.highlight || "#FFE600";
+          ctx.beginPath();
+          ctx.roundRect(cursorX, wBoxY, m.boxW, wBoxH, 20);
+          ctx.fill();
+          ctx.restore();
+
+          ctx.fillStyle = "#111111";
+          ctx.textAlign = "center";
+          ctx.fillText(m.upper, cursorX + m.boxW / 2, centerY + 2);
+        } else {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+          ctx.textAlign = "center";
+          ctx.fillText(m.upper, cursorX + m.boxW / 2, centerY + 2);
+        }
+        cursorX += m.boxW + wordGap;
+      });
+    }
 
     ctx.restore();
   }
@@ -2011,7 +2104,16 @@ export async function ensureExplainerFontsLoaded(): Promise<void> {
     "900 42px 'Plus Jakarta Sans'",
     "800 38px 'Plus Jakarta Sans'",
     "700 25px 'Plus Jakarta Sans'",
-    "900 42px 'Montserrat'",
+    "900 48px 'Montserrat'",
+    "400 80px 'Luckiest Guy'",
+    "400 50px 'DM Serif Display'",
+    "800 42px 'Poppins'",
+    "400 64px 'Bebas Neue'",
+    "700 44px 'Cinzel'",
+    "500 54px 'Bodoni Moda'",
+    "400 76px 'Anton'",
+    "500 36px 'Inter'",
+    "300 38px 'Jost'",
     "700 25px 'JetBrains Mono'",
     "800 28px 'JetBrains Mono'",
     "700 54px 'Instrument Serif'",
@@ -2068,6 +2170,8 @@ export async function exportExactExplainerMp4(params: {
   palette: VisualPalette;
   layoutMode: ExplainerLayoutMode;
   brollImages?: Record<string, HTMLImageElement>;
+  captionStyleId?: CaptionStyleId;
+  captionSizeScale?: number;
   captionPosition?: "bottom" | "center" | "top";
   captionYOffset?: number;
   captionYPercent?: number;
@@ -2214,6 +2318,8 @@ export async function exportExactExplainerMp4(params: {
         palette,
         layoutMode,
         brollImages,
+        captionStyleId: params.captionStyleId,
+        captionSizeScale: params.captionSizeScale,
         captionPosition,
         captionYOffset,
         captionYPercent,
