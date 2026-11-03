@@ -594,13 +594,13 @@ function validateWonderStoryboard(
 
   const rawTheme = raw?.theme || {};
   const theme = {
-    bg: String(rawTheme.bg || ctx.template?.bg || (styleHint === "blackNeon" ? "#0A0A0A" : styleHint === "anime" ? "#181824" : styleHint === "minimal" ? "#FFFFFF" : "#F5F1E8")),
-    paper: String(rawTheme.paper || ctx.template?.paper || (styleHint === "blackNeon" ? "#141414" : styleHint === "anime" ? "#222238" : styleHint === "minimal" ? "#FAFAFA" : "#FFFEFB")),
-    ink: String(rawTheme.ink || ctx.template?.textColor || (styleHint === "blackNeon" || styleHint === "anime" ? "#FFFFFF" : "#111111")),
-    accent: String(rawTheme.accent || ctx.template?.accent || (styleHint === "blackNeon" ? "#00D9FF" : styleHint === "anime" ? "#FF3366" : "#FF6B35")),
-    effect: String(rawTheme.effect || ctx.template?.effect || (styleHint === "blackNeon" ? "black bg #0A0A0A, electric blue glow, glitch" : styleHint === "anime" ? "anime cel shading, speed lines, impact frames" : "torn paper edges, soft shadow, #F5F1E8 bg, orange pop")),
-    fontDisplay: String(rawTheme.fontDisplay || ctx.template?.fontDisplay || (styleHint === "blackNeon" ? "JetBrains Mono" : styleHint === "anime" ? "Impact" : styleHint === "minimal" ? "Inter" : "Instrument Serif")),
-    font: String(rawTheme.font || ctx.template?.font || (styleHint === "blackNeon" ? "JetBrains Mono" : styleHint === "anime" ? "Impact, Inter" : styleHint === "minimal" ? "Inter" : "Instrument Serif")),
+    bg: String(rawTheme.bg || ctx.template?.bg || (styleHint === "blackNeon" ? "#0A0A0A" : styleHint === "anime" ? "#181824" : styleHint === "minimal" ? "#FFFFFF" : styleHint === "clay3d" ? "#FBE8D3" : "#F5F1E8")),
+    paper: String(rawTheme.paper || ctx.template?.paper || (styleHint === "blackNeon" ? "#141414" : styleHint === "anime" ? "#222238" : styleHint === "minimal" ? "#FAFAFA" : styleHint === "clay3d" ? "#FFFDF7" : "#FFFEFB")),
+    ink: String(rawTheme.ink || ctx.template?.textColor || (styleHint === "blackNeon" || styleHint === "anime" ? "#FFFFFF" : styleHint === "clay3d" ? "#1E1E1E" : "#111111")),
+    accent: String(rawTheme.accent || ctx.template?.accent || (styleHint === "blackNeon" ? "#00D9FF" : styleHint === "anime" ? "#FF3366" : styleHint === "clay3d" ? "#E76F51" : "#FF6B35")),
+    effect: String(rawTheme.effect || ctx.template?.effect || (styleHint === "blackNeon" ? "black bg #0A0A0A, electric blue glow, glitch" : styleHint === "anime" ? "anime cel shading, speed lines, impact frames" : styleHint === "clay3d" ? "tactile clay 3D stop-motion, plasticine modeling clay characters, squash-and-stretch bounce, warm coral/amber palette" : "torn paper edges, soft shadow, #F5F1E8 bg, orange pop")),
+    fontDisplay: String(rawTheme.fontDisplay || ctx.template?.fontDisplay || (styleHint === "blackNeon" ? "JetBrains Mono" : styleHint === "anime" ? "Impact" : styleHint === "minimal" ? "Inter" : styleHint === "clay3d" ? "Montserrat" : "Instrument Serif")),
+    font: String(rawTheme.font || ctx.template?.font || (styleHint === "blackNeon" ? "JetBrains Mono" : styleHint === "anime" ? "Impact, Inter" : styleHint === "minimal" ? "Inter" : styleHint === "clay3d" ? "Montserrat, Poppins" : "Instrument Serif")),
   };
 
   const assets = Array.isArray(raw?.assets) ? raw.assets.map((a: any) => String(a)) : [];
@@ -749,6 +749,14 @@ function extractStyleHint(topic: string): string {
     lower.includes("frosted")
   )
     return "glass";
+  if (
+    lower.includes("clay") ||
+    lower.includes("claymation") ||
+    lower.includes("plasticine") ||
+    lower.includes("stop motion") ||
+    lower.includes("stop-motion")
+  )
+    return "clay3d";
   return "none";
 }
 

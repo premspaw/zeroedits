@@ -15,7 +15,7 @@ export default function Error({
 
   return (
     <div style={{ padding: '40px', fontFamily: 'monospace', background: '#fff', color: '#111' }}>
-      <h2 style={{ color: '#E4491B' }}>Runtime Error in Paper Studio</h2>
+      <h2 style={{ color: '#E4491B' }}>Runtime Error in Zeroedits</h2>
       <p style={{ fontWeight: 'bold' }}>{error.message}</p>
       <pre style={{ color: '#c00', fontSize: '12px', whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: '16px', borderRadius: '8px' }}>
         {error.stack}

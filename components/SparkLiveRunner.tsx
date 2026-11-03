@@ -23,6 +23,9 @@ interface SparkLiveRunnerProps {
   onError?: (message: string) => void;
   onExportMP4?: () => void;
   onTimeUpdate?: (time: number, isPlaying: boolean) => void;
+  transparent?: boolean;
+  playbackTime?: number;
+  playbackIsPlaying?: boolean;
 }
 
 export default function SparkLiveRunner({
@@ -43,6 +46,9 @@ export default function SparkLiveRunner({
   onError,
   onExportMP4,
   onTimeUpdate,
+  transparent = false,
+  playbackTime,
+  playbackIsPlaying,
 }: SparkLiveRunnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -59,7 +65,7 @@ export default function SparkLiveRunner({
   const layerPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
   const [reloadKey, setReloadKey] = useState(0);
   const totalVideoDuration = Number.isFinite(duration) && duration > 0 ? duration : 10;
-  const background = String(theme?.bg || storyboard?.theme?.bg || "#0B0C10");
+  const background = transparent ? "transparent" : String(theme?.bg || storyboard?.theme?.bg || "#0B0C10");
   const ink = String(theme?.ink || storyboard?.theme?.ink || "#FFFFFF");
   const previewId = useMemo(() => {
     let hash = 2166136261;
@@ -75,6 +81,15 @@ export default function SparkLiveRunner({
     code, duration: totalVideoDuration, background, ink, previewId, fps: 60,
   }), [code, totalVideoDuration, background, ink, previewId]);
   const visibleError = errorMessage || renderError;
+
+  useEffect(() => {
+    if (!isLoaded || playbackTime === undefined) return;
+    const target = Math.max(0, Math.min(totalVideoDuration, playbackTime));
+    iframeRef.current?.contentWindow?.postMessage({ type: "SEEK", previewId, time: target }, "*");
+    if (playbackIsPlaying !== undefined) {
+      iframeRef.current?.contentWindow?.postMessage({ type: "SET_PLAYING", previewId, isPlaying: playbackIsPlaying }, "*");
+    }
+  }, [isLoaded, playbackTime, playbackIsPlaying, totalVideoDuration, previewId]);
 
   useEffect(() => {
     setIsLoaded(false);
@@ -184,8 +199,16 @@ export default function SparkLiveRunner({
   };
 
   return (
-    <div ref={containerRef} className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] bg-[#0B0C10] border-2 border-[#1E2028] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] text-white ${className}`} style={{ aspectRatio }}>
-      <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between">
+    <div
+      ref={containerRef}
+      className={`group relative w-full h-full flex flex-col overflow-hidden rounded-[24px] ${
+        transparent
+          ? "bg-transparent border-0 shadow-none"
+          : "bg-[#0B0C10] border-2 border-[#1E2028] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)]"
+      } text-white ${className}`}
+      style={{ aspectRatio }}
+    >
+      {showControls && <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between">
         <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/60 border border-white/10 text-white">
           <span className={`w-2 h-2 rounded-full ${visibleError ? "bg-rose-400" : isLoaded ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
           <span className="font-mono text-[9.5px] tracking-wider uppercase">
@@ -209,7 +232,7 @@ export default function SparkLiveRunner({
             {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
         </div>
-      </div>
+      </div>}
 
       <div className="relative flex-1 min-h-0 w-full overflow-hidden">
         {!visibleError && code && !isGenerating && (
@@ -245,7 +268,7 @@ export default function SparkLiveRunner({
               )}
             </div>
           </div>
-        ) : (isGenerating || !isLoaded) && (
+        ) : !transparent && (isGenerating || !isLoaded) && (
           <div className="absolute inset-0 z-20 bg-[#0B0C10] text-white flex flex-col items-center justify-center p-6 text-center select-none" role="status">
             {/* Ambient Dark Glow Background */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(228,73,27,0.14)_0%,transparent_65%)] pointer-events-none" />

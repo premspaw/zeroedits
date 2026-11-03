@@ -191,6 +191,8 @@ export async function POST(req: NextRequest) {
         const copyArgs = hasAudioSource && audioSource
           ? [
               "-y",
+              "-fflags",
+              "+genpts",
               "-r",
               "30",
               "-f",
@@ -215,6 +217,8 @@ export async function POST(req: NextRequest) {
             ]
           : [
               "-y",
+              "-fflags",
+              "+genpts",
               "-r",
               "30",
               "-f",
@@ -229,6 +233,27 @@ export async function POST(req: NextRequest) {
             ];
         await execFileAsync("ffmpeg", copyArgs, { maxBuffer: 30 * 1024 * 1024 });
         muxSuccess = fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1000;
+        // Validate that the copied stream is really a playable H.264 video (not garbage bytes)
+        if (muxSuccess) {
+          try {
+            const { stdout } = await execFileAsync("ffprobe", [
+              "-v", "error",
+              "-select_streams", "v:0",
+              "-show_entries", "stream=codec_name,nb_frames,duration,width,height",
+              "-of", "json",
+              outputPath,
+            ]);
+            const s = JSON.parse(stdout)?.streams?.[0];
+            const frames = Number(s?.nb_frames || 0);
+            const dur = Number(s?.duration || 0);
+            muxSuccess = s?.codec_name === "h264" && s?.width === 1080 && s?.height === 1920 && (frames >= 10 || dur >= 0.5);
+          } catch {
+            muxSuccess = false;
+          }
+          if (!muxSuccess) {
+            try { fs.unlinkSync(outputPath); } catch {}
+          }
+        }
       } catch (copyErr) {
         muxSuccess = false;
       }
@@ -238,6 +263,12 @@ export async function POST(req: NextRequest) {
         const transcodeArgs = hasAudioSource && audioSource
           ? [
               "-y",
+              "-fflags",
+              "+genpts",
+              "-r",
+              "30",
+              "-f",
+              "h264",
               "-i",
               inputPath,
               "-i",
@@ -272,6 +303,12 @@ export async function POST(req: NextRequest) {
             ]
           : [
               "-y",
+              "-fflags",
+              "+genpts",
+              "-r",
+              "30",
+              "-f",
+              "h264",
               "-i",
               inputPath,
               "-vf",

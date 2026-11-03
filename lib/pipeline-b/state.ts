@@ -112,11 +112,20 @@ export function saveState(state: PipelineBRunState): void {
 
   state.updatedAt = new Date().toISOString();
   const targetPath = getStatePath(state.runId);
-  const tmpPath = `${targetPath}.tmp`;
+  const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  const json = JSON.stringify(state, null, 2);
 
-  // Atomic write via temporary file
-  fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), "utf-8");
-  fs.renameSync(tmpPath, targetPath);
+  try {
+    fs.writeFileSync(tmpPath, json, "utf-8");
+    fs.renameSync(tmpPath, targetPath);
+  } catch {
+    try {
+      fs.writeFileSync(targetPath, json, "utf-8");
+    } catch {}
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
+  }
 }
 
 export function recordStageStart(state: PipelineBRunState, stage: PipelineBStage, input?: any): void {

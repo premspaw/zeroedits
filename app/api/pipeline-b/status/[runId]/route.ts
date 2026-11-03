@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadState } from "@/lib/pipeline-b/state";
+import { loadState, saveState } from "@/lib/pipeline-b/state";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { runId: string } }
+  context: { params: Promise<{ runId: string }> | { runId: string } }
 ) {
   try {
-    const { runId } = params;
+    const resolvedParams = await Promise.resolve(context.params);
+    const { runId } = resolvedParams;
     const state = loadState(runId);
     return NextResponse.json({
       success: true,
@@ -17,5 +18,22 @@ export async function GET(
       { success: false, error: err.message || "Failed to load run state." },
       { status: 404 }
     );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  context: { params: Promise<{ runId: string }> | { runId: string } }
+) {
+  try {
+    const { runId } = await Promise.resolve(context.params);
+    const { editPlan, motionCode } = await req.json();
+    const state = loadState(runId);
+    if (editPlan && Array.isArray(editPlan.visualSegments)) state.editPlan = editPlan;
+    if (typeof motionCode === "string" && motionCode.length > 30) (state as any).motionCode = motionCode;
+    saveState(state);
+    return NextResponse.json({ success: true, state });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message || "Failed to update Pipeline B scene." }, { status: 500 });
   }
 }

@@ -341,73 +341,8 @@ export async function exportFinalVideo(params: {
         );
       }
     } else {
-      // =====================================================================
-      // ON-FACE-VALUE FLOATING CALLOUT (Below speaker's chest, y=1320..1480)
-      // Synced to the key phrase timestamp while speaker is talking on camera!
-      // =====================================================================
-      if (actionIndices.length >= 2) {
-        // Show each spoken task popping into the floating card below the speaker's face!
-        for (let sIdx = 0; sIdx < actionIndices.length; sIdx++) {
-          const wStartIdx = actionIndices[sIdx];
-          const wEndIdx =
-            sIdx < actionIndices.length - 1 ? actionIndices[sIdx + 1] : segWords.length;
-          const phrase = normalizeAssText(
-            segWords
-              .slice(wStartIdx, wEndIdx)
-              .map((w) => w.word)
-              .join(" ")
-          );
-          const chipTitle = cleanShortTitle(phrase, `STEP ${sIdx + 1}`);
-          const chipStartSec = Math.max(sSec, segWords[wStartIdx]?.start ?? sSec);
-          const chipEndSec =
-            sIdx < actionIndices.length - 1
-              ? Math.min(eSec, segWords[actionIndices[sIdx + 1]]?.start ?? eSec)
-              : eSec;
-          if (chipEndSec - chipStartSec < 0.25) continue;
-
-          const cStart = formatAssTimestamp(chipStartSec);
-          const cEnd = formatAssTimestamp(chipEndSec);
-
-          assLines.push(
-            `Dialogue: 1,${cStart},${cEnd},FaceCalloutBg,,0,0,0,,{\\an7\\pos(140,1330)\\fad(100,100)\\1c&H161210&\\3c&H1B49E4&\\bord3\\shad6\\p1}m 0 0 l 800 0 800 155 0 155{\\p0}`
-          );
-          assLines.push(
-            `Dialogue: 1,${cStart},${cEnd},FaceCalloutBadge,,0,0,0,,{\\an5\\pos(540,1372)\\fad(100,100)}STEP 0${sIdx + 1} • ON CAMERA`
-          );
-          assLines.push(
-            `Dialogue: 1,${cStart},${cEnd},FaceCalloutTitle,,0,0,0,,{\\an5\\pos(540,1432)\\fad(100,100)\\fscx88\\fscy88\\t(0,160,\\fscx100\\fscy100)}${chipTitle}`
-          );
-        }
-      } else {
-        // Trigger floating lower-face callout on the punchline words of the speaker's sentence
-        const punchIdx = segWords.length >= 5 ? Math.max(1, segWords.length - 3) : 0;
-        const triggerSec = Math.max(sSec, segWords[punchIdx]?.start ?? sSec);
-        const punchWords = segWords
-          .slice(punchIdx)
-          .map((w) => w.word)
-          .join(" ");
-        const calloutTitle = cleanShortTitle(
-          punchWords || seg.headlineText || spokenText,
-          "KEY POINT"
-        );
-        const calloutBadge = cleanShortTitle(
-          seg.headlineText || spokenText,
-          "LIVE INSIGHT"
-        );
-
-        if (eSec - triggerSec >= 0.4) {
-          const cStart = formatAssTimestamp(triggerSec);
-          assLines.push(
-            `Dialogue: 1,${cStart},${eTime},FaceCalloutBg,,0,0,0,,{\\an7\\pos(140,1330)\\fad(120,120)\\1c&H161210&\\3c&H1B49E4&\\bord3\\shad6\\p1}m 0 0 l 800 0 800 155 0 155{\\p0}`
-          );
-          assLines.push(
-            `Dialogue: 1,${cStart},${eTime},FaceCalloutBadge,,0,0,0,,{\\an5\\pos(540,1372)\\fad(120,120)}${calloutBadge}`
-          );
-          assLines.push(
-            `Dialogue: 1,${cStart},${eTime},FaceCalloutTitle,,0,0,0,,{\\an5\\pos(540,1432)\\fad(120,120)\\fscx88\\fscy88\\t(0,180,\\fscx100\\fscy100)}${calloutTitle}`
-          );
-        }
-      }
+      // A-Roll speaker frames keep the lower-third clean for Subtitle Studio (CC) captions
+      // while Story Pop-Up Motion Graphics render in the upper-right safe zone.
     }
   }
 
@@ -467,6 +402,7 @@ export async function exportFinalVideo(params: {
 
   fs.writeFileSync(assPath, assLines.join("\n"), "utf-8");
 
+  const tmpOutputPath = `${outputPath}.tmp.mp4`;
   try {
     const fontsDir = path
       .resolve(process.cwd(), "public/fonts")
@@ -492,11 +428,11 @@ export async function exportFinalVideo(params: {
         "-pix_fmt",
         "yuv420p",
         "-preset",
-        "veryfast",
+        "ultrafast",
         "-crf",
-        "20",
+        "21",
         "-threads",
-        "4",
+        "2",
         "-c:a",
         "aac",
         "-b:a",
@@ -507,13 +443,20 @@ export async function exportFinalVideo(params: {
         "2",
         "-movflags",
         "+faststart",
-        outputPath,
+        tmpOutputPath,
       ],
       { maxBuffer: 20 * 1024 * 1024 }
     );
 
+    if (fs.existsSync(tmpOutputPath)) {
+      fs.renameSync(tmpOutputPath, outputPath);
+    }
+
     return outputPath;
   } catch (err) {
+    if (fs.existsSync(tmpOutputPath)) {
+      try { fs.unlinkSync(tmpOutputPath); } catch {}
+    }
     console.error("FFmpeg final video export error:", err);
     throw new Error(`Failed to export final reel with burned subtitles: ${(err as Error).message}`);
   }

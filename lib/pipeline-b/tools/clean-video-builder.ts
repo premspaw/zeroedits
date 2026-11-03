@@ -1,8 +1,8 @@
 /**
  * Meta Muse — Pipeline B Tool: Clean Video Builder (FFmpeg Auto-Editor Engine)
  * Uses a single-pass, frame-accurate FFmpeg filtergraph (-filter_complex_script)
- * with VFR normalization (fps=30,settb=AVTB), 1.12x Lanczos jump-cut zoom masking,
- * 20ms anti-pop micro-fades (afade), and broadcast loudness normalization.
+ * with VFR normalization (fps=30,settb=AVTB), 1.08x jump-cut punch-in (105-110%),
+ * 8ms anti-pop micro-fades (afade), and broadcast loudness normalization.
  */
 
 import { execFile } from "child_process";
@@ -20,6 +20,10 @@ export interface BuildCleanVideoOptions {
   targetFps?: number;
   zoomFactor?: number;
   normalizeLoudness?: boolean;
+  /** Keep the native source frame (no 9:16 crop) - used for landscape sources composited as a SAM cutout. */
+  preserveSourceFrame?: boolean;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 /**
@@ -32,66 +36,129 @@ export function buildFilterComplexScript(
     targetFps?: number;
     zoomFactor?: number;
     normalizeLoudness?: boolean;
+    preserveSourceFrame?: boolean;
+    targetWidth?: number;
+    targetHeight?: number;
+    sourceWidth?: number;
+    sourceHeight?: number;
   }
 ): string {
   const targetFps = options?.targetFps || 30;
   const zoomFactor = options?.zoomFactor || 1.12;
+  const targetW = options?.targetWidth || 1080;
+  const targetH = options?.targetHeight || 1920;
+  const srcW = options?.sourceWidth;
+  const srcH = options?.sourceHeight;
   const totalCleanDur = keepSegments.reduce((acc, s) => acc + (s.end - s.start), 0);
-  // loudnorm requires >= 3.0s of audio to compute EBU R128 integrated loudness reliably
   const useLoudnorm = (options?.normalizeLoudness ?? true) && totalCleanDur >= 3.0;
 
   const lines: string[] = [];
-  const concatInputs: string[] = [];
+  const n = keepSegments.length;
 
-  for (let i = 0; i < keepSegments.length; i++) {
-    const seg = keepSegments[i];
-    const s = Math.max(0, +seg.start.toFixed(3));
-    const e = Math.max(+(s + 0.05).toFixed(3), +seg.end.toFixed(3));
-    const dur = +(e - s).toFixed(3);
+  if (n === 1) {
+    const seg = keepSegments[0];
+    const startFrame = Math.max(0, Math.round(seg.start * targetFps));
+    const endFrame = Math.max(startFrame + 2, Math.round(seg.end * targetFps));
+    const s = +(startFrame / targetFps).toFixed(4);
+    const e = +(endFrame / targetFps).toFixed(4);
+    const dur = +((endFrame - startFrame) / targetFps).toFixed(4);
+    const fadeDur = +Math.min(0.01, Math.max(0.005, dur / 4)).toFixed(3);
+    const fadeOutStart = +Math.max(0, dur - fadeDur).toFixed(3);
 
     const isZoomed = (seg.zoomScale && seg.zoomScale > 1.05) || (seg as any).zoom === true;
-    // Rule 1: Frame-Accurate Trimming & VFR Normalization + 1.12x Lanczos eye-level punch-in zoom
     const zoomChain = isZoomed
-      ? `scale=iw*${zoomFactor}:ih*${zoomFactor}:flags=lanczos,crop=iw/${zoomFactor}:ih/${zoomFactor}:(in_w-out_w)/2:(in_h-out_h)*0.38,`
+      ? `scale=iw*${zoomFactor}:ih*${zoomFactor}:flags=bicubic,crop=iw/${zoomFactor}:ih/${zoomFactor}:(in_w-out_w)/2:(in_h-out_h)*0.38,`
       : "";
-    const portraitChain =
-      "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1,format=yuv420p";
+    const portraitChain = options?.preserveSourceFrame
+      ? "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,format=yuv420p"
+      : `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase:flags=bicubic,crop=${targetW}:${targetH},setsar=1,format=yuv420p`;
 
-    lines.push(
-      `[0:v]trim=start=${s}:end=${e},setpts=PTS-STARTPTS,fps=${targetFps},settb=AVTB,${zoomChain}${portraitChain}[v${i}]`
-    );
+    lines.push(`[0:v]fps=${targetFps},settb=AVTB,format=yuv420p,trim=start_frame=${startFrame}:end_frame=${endFrame},setpts=PTS-STARTPTS,${zoomChain}${portraitChain}[v_out]`);
+    const audioChain = useLoudnorm ? "loudnorm=I=-14:TP=-1.0:LRA=11" : "anull";
+    lines.push(`[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${fadeDur},afade=t=out:st=${fadeOutStart}:d=${fadeDur},${audioChain}[a_out]`);
+    return lines.join(";\n");
+  }
 
-    // Rule 2: Prevent Audio Clicks/Pops on Cuts (20ms micro fade-in and fade-out)
-    const fadeDur = +Math.min(0.02, Math.max(0.005, dur / 4)).toFixed(3);
+  // Multi-segment: Root stream CFR normalization & explicit splitting
+  const vSplits = Array.from({ length: n }, (_, i) => `[v_in${i}]`).join("");
+  const aSplits = Array.from({ length: n }, (_, i) => `[a_in${i}]`).join("");
+  lines.push(`[0:v]fps=${targetFps},settb=AVTB,format=yuv420p,split=${n}${vSplits}`);
+  lines.push(`[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=${n}${aSplits}`);
+
+  const concatInputs: string[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const seg = keepSegments[i];
+    const startFrame = Math.max(0, Math.round(seg.start * targetFps));
+    const endFrame = Math.max(startFrame + 2, Math.round(seg.end * targetFps));
+    const s = +(startFrame / targetFps).toFixed(4);
+    const e = +(endFrame / targetFps).toFixed(4);
+    const dur = +((endFrame - startFrame) / targetFps).toFixed(4);
+
+    // Alternating 1.12x punch-in zoom to disguise jump cuts
+    const isZoomed =
+      (seg.zoomScale && seg.zoomScale > 1.05) ||
+      (seg as any).zoom === true ||
+      (seg.zoomScale === undefined && i % 2 === 1);
+
+    const normChain = srcW && srcH ? `,scale=${srcW}:${srcH}:flags=bicubic,setsar=1` : ",setsar=1";
+    const zoomFilter = isZoomed
+      ? `,scale=iw*${zoomFactor}:ih*${zoomFactor}:flags=bicubic,crop=iw/${zoomFactor}:ih/${zoomFactor}:(in_w-out_w)/2:(in_h-out_h)*0.38${normChain}`
+      : normChain;
+
+    lines.push(`[v_in${i}]trim=start_frame=${startFrame}:end_frame=${endFrame},setpts=PTS-STARTPTS${zoomFilter}[v${i}]`);
+
+    // Anti-pop audio micro-fades (8-10ms)
+    const fadeDur = +Math.min(0.01, Math.max(0.005, dur / 4)).toFixed(3);
     const fadeOutStart = +Math.max(0, dur - fadeDur).toFixed(3);
     lines.push(
-      `[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS,aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,afade=t=in:st=0:d=${fadeDur},afade=t=out:st=${fadeOutStart}:d=${fadeDur}[a${i}]`
+      `[a_in${i}]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${fadeDur},afade=t=out:st=${fadeOutStart}:d=${fadeDur}[a${i}]`
     );
 
     concatInputs.push(`[v${i}][a${i}]`);
   }
 
-  if (keepSegments.length === 1) {
-    lines.push(`[v0]null[v_out]`);
-    if (useLoudnorm) {
-      lines.push(`[a0]loudnorm=I=-14:TP=-1.5:LRA=11[a_out]`);
-    } else {
-      lines.push(`[a0]anull[a_out]`);
-    }
+  // Concatenate all trimmed segments in a single pass
+  lines.push(`${concatInputs.join("")}concat=n=${n}:v=1:a=1[v_cat][a_cat]`);
+
+  // Post-concat single 9:16 portrait scale (drastically reduces RAM and eliminates queue overflow drops)
+  if (options?.preserveSourceFrame) {
+    lines.push(`[v_cat]scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,format=yuv420p[v_out]`);
   } else {
-    lines.push(`${concatInputs.join("")}concat=n=${keepSegments.length}:v=1:a=1[v_out][a_cat]`);
-    if (useLoudnorm) {
-      lines.push(`[a_cat]loudnorm=I=-14:TP=-1.5:LRA=11[a_out]`);
-    } else {
-      lines.push(`[a_cat]anull[a_out]`);
-    }
+    lines.push(`[v_cat]scale=${targetW}:${targetH}:force_original_aspect_ratio=increase:flags=bicubic,crop=${targetW}:${targetH},setsar=1,format=yuv420p[v_out]`);
+  }
+
+  // Post-concat broadcast loudness mastering
+  if (useLoudnorm) {
+    lines.push(`[a_cat]loudnorm=I=-14:TP=-1.0:LRA=11[a_out]`);
+  } else {
+    lines.push(`[a_cat]anull[a_out]`);
   }
 
   return lines.join(";\n");
 }
 
 export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<string> {
-  const { rawVideoPath, keepSegments, outputPath, targetFps = 30, zoomFactor = 1.12, normalizeLoudness = true } = params;
+  const { rawVideoPath, keepSegments, outputPath, targetFps = 30, zoomFactor = 1.12, normalizeLoudness = true, preserveSourceFrame = false } = params;
+
+  let srcW = params.sourceWidth;
+  let srcH = params.sourceHeight;
+  if (!srcW || !srcH) {
+    try {
+      const { stdout } = await execFileAsync("ffprobe", [
+        "-v", "error",
+        "-show_entries", "stream=width,height",
+        "-select_streams", "v:0",
+        "-of", "json",
+        rawVideoPath,
+      ]);
+      const p = JSON.parse(stdout);
+      srcW = p.streams?.[0]?.width;
+      srcH = p.streams?.[0]?.height;
+    } catch {
+      // fallback
+    }
+  }
 
   const outputDir = path.dirname(outputPath);
   if (!fs.existsSync(outputDir)) {
@@ -112,6 +179,9 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
       targetFps,
       zoomFactor,
       normalizeLoudness,
+      preserveSourceFrame,
+      sourceWidth: srcW,
+      sourceHeight: srcH,
     });
     fs.writeFileSync(filterScriptPath, filterScript, "utf-8");
 
@@ -122,6 +192,8 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
         "ffmpeg",
         [
           "-y",
+          "-threads",
+          "4",
           "-i",
           rawVideoPath,
           "-filter_complex",
@@ -135,9 +207,9 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
           "-c:v",
           "libx264",
           "-preset",
-          "fast",
+          "ultrafast",
           "-crf",
-          "20",
+          "22",
           "-pix_fmt",
           "yuv420p",
           "-c:a",
@@ -148,6 +220,7 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
           "2",
           "-b:a",
           "192k",
+          "-shortest",
           "-movflags",
           "+faststart",
           outputPath,
@@ -160,6 +233,7 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
         targetFps,
         zoomFactor,
         normalizeLoudness: false,
+        preserveSourceFrame,
       });
       fs.writeFileSync(filterScriptPath, fallbackScript, "utf-8");
       const inlineFallback = fallbackScript.replace(/\r?\n/g, "");
@@ -167,6 +241,8 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
         "ffmpeg",
         [
           "-y",
+          "-threads",
+          "4",
           "-i",
           rawVideoPath,
           "-filter_complex",
@@ -191,6 +267,7 @@ export async function buildCleanVideo(params: BuildCleanVideoOptions): Promise<s
           "2",
           "-b:a",
           "192k",
+          "-shortest",
           "-movflags",
           "+faststart",
           outputPath,

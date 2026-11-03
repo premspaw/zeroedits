@@ -52,8 +52,15 @@ export type PacingProfile = "snappy" | "natural" | "relaxed";
 export interface PacingConfig {
   profile: PacingProfile;
   minSilenceDuration: number;
+  /** Margin kept for mid-sentence word gaps. */
   preservedSilenceMargin: number;
   minSpeechMargin: number;
+  /** Margin kept after sentence-ending punctuation / transcript segment ends (0.18-0.25s). */
+  sentenceBoundaryMargin?: number;
+  /** Mid-sentence gaps at/above this length are treated as deliberate dramatic pauses. */
+  dramaticPauseThreshold?: number;
+  /** Lead-in silence kept before the next word after a dramatic pause. */
+  dramaticPauseMargin?: number;
 }
 
 export interface CandidateCut {
@@ -108,7 +115,54 @@ export type VisualSegmentLayout =
   | "stacked_layout"
   | "picture_in_picture"
   | "broll_takeover"
-  | "sam_cutout";
+  | "sam_cutout"
+  | "depth_cutout";
+
+export type ZaiCutoutMode =
+  | "animation_then_cutout"
+  | "depth_behind_speaker"
+  | "collage_cutout"
+  | "pure_animation"
+  | "fullscreen_speaker";
+
+export interface SAMCutoutBox {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  height: number;
+  normX: number; // 0.0 - 1.0
+  normY: number; // 0.0 - 1.0
+  normW: number; // 0.0 - 1.0
+  normH: number; // 0.0 - 1.0
+  confidence?: number;
+  fileId?: string;
+  objectId?: string;
+  maskHeight?: number;
+  maskWidth?: number;
+  maskEncoding?: "lossless" | "one_bit";
+  maskPayload?: string;
+  maskRle?: {
+    size: [number, number];
+    counts: string | number[];
+  };
+  maskSvgPath?: string;
+  /** Public URL of the frame-by-frame SAM 3.1 mask track JSON (`sam_track.json`). */
+  trackUrl?: string;
+  /** Number of per-frame masks in the track. */
+  trackFrameCount?: number;
+  frameMasks?: Array<{
+    frameIndex: number;
+    normX: number;
+    normY: number;
+    normW: number;
+    normH: number;
+    maskHeight: number;
+    maskWidth: number;
+    svgPath: string;
+  }>;
+}
 
 export type VisualTechnique =
   | "kinetic_typography"
@@ -138,6 +192,16 @@ export interface VisualPlanSegment {
   technique: VisualTechnique;
   spokenReference: string;
   motionIntent: string;
+  visualRecipe?: {
+    metaphor: string;
+    style?: "auto" | "clay_3d" | "paper_cut" | "paper_card" | "procedural" | "glass" | "black_neon" | "anime";
+    objects: Array<{
+      label: string;
+      shape: "circle" | "rect" | "diamond" | "line" | "text";
+      motion: "rise" | "orbit" | "pulse" | "slide" | "unfold" | "scatter";
+      position: "upper-left" | "upper-right" | "center" | "lower-left" | "lower-right";
+    }>;
+  };
   requiredAssets?: VisualAssetRequirement[];
   layerArrangement: "background" | "main" | "overlay" | "foreground";
   transitionDirection:
@@ -151,6 +215,8 @@ export interface VisualPlanSegment {
     | "none";
   cameraZoom?: number;
   headlineText?: string;
+  cutoutMode?: ZaiCutoutMode;
+  animationLeadInSec?: number; // Seconds the codebase story animation runs BEFORE the talking-head cutout pops in
   brandSettings?: {
     primaryColor?: string;
     highlightColor?: string;
@@ -215,6 +281,8 @@ export interface EditPlan {
   transcript?: TranscriptSegment[];
   templateId: string;
   notes: string;
+  samBox?: SAMCutoutBox;
+  samCutoutUrl?: string;
 }
 
 export interface StageRecord {
@@ -258,6 +326,10 @@ export interface PipelineBRunState {
     notes: string;
   };
   editPlan?: EditPlan;
+  /** Constant-30fps master transcoded from the ORIGINAL full-res upload. All cuts are computed and rendered from this. */
+  cfrVideoPath?: string;
+  /** Automated QA gate results (duration, word parity, mask, safe zone, loop seam). */
+  qaReport?: import("./tools/qa-gates.ts").QaReport;
   cleanVideoPath?: string;
   motionCodePath?: string;
   previewUrl?: string;

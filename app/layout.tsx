@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Paper Studio • AI Storyboard & Video Reel Creator",
+  title: "Zeroedits • AI Storyboard & Video Reel Creator",
   description:
     "Generate studio-grade 9:16 mobile paper card storyboard reels with physics, typography and voiceover dubbing.",
 };

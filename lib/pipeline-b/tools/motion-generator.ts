@@ -40,7 +40,8 @@ export function generateTalkingHeadMotionCode(params: MotionGeneratorParams): st
 
   const visualSegments = (editPlan.visualSegments || []).map((seg) => ({
     ...seg,
-    assetUrl: resolvedAssets[seg.id] || (seg as any).assetUrl || null,
+    // Strictly enforce ZERO static AI images — 100% codebase story animations + SAM 3.1 cutouts
+    assetUrl: null,
   }));
 
   const visualOverlays = editPlan.visualPlan || [];
@@ -94,7 +95,7 @@ export const TalkingHeadReel: React.FC = () => {
   const currentTime = frame / fps;
 
   const words = ${JSON.stringify(words, null, 2)};
-  const visualSegments = ${JSON.stringify(visualSegments, null, 2)};
+  const visualSegments: any[] = ${JSON.stringify(visualSegments, null, 2)};
   const visualOverlays = ${JSON.stringify(visualOverlays, null, 2)};
 
   // Active visual segment detection for camera framing & layout
@@ -151,7 +152,7 @@ export const TalkingHeadReel: React.FC = () => {
   } else if (activeSegment?.cameraZoom && activeSegment.cameraZoom > 1.0) {
     // Snappy 1.15x cut-in on punchlines & insights
     const timeInSeg = currentTime - activeSegment.start;
-    cameraZoom = interpolate(timeInSeg, [0, 0.12], [1.04, activeSegment.cameraZoom], { extrapolateRight: "clamp" });
+    cameraZoom = Number(interpolate(timeInSeg, [0, 0.12], [1.04, Number(activeSegment.cameraZoom)], { extrapolateRight: "clamp" }));
   } else {
     // Organic subtle camera breathing
     cameraZoom = 1.02 + Math.sin(currentTime * 0.45) * 0.015;
@@ -171,18 +172,36 @@ export const TalkingHeadReel: React.FC = () => {
     transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
   };
 
+  const timeInActiveSeg = activeSegment ? Math.max(0, currentTime - activeSegment.start) : 0;
+  const leadInSec = typeof activeSegment?.animationLeadInSec === "number" ? activeSegment.animationLeadInSec : 0.85;
+  const cutoutReady = layoutType !== "sam_cutout" || timeInActiveSeg >= leadInSec;
+
   if (layoutType === "picture_in_picture" || layoutType === "sam_cutout") {
     videoContainerStyle = {
       position: "absolute",
-      right: 36,
-      bottom: 240,
-      width: 340,
-      height: 460,
-      borderRadius: layoutType === "sam_cutout" ? "42% 42% 36% 36% / 34% 34% 44% 44%" : 28,
-      border: "4px solid ${template.primaryColor}",
-      boxShadow: "0 24px 64px rgba(0,0,0,0.85), 0 0 24px rgba(0,217,255,0.4)",
+      left: 48,
+      bottom: 425,
+      width: 350,
+      height: 440,
+      clipPath: "polygon(4% 94%, 1% 66%, 8% 49%, 30% 43%, 23% 35%, 22% 19%, 31% 9%, 39% 1%, 61% 1%, 69% 9%, 78% 19%, 77% 35%, 70% 43%, 92% 49%, 99% 66%, 96% 94%)",
+      filter: "drop-shadow(0 0 6px #FFFFFF) drop-shadow(0 18px 36px rgba(0,0,0,0.85))",
       overflow: "hidden",
-      zIndex: 50,
+      zIndex: 30,
+      opacity: cutoutReady ? 1 : 0,
+      transform: cutoutReady ? "scale(1)" : "scale(0.65)",
+      transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
+    };
+  } else if (layoutType === "depth_cutout") {
+    videoContainerStyle = {
+      position: "absolute",
+      left: 140,
+      top: 360,
+      width: 800,
+      height: 1140,
+      clipPath: "polygon(4% 94%, 1% 66%, 8% 49%, 30% 43%, 23% 35%, 22% 19%, 31% 9%, 39% 1%, 61% 1%, 69% 9%, 78% 19%, 77% 35%, 70% 43%, 92% 49%, 99% 66%, 96% 94%)",
+      filter: "drop-shadow(0 0 8px #FFFFFF) drop-shadow(0 28px 54px rgba(0,0,0,0.85))",
+      overflow: "hidden",
+      zIndex: 30,
       transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
     };
   } else if (layoutType === "split_screen" || layoutType === "stacked_layout") {
@@ -291,6 +310,7 @@ export const TalkingHeadReel: React.FC = () => {
       }
 
       {/* 3. Glowing Progress Dial & Retention Metric Callout */}
+      {false && (
       <div
         style={{
           position: "absolute",
@@ -327,22 +347,23 @@ export const TalkingHeadReel: React.FC = () => {
         </svg>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={{ fontSize: 8.5, fontWeight: 900, color: "#10B981", letterSpacing: "0.12em" }}>
-            +42% RETENTION
+            SCRIPT-LED VISUAL
           </span>
           <span style={{ fontSize: 10.5, fontWeight: 900, color: "#FFE600" }}>
-            -10.9s DEAD AIR CUT
+            SPEECH SYNC
           </span>
         </div>
       </div>
+      )}
 
       {/* 4. Opening Hook Headline Card (0.0s to 3.5s) */}
       {currentTime <= 3.5 && (
         <div
           style={{
             position: "absolute",
-            top: 85,
-            left: "50%",
-            transform: "translateX(-50%)",
+            top: 82 + (Math.round(currentTime * 2) % 3) * 18,
+            left: (18 + (Math.round(currentTime * 1.5) % 3) * 26) + "%",
+            transform: "translateX(-50%) scale(" + (0.96 + Math.min(0.12, currentTime * 0.035)) + ")",
             backgroundColor: "rgba(10, 10, 15, 0.94)",
             border: "2.5px solid #FFC700",
             borderRadius: 24,
@@ -362,13 +383,14 @@ export const TalkingHeadReel: React.FC = () => {
       )}
 
       {/* 5. PROCEDURAL SVG ELEMENTS & DYNAMIC VISUAL SEGMENTS */}
-      {visualSegments.map((seg: any) => {
+      {visualSegments.map((seg: any, sceneIndex: number) => {
         const isVisible = currentTime >= seg.start && currentTime <= seg.end;
         if (!isVisible) return null;
 
         const timeIn = currentTime - seg.start;
         const scale = Math.min(1.0, Math.max(0.1, timeIn * 6.5));
         const zIdx = seg.layerArrangement === "foreground" ? 60 : (seg.layerArrangement === "overlay" ? 40 : 25);
+        const recipeObjects = seg.visualRecipe?.objects?.length ? seg.visualRecipe.objects : [{ label: seg.headlineText || seg.spokenReference || "Story beat", shape: "text", motion: "rise", position: "center" }];
 
         // A. REAL GENERATED IMAGE OR B-ROLL TAKEOVER
         if (seg.assetUrl || seg.technique === "generated_image" || seg.layoutType === "broll_takeover") {
@@ -440,10 +462,10 @@ export const TalkingHeadReel: React.FC = () => {
               key={seg.id}
               style={{
                 position: "absolute",
-                top: isPiP ? 115 : 130,
-                left: isPiP ? 36 : "50%",
-                right: isPiP ? 36 : undefined,
-                transform: isPiP ? \`scale(\${scale})\` : \`translateX(-50%) scale(\${scale})\`,
+                top: isPiP ? 115 : 150 + (sceneIndex % 3) * 145,
+                left: isPiP ? 36 : sceneIndex % 2 === 0 ? 34 : undefined,
+                right: isPiP ? 36 : sceneIndex % 2 === 1 ? 34 : undefined,
+                transform: isPiP ? \`scale(\${scale})\` : \`scale(\${scale})\`,
                 width: isPiP ? "calc(100% - 72px)" : 480,
                 backgroundColor: "rgba(14, 14, 22, 0.96)",
                 border: "3px solid ${template.primaryColor}",
@@ -468,7 +490,22 @@ export const TalkingHeadReel: React.FC = () => {
                 {seg.headlineText || "${isTechTopic ? "Automated Pipeline" : "Dynamic Data Pipeline"}"}
               </div>
 
-              ${proceduralGraphicBlock}
+              <div style={{ minHeight: 120, padding: 18, borderRadius: 18, background: sceneIndex % 2 === 0 ? "linear-gradient(135deg, rgba(228,73,27,0.28), rgba(255,230,0,0.08) 42%, rgba(18,20,30,0.95))" : "linear-gradient(35deg, rgba(228,73,27,0.28), rgba(255,230,0,0.08) 42%, rgba(18,20,30,0.95))", border: "1px solid rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+                {recipeObjects.map((obj: any, objIndex: number) => {
+                  const motionOffset = Math.sin(timeIn * 3 + objIndex * 1.7) * 10;
+                  const x = obj.position?.includes("left") ? 8 + objIndex * 5 : obj.position?.includes("right") ? undefined : 50;
+                  const right = obj.position?.includes("right") ? 8 + objIndex * 5 : undefined;
+                  const y = obj.position?.includes("upper") ? 8 : obj.position?.includes("lower") ? undefined : 50;
+                  const bottom = obj.position?.includes("lower") ? 8 : undefined;
+                  const shapeRadius = obj.shape === "circle" ? "50%" : obj.shape === "diamond" ? 8 : obj.shape === "line" ? 999 : 12;
+                  const turn = obj.motion === "orbit" ? timeIn * 55 : obj.motion === "unfold" ? Math.min(1, timeIn * 3) * 8 : 0;
+                  const lift = obj.motion === "rise" || obj.motion === "scatter" ? -Math.min(26, timeIn * 32) + motionOffset : obj.motion === "slide" ? motionOffset * 1.8 : 0;
+                  const pulse = obj.motion === "pulse" ? 0.92 + Math.sin(timeIn * 5 + objIndex) * 0.08 : Math.min(1, 0.75 + timeIn * 2.5);
+                  return <div key={objIndex} style={{ position: "absolute", left: x === undefined ? undefined : x + "%", right: right === undefined ? undefined : right + "%", top: y === undefined ? undefined : y + "%", bottom: bottom === undefined ? undefined : bottom + "%", minWidth: obj.shape === "line" ? 72 : 58, maxWidth: 150, minHeight: obj.shape === "line" ? 4 : 42, padding: obj.shape === "line" ? 0 : "8px 10px", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontSize: obj.shape === "text" ? 14 : 10, fontWeight: 900, color: "#FFFFFF", background: obj.shape === "line" ? "#FFE600" : objIndex % 2 === 0 ? "rgba(228,73,27,0.9)" : "rgba(255,199,0,0.88)", border: "1px solid rgba(255,255,255,0.8)", borderRadius: shapeRadius, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", transform: "translateY(" + lift + "px) rotate(" + (obj.shape === "diamond" ? 45 + turn : turn) + "deg) scale(" + pulse + ")", transformOrigin: "center", zIndex: obj.position === "center" ? 3 : 2 }}>{obj.shape === "diamond" ? <span style={{ transform: "rotate(-45deg)" }}>{obj.label}</span> : obj.label}</div>;
+                })}
+                <div style={{ position: "relative", zIndex: 2, maxWidth: 340, textAlign: "center", fontSize: 17, fontWeight: 900, color: "#FFFFFF", lineHeight: 1.25, textShadow: "0 3px 14px #000" }}>{seg.spokenReference || seg.headlineText}</div>
+                <div style={{ position: "absolute", bottom: 12, right: 16, fontSize: 9, letterSpacing: "0.16em", color: "rgba(255,255,255,0.68)", textTransform: "uppercase" }}>{seg.motionIntent?.slice(0, 56)}</div>
+              </div>
 
               <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.4 }}>
                 {seg.motionIntent}
@@ -484,9 +521,10 @@ export const TalkingHeadReel: React.FC = () => {
               key={seg.id}
               style={{
                 position: "absolute",
-                top: 135,
-                left: "50%",
-                transform: \`translateX(-50%) scale(\${scale})\`,
+                top: 170 + (sceneIndex % 3) * 165,
+                left: sceneIndex % 2 === 0 ? 48 : undefined,
+                right: sceneIndex % 2 === 1 ? 48 : undefined,
+                transform: \`scale(\${scale})\`,
                 backgroundColor: "rgba(10, 10, 15, 0.94)",
                 border: "3.5px solid #FFC700",
                 borderRadius: 24,
@@ -515,6 +553,7 @@ export const TalkingHeadReel: React.FC = () => {
       })}
 
       {/* 6. PROCEDURAL 42-BAR AUDIO FREQUENCY SPECTRUM EQUALIZER */}
+      {false && (
       <div
         style={{
           position: "absolute",
@@ -549,9 +588,10 @@ export const TalkingHeadReel: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       {/* 7. DYNAMIC FLOATING PARTICLE BURST (Fires around active kinetic word) */}
-      {activeWord && (
+      {false && activeWord && (
         <div
           style={{
             position: "absolute",
@@ -588,7 +628,7 @@ export const TalkingHeadReel: React.FC = () => {
       )}
 
       {/* 8. HORMOZI / MRBEAST STYLE WORD-BY-WORD KINETIC POP CAPTIONS */}
-      {activeWord && (
+      {false && activeWord && (
         <div
           style={{
             position: "absolute",

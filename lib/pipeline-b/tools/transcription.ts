@@ -62,46 +62,94 @@ async function runWhisperTranscription(
     const sampleRate = 16000;
     const actualAudioDur = +(audioData.length / sampleRate).toFixed(2) || totalDuration;
 
-    // Build clean speech windows (<= 18s each) split strictly at acoustic silences
-    // so Whisper never drops words or hallucinates at 30s chunk stride boundaries.
-    let speechStart = 0;
-    let speechEnd = actualAudioDur;
-    if (silences.length > 0) {
-      if (silences[0].start <= 0.08 && silences[0].end < actualAudioDur - 0.5) {
-        speechStart = Math.max(0, +(silences[0].end - 0.04).toFixed(2));
+    // Build utterance-level speech windows split at every acoustic pause (>= 0.35s)
+    // and energy-envelope silence (<= -35 dBFS for >= 0.35s).
+    // CRITICAL: When two repeated takes of the same sentence fall inside the same 6-18s window,
+    // Whisper's decoder deduplicates/drops the repeated take! Splitting on every >= 0.35s pause
+    // guarantees every spoken take is transcribed independently so Wonder AI sees 100% of takes.
+    const frameSec = 0.01;
+    const frameLen = Math.max(1, Math.round(sampleRate * frameSec));
+    const totalFrames = Math.floor(audioData.length / frameLen);
+    const db = new Float32Array(totalFrames);
+    for (let f = 0; f < totalFrames; f++) {
+      let sum = 0;
+      const base = f * frameLen;
+      for (let i = 0; i < frameLen; i++) {
+        const s = audioData[base + i];
+        sum += s * s;
       }
-      const lastSil = silences[silences.length - 1];
-      if (lastSil.end >= actualAudioDur - 0.12 && lastSil.start > speechStart + 0.5) {
-        speechEnd = Math.min(actualAudioDur, +(lastSil.start + 0.04).toFixed(2));
+      db[f] = 10 * Math.log10(sum / frameLen + 1e-10);
+    }
+    const sm = new Float32Array(totalFrames);
+    for (let f = 0; f < totalFrames; f++) {
+      sm[f] = (db[Math.max(0, f - 1)] + db[f] + db[Math.min(totalFrames - 1, f + 1)]) / 3;
+    }
+
+    // Merge ffmpeg silences and RMS envelope silent runs (<= -35 dBFS for >= 0.35s)
+    const pauseIntervals: { start: number; end: number; duration: number }[] = silences
+      .filter((s) => s.duration >= 0.35)
+      .map((s) => ({ start: s.start, end: s.end, duration: s.duration }));
+
+    let r0 = -1;
+    for (let f = 0; f <= totalFrames; f++) {
+      const isSil = f < totalFrames && sm[f] <= -35;
+      if (isSil && r0 < 0) r0 = f;
+      if (!isSil && r0 >= 0) {
+        const s = +(r0 * frameSec).toFixed(2);
+        const e = +(f * frameSec).toFixed(2);
+        if (e - s >= 0.35) {
+          pauseIntervals.push({ start: s, end: e, duration: +(e - s).toFixed(2) });
+        }
+        r0 = -1;
+      }
+    }
+    pauseIntervals.sort((a, b) => a.start - b.start);
+    const mergedPauses: { start: number; end: number; duration: number }[] = [];
+    for (const p of pauseIntervals) {
+      if (mergedPauses.length === 0 || p.start > mergedPauses[mergedPauses.length - 1].end + 0.08) {
+        mergedPauses.push({ ...p });
+      } else {
+        const last = mergedPauses[mergedPauses.length - 1];
+        last.end = Math.max(last.end, p.end);
+        last.duration = +(last.end - last.start).toFixed(2);
       }
     }
 
     const windows: { start: number; end: number }[] = [];
-    let curStart = speechStart;
+    let curStart = 0;
     const MAX_WIN_SEC = 18.0;
-    const MIN_WIN_SEC = 6.0;
+    const MIN_UTTERANCE_SEC = 1.0;
 
-    while (curStart < speechEnd - 0.15) {
-      if (speechEnd - curStart <= MAX_WIN_SEC) {
-        windows.push({ start: curStart, end: speechEnd });
-        break;
+    for (const p of mergedPauses) {
+      if (p.start <= 0.12 && curStart === 0) {
+        curStart = p.end;
+        continue;
       }
-      // Find the best silence inside [curStart + MIN_WIN_SEC, curStart + MAX_WIN_SEC]
-      const candidateSilences = silences.filter(
-        (s) => s.start >= curStart + MIN_WIN_SEC && s.end <= curStart + MAX_WIN_SEC + 1.5 && s.duration >= 0.25
-      );
-      if (candidateSilences.length > 0) {
-        // Pick the longest silence in the target range (preferring later silences if tied)
-        candidateSilences.sort((a, b) => b.duration - a.duration || b.start - a.start);
-        const chosen = candidateSilences[0];
-        const winEnd = +(chosen.start + 0.04).toFixed(2);
-        windows.push({ start: curStart, end: winEnd });
-        curStart = +(chosen.end - 0.04).toFixed(2);
-      } else {
-        // Fallback if speaker talks non-stop without any >= 0.25s silence
-        const winEnd = Math.min(speechEnd, +(curStart + MAX_WIN_SEC).toFixed(2));
-        windows.push({ start: curStart, end: winEnd });
-        curStart = winEnd;
+      const uttDur = p.start - curStart;
+      if (uttDur >= MIN_UTTERANCE_SEC) {
+        let winCursor = Math.max(0, +(curStart - 0.06).toFixed(2));
+        const targetEnd = Math.min(actualAudioDur, +(p.start + 0.06).toFixed(2));
+        while (targetEnd - winCursor > MAX_WIN_SEC) {
+          windows.push({ start: winCursor, end: +(winCursor + MAX_WIN_SEC).toFixed(2) });
+          winCursor = +(winCursor + MAX_WIN_SEC).toFixed(2);
+        }
+        if (targetEnd - winCursor >= 0.25) {
+          windows.push({ start: winCursor, end: targetEnd });
+        }
+        curStart = p.end;
+      } else if (uttDur < 0.20) {
+        curStart = p.end;
+      }
+    }
+
+    if (actualAudioDur - curStart >= 0.30) {
+      let winCursor = Math.max(0, +(curStart - 0.06).toFixed(2));
+      while (actualAudioDur - winCursor > MAX_WIN_SEC) {
+        windows.push({ start: winCursor, end: +(winCursor + MAX_WIN_SEC).toFixed(2) });
+        winCursor = +(winCursor + MAX_WIN_SEC).toFixed(2);
+      }
+      if (actualAudioDur - winCursor >= 0.25) {
+        windows.push({ start: winCursor, end: actualAudioDur });
       }
     }
 

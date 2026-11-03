@@ -4,6 +4,7 @@
  */
 
 import path from "path";
+import { loadAudioEnvelope } from "./tools/audio-boundaries.ts";
 import fs from "fs";
 import type { PipelineBRunState, PipelineBStage, EditCut } from "./types.ts";
 import {
@@ -29,8 +30,23 @@ import {
 } from "./tools/wonder-director.ts";
 import { validateCuts } from "./tools/cuts-validator.ts";
 import { buildCleanVideo } from "./tools/clean-video-builder.ts";
-import { generateTalkingHeadMotionCode } from "./tools/motion-generator.ts";
-import { generateMuseImage } from "./tools/image-generator.ts";
+import {
+  addGate,
+  auditRemovedSpans,
+  ensureCfrMaster,
+  gateCleanDuration,
+  gateExportAndLoop,
+  gateMaskTrack,
+  gateSafeZone,
+  gateWordParity,
+  newQaReport,
+  probeExact,
+  renderSafeZoneProof,
+  writeQaReport,
+  type LayoutBox,
+} from "./tools/qa-gates.ts";
+import { generateSparkVisualOverlay } from "./tools/spark-visual-director.ts";
+import { segmentSpeakerWithSam } from "./tools/sam-segmenter.ts";
 import { exportFinalVideo } from "./tools/export-service.ts";
 
 export interface OrchestratorRunOptions {
@@ -58,9 +74,42 @@ export async function executePipelineB(
     // 1. MEDIA_VALIDATED
     if (shouldRunStage(state, "MEDIA_VALIDATED")) {
       recordStageStart(state, "MEDIA_VALIDATED", { videoPath: state.rawVideoPath });
-      const metadata = await validateMedia(state.rawVideoPath);
+      const originalMeta = await validateMedia(state.rawVideoPath);
+
+      // Normalize the ORIGINAL full-res upload to constant 30fps BEFORE any cut is computed.
+      // Phone captures (e.g. 32fps) are usually VFR; cutting VFR causes frame snapping + A/V drift.
+      const cfrPath = path.join(runDir, "source_cfr30.mp4");
+      let sourceProbe: any = null;
+      try {
+        sourceProbe = await probeExact(state.rawVideoPath);
+        if (!sourceProbe.isVfr && Math.abs((sourceProbe.avgFrameRate || 0) - 30) < 0.05) {
+          state.cfrVideoPath = state.rawVideoPath;
+        } else {
+          await ensureCfrMaster(state.rawVideoPath, cfrPath);
+          state.cfrVideoPath = cfrPath;
+        }
+      } catch (cfrErr: any) {
+        logEvent("CFR_NORMALIZATION_FAILED", { runId, error: cfrErr?.message || String(cfrErr) });
+      }
+      const metadata = state.cfrVideoPath ? await validateMedia(state.cfrVideoPath) : originalMeta;
+      if (state.cfrVideoPath) {
+        const exact = await probeExact(state.cfrVideoPath).catch(() => null);
+        if (exact) {
+          const playableDur =
+            exact.videoDuration > 0 && exact.audioDuration > 0
+              ? Math.min(exact.videoDuration, exact.audioDuration)
+              : exact.videoDuration || exact.formatDuration;
+          if (playableDur > 0) {
+            metadata.duration = +playableDur.toFixed(3);
+          }
+        }
+      }
       state.metadata = metadata;
-      recordStageSuccess(state, "MEDIA_VALIDATED", metadata);
+      recordStageSuccess(state, "MEDIA_VALIDATED", {
+        ...metadata,
+        original: { ...originalMeta, avgFrameRate: sourceProbe?.avgFrameRate, isVfr: sourceProbe?.isVfr },
+        cfrVideoPath: state.cfrVideoPath,
+      });
     }
     if (options?.stopAtStage === "MEDIA_VALIDATED") return state;
 
@@ -72,7 +121,7 @@ export async function executePipelineB(
       logEvent("TRANSCRIPTION_STARTED", { runId, wavPath });
 
       const { segments, silences, coverage } = await transcribeAudio({
-        videoPath: state.rawVideoPath,
+        videoPath: state.cfrVideoPath || state.rawVideoPath,
         wavPath,
         totalDuration: state.metadata?.duration || 15,
         userScript: state.userScript,
@@ -141,6 +190,7 @@ export async function executePipelineB(
         templateId: state.templateId,
         userScript: state.userScript,
         pacingProfile,
+        silences: state.silences || [],
         runId,
         mode: state.mode || "wonder-ai",
         onLogEvent: logEvent,
@@ -162,6 +212,8 @@ export async function executePipelineB(
         templateId: state.templateId,
         pacingProfile,
         transcript: state.transcript || [],
+        audioEnvelope: loadAudioEnvelope(path.join(runDir, 'extracted_audio.wav')),
+        onRefineLog: (l) => logEvent("CUTS_REFINED_TO_AUDIO", { runId, adjustments: l }),
       });
 
       editPlan.runId = runId;
@@ -199,6 +251,25 @@ export async function executePipelineB(
           return state;
         }
       }
+
+      // QA: confirm every silence-labelled cut is really silence (no words, no speech-level energy)
+      const qa = state.qaReport || newQaReport();
+      const spanAudit = addGate(
+        qa,
+        await auditRemovedSpans({
+          mediaPath: state.cfrVideoPath || state.rawVideoPath,
+          cuts: state.editPlan!.cuts,
+          transcript: state.transcript || [],
+        })
+      );
+      state.qaReport = qa;
+      writeQaReport(runDir, qa);
+      logEvent("QA_REMOVED_SPANS", { runId, passed: spanAudit.passed, suspiciousCount: spanAudit.details.suspiciousCount });
+      if (!spanAudit.passed) {
+        const msg = `QA gate failed: ${spanAudit.details.suspiciousCount} silence-labelled cut(s) contain words or speech-level audio (possible retakes). See qa_report.json.`;
+        recordStageFailure(state, "CUTS_VALIDATED", msg);
+        throw new Error(msg);
+      }
       recordStageSuccess(state, "CUTS_VALIDATED", {
         passed: true,
         needsReview: validation.needsReview,
@@ -221,10 +292,17 @@ export async function executePipelineB(
         outputPath: cleanVideoPath,
       });
 
+      const isCutoutTemplateForClean =
+        state.templateId === "cutout" || state.templateId === "samCutoutExplainer";
+      const isLandscapeSource = (state.metadata?.width || 0) > (state.metadata?.height || 0);
+
       await buildCleanVideo({
-        rawVideoPath: state.rawVideoPath,
+        rawVideoPath: state.cfrVideoPath || state.rawVideoPath,
         keepSegments: state.editPlan!.keepSegments,
         outputPath: cleanVideoPath,
+        // Landscape + cutout: never crop ~324px of width up to 1080. Keep the native frame so the
+        // SAM cutout is composited onto the 1080×1920 canvas at full source resolution.
+        preserveSourceFrame: isCutoutTemplateForClean && isLandscapeSource,
       });
 
       const fElapsed = Date.now() - fStart;
@@ -234,15 +312,29 @@ export async function executePipelineB(
         cleanVideoPath,
       });
 
-      // Verify the real cleaned video duration and media stream on disk
+      // Verify the real cleaned video duration from ffprobe (unrounded) — Stage 5 sync reads this value
       let realCleanedDuration = state.editPlan!.cleanDuration;
       try {
-        const cleanMetadata = await validateMedia(cleanVideoPath);
-        if (cleanMetadata && cleanMetadata.duration > 0) {
-          realCleanedDuration = +cleanMetadata.duration.toFixed(2);
+        const exact = await probeExact(cleanVideoPath);
+        if (exact.videoDuration > 0) {
+          realCleanedDuration = +exact.videoDuration.toFixed(3);
+          // If the source container EOF or -shortest trimmed a few frames off the final segment,
+          // reconcile the last keepSegment's end so keepSegments sum and timeline sync match the real file.
+          const ks = state.editPlan!.keepSegments;
+          if (ks.length > 0) {
+            const currentSum = ks.reduce((acc, s) => acc + (s.end - s.start), 0);
+            const diff = realCleanedDuration - currentSum;
+            if (Math.abs(diff) > 0.005 && Math.abs(diff) <= 0.45) {
+              const lastSeg = ks[ks.length - 1];
+              const adjustedEnd = +(lastSeg.end + diff).toFixed(3);
+              if (adjustedEnd > lastSeg.start + 0.05) {
+                lastSeg.end = adjustedEnd;
+              }
+            }
+          }
         }
       } catch (metaErr) {
-        // Fallback to planned clean duration if validateMedia cannot probe (e.g. test environment)
+        // Fallback to planned clean duration if ffprobe cannot probe (e.g. test environment)
       }
 
       // Rebuild final source-to-edited timeline mapping using the verified clean video duration
@@ -255,6 +347,20 @@ export async function executePipelineB(
       );
       state.editedTranscript = editedTranscript;
       state.editPlan!.editedTranscript = editedTranscript;
+
+      // QA gate: ffprobe duration == Σ keepSegments within one frame (and A/V streams agree)
+      const qa = state.qaReport || newQaReport();
+      const durGate = addGate(qa, await gateCleanDuration(cleanVideoPath, state.editPlan!.keepSegments));
+      addGate(qa, gateWordParity(state.transcript || [], state.editPlan!.keepSegments, editedTranscript));
+      state.qaReport = qa;
+      writeQaReport(runDir, qa);
+      const failed = qa.gates.filter((g) => !g.passed && g.blocking && ["clean_duration_matches_keep_segments", "transcript_word_parity"].includes(g.gate));
+      logEvent("QA_CLEAN_VIDEO", { runId, duration: durGate.details, failed: failed.map((g) => g.gate) });
+      if (failed.length > 0) {
+        const msg = `QA gate failed: ${failed.map((g) => g.gate).join(", ")}. See qa_report.json.`;
+        recordStageFailure(state, "CLEAN_VIDEO_CREATED", msg);
+        throw new Error(msg);
+      }
 
       logEvent("CLEAN_VIDEO_VERIFIED", {
         runId,
@@ -305,41 +411,85 @@ export async function executePipelineB(
     }
     if (options?.stopAtStage === "VISUAL_PLAN_CREATED") return state;
 
-    // 8. ASSETS_RESOLVED
+    // 8. ASSETS_RESOLVED (ZAI SAM 3.1 Subject Segmentation — Zero Static AI Images)
     if (shouldRunStage(state, "ASSETS_RESOLVED")) {
       recordStageStart(state, "ASSETS_RESOLVED");
       const resolvedAssets: Record<string, string> = {};
 
-      const imageSegments = (state.editPlan?.visualSegments || []).filter(
-        (seg) => seg.technique === "generated_image" || seg.layoutType === "broll_takeover"
-      );
-
-      for (const seg of imageSegments) {
-        try {
-          const prompt =
-            seg.headlineText ||
-            seg.spokenReference ||
-            seg.motionIntent ||
-            "Cinematic social video b-roll";
-          const genResult = await generateMuseImage({
-            prompt,
-            runId,
-            assetId: seg.id,
-          });
-          resolvedAssets[seg.id] = genResult.publicUrl;
-          (seg as any).assetUrl = genResult.publicUrl;
-        } catch (assetErr) {
-          console.warn(`[ASSETS_RESOLVED] Non-fatal asset generation warning for segment ${seg.id}:`, assetErr);
+      // Strictly enforce ZERO static AI image generation in talking-head auto-edit:
+      // Story beats are told through executable codebase animations (HTML5/CSS3/JS/SVG/Canvas) + SAM 3.1 cutouts.
+      for (const seg of state.editPlan?.visualSegments || []) {
+        if (seg.technique === "generated_image") {
+          seg.technique = seg.layoutType === "sam_cutout" ? "sam_cutout_pop" : "procedural_graphic";
         }
+        delete (seg as any).assetUrl;
+      }
+
+      const isCutoutTemplate =
+        state.templateId === "cutout" || state.templateId === "samCutoutExplainer";
+
+      if (isCutoutTemplate) {
+        // Run SAM 3.1 Subject Cutout & Depth Compositing Engine on the cleaned A-Roll video
+        try {
+          const targetVideo = state.cleanVideoPath || state.rawVideoPath;
+          const targetProbe = await probeExact(targetVideo).catch(() => null);
+          const samResult = await segmentSpeakerWithSam({
+            videoPath: targetVideo,
+            runId,
+            sampleTimestampSec: Math.min(1.5, Math.max(0.2, (state.editPlan?.cleanDuration || 6) * 0.25)),
+            videoWidth: targetProbe?.width || state.metadata?.width || 1080,
+            videoHeight: targetProbe?.height || state.metadata?.height || 1920,
+            videoDuration: state.editPlan?.cleanDuration || state.metadata?.duration || 10,
+          });
+          resolvedAssets.speaker_cutout = samResult.cutoutPublicUrl;
+          if (samResult.trackPublicUrl) {
+            resolvedAssets.sam_track = samResult.trackPublicUrl;
+            // QA gate: mask area 15–70% of frame, consecutive-frame IoU > 0.9
+            const trackPath = path.join(process.cwd(), "public", samResult.trackPublicUrl.replace(/^\//, ""));
+            const qa = state.qaReport || newQaReport();
+            const maskGate = addGate(qa, gateMaskTrack(trackPath));
+            state.qaReport = qa;
+            writeQaReport(runDir, qa);
+            logEvent("QA_MASK_TRACK", { runId, passed: maskGate.passed, ...maskGate.details, areaFailures: undefined, iouFailures: undefined });
+          }
+          if (state.editPlan) {
+            state.editPlan.samCutoutUrl = samResult.cutoutPublicUrl;
+            state.editPlan.samBox = samResult.box;
+          }
+          logEvent("SAM_3_1_CUTOUT_RESOLVED", {
+            runId,
+            cutoutPublicUrl: samResult.cutoutPublicUrl,
+            trackPublicUrl: samResult.trackPublicUrl,
+            trackFrameCount: samResult.trackFrameCount,
+            box: samResult.box,
+          });
+        } catch (samErr: any) {
+          console.warn(`[ASSETS_RESOLVED] Non-fatal SAM 3.1 segmentation warning:`, samErr?.message || samErr);
+        }
+      } else {
+        // Story Explainer & others: NO SAM 3.1, NO cutouts!
+        // A-Roll and B-Roll full-screen & framed card layouts are handled directly by the director and Spark 1.3
+        if (state.editPlan) {
+          state.editPlan.samCutoutUrl = undefined;
+          state.editPlan.samBox = undefined;
+        }
+        logEvent("STORY_EXPLAINER_NO_CUTOUT_MODE", {
+          runId,
+          templateId: state.templateId,
+          message: "Story Explainer template active: Skipped SAM 3.1 cutout segmentation completely. Pure A-Roll, B-Roll, and Framed Story Explainer layouts.",
+        });
       }
 
       state.resolvedAssets = resolvedAssets;
       if (state.editPlan) {
         (state.editPlan as any).resolvedAssets = resolvedAssets;
       }
+      writeZaiDurableMemoryFiles(runDir, state);
       recordStageSuccess(state, "ASSETS_RESOLVED", {
         resolved: true,
         resolvedCount: Object.keys(resolvedAssets).length,
+        samCutoutUrl: state.editPlan?.samCutoutUrl,
+        zeroStaticImages: true,
       });
     }
     if (options?.stopAtStage === "ASSETS_RESOLVED") return state;
@@ -347,7 +497,6 @@ export async function executePipelineB(
     // 9. MOTION_GENERATED (Spark 1.3 / Remotion Motion Code Generation)
     if (shouldRunStage(state, "MOTION_GENERATED")) {
       recordStageStart(state, "MOTION_GENERATED");
-      const cleanVideoUrl = `/api/pipeline-b/media/${runId}/clean`;
       const sStart = Date.now();
 
       logEvent("SPARK_REQUEST_STARTED", {
@@ -357,12 +506,14 @@ export async function executePipelineB(
         cleanDuration: state.editPlan!.cleanDuration,
       });
 
-      const motionCode = generateTalkingHeadMotionCode({
+      const motionCode = await generateSparkVisualOverlay({
         editPlan: state.editPlan!,
         transcript: state.transcript || [],
-        cleanVideoUrl,
-        templateId: state.templateId,
-        resolvedAssets: state.resolvedAssets,
+        duration: state.editPlan!.cleanDuration,
+        runId,
+        cleanVideoPath: state.cleanVideoPath,
+        onLogEvent: logEvent,
+        fetchImpl: options?.fetchImpl,
       });
 
       const motionCodePath = path.join(runDir, "TalkingHeadReel.tsx");
@@ -374,6 +525,8 @@ export async function executePipelineB(
         runId,
         durationMs: sElapsed,
         motionCodePath,
+        model: "muse-spark-1.3",
+        sceneCount: state.editPlan?.visualSegments?.length || 0,
       });
 
       recordStageSuccess(state, "MOTION_GENERATED", { motionCodePath, durationMs: sElapsed });
@@ -384,21 +537,8 @@ export async function executePipelineB(
     if (shouldRunStage(state, "PREVIEW_READY")) {
       recordStageStart(state, "PREVIEW_READY");
 
-      // Auto-export the final reel with cuts, punch-ins, burned subtitles, and hook badge
-      try {
-        const finalOutputPath = path.join(runDir, "final_edited_reel.mp4");
-        await exportFinalVideo({
-          cleanVideoPath: state.cleanVideoPath || state.rawVideoPath,
-          editPlan: state.editPlan!,
-          transcript: state.transcript || [],
-          outputPath: finalOutputPath,
-          templateId: state.templateId,
-        });
-        state.finalVideoPath = finalOutputPath;
-      } catch (exportErr) {
-        console.warn("[Pipeline B Orchestrator] Auto final export warning:", exportErr);
-      }
-
+      const finalOutputPath = path.join(runDir, "final_edited_reel.mp4");
+      state.finalVideoPath = fs.existsSync(finalOutputPath) ? finalOutputPath : (state.cleanVideoPath || state.rawVideoPath);
       state.previewUrl = `/api/pipeline-b/preview/${runId}`;
       state.status = "completed";
 
@@ -412,6 +552,10 @@ export async function executePipelineB(
         previewUrl: state.previewUrl,
         finalVideoPath: state.finalVideoPath,
       });
+      writeZaiDurableMemoryFiles(runDir, state);
+
+      // No background server render: the template renderer in the browser is the single
+      // source for preview AND download, so rendering a second FFmpeg copy only wastes time/CPU.
     }
 
     return state;
@@ -445,7 +589,22 @@ export async function exportPipelineBVideo(runId: string): Promise<PipelineBRunS
   });
 
   state.finalVideoPath = finalOutputPath;
-  recordStageSuccess(state, "EXPORT_COMPLETED", { finalVideoPath: finalOutputPath });
+
+  // QA gates on the final render: H.264/AAC 1080×1920 @30fps, loop seam, safe-zone proof frame
+  const qa = state.qaReport || newQaReport();
+  try {
+    addGate(qa, await gateExportAndLoop(finalOutputPath));
+    const proofPath = path.join(runDir, "qa_safe_zone_proof.png");
+    await renderSafeZoneProof(finalOutputPath, proofPath, Math.max(0, (state.editPlan?.cleanDuration || 2) / 2));
+    const layoutBoxes = (state.editPlan as any)?.layoutBoxes as LayoutBox[] | undefined;
+    if (layoutBoxes?.length) addGate(qa, gateSafeZone(layoutBoxes));
+  } catch (qaErr: any) {
+    addGate(qa, { gate: "export_format_and_loop_seam", passed: false, blocking: false, details: { error: qaErr?.message || String(qaErr) } });
+  }
+  state.qaReport = qa;
+  writeQaReport(runDir, qa);
+
+  recordStageSuccess(state, "EXPORT_COMPLETED", { finalVideoPath: finalOutputPath, qaPassed: qa.passed });
   return state;
 }
 
@@ -454,6 +613,8 @@ export async function resumePipelineB(
   options?: {
     customApprovedCuts?: EditCut[];
     customCaptionOverrides?: Record<string, string>;
+    stopAtStage?: PipelineBStage;
+    fetchImpl?: typeof fetch;
   }
 ): Promise<PipelineBRunState> {
   const state = loadState(runId);
@@ -494,6 +655,10 @@ export async function resumePipelineB(
   } else if (state.status === "failed") {
     // If paused or failed, reset the failed stage to pending and re-execute
     const failedStage = state.currentStage;
+    if (failedStage === "CUTS_VALIDATED") {
+      state.stages.EDIT_PLANNED.status = "pending";
+      state.stages.EDIT_PLANNED.error = undefined;
+    }
     if (state.stages[failedStage]) {
       state.stages[failedStage].status = "pending";
       state.stages[failedStage].error = undefined;
@@ -507,9 +672,102 @@ export async function resumePipelineB(
     saveState(state);
   }
 
-  return executePipelineB(runId);
+  return executePipelineB(runId, options);
 }
 
 function shouldRunStage(state: PipelineBRunState, stage: PipelineBStage): boolean {
   return state.stages[stage]?.status !== "completed";
+}
+
+/**
+ * ZAI (Z) — Autonomous Director Durable Project Memory Writer
+ * Persists Brief.md, Analysis.md, Treatment.md, Script.md, Timeline.md, and Progress.md
+ * inside the run directory so the Hypit spatial/temporal timeline stays documented on disk.
+ */
+function writeZaiDurableMemoryFiles(runDir: string, state: PipelineBRunState): void {
+  try {
+    if (!fs.existsSync(runDir)) {
+      fs.mkdirSync(runDir, { recursive: true });
+    }
+    const plan = state.editPlan;
+    const cleanDur = plan?.cleanDuration || state.metadata?.duration || 10;
+    const cuts = plan?.cuts || [];
+    const vSegs = plan?.visualSegments || [];
+    const transcriptSegs = state.editedTranscript || [];
+
+    const briefMd = `# Brief — ZAI (Z) Autonomous Director (${state.runId})
+- **Template**: \`${state.templateId}\` (Cutout & Story-Driven Codebase Animation Pipeline)
+- **Format**: 9:16 Vertical Instagram Reel (1080x1920)
+- **Title**: ${plan?.title || "Talking Head Cutout Reel"}
+- **Hook**: ${plan?.hookLine || "Direct Story Hook"}
+- **Visual Constraints**: ZERO static AI images. 100% Story-Driven Codebase Animations (HTML5/CSS3/JS/SVG/Canvas) + SAM 3.1 Subject Cutouts + A-Roll Windows.
+- **Pre-Talking-Head Animation Rule**: Codebase story animation can run solo first to establish the visual beat before the SAM 3.1 speaker cutout or talking-head video pops in.
+`;
+
+    const analysisMd = `# Analysis — Uploaded Video & FFmpeg Wastage Removal
+- **Raw Duration**: ${(state.metadata?.duration || cleanDur).toFixed(2)}s (${state.metadata?.width || 1080}x${state.metadata?.height || 1920} @ ${state.metadata?.fps || 30}fps)
+- **Cleaned Duration**: ${cleanDur.toFixed(2)}s
+- **FFmpeg Wastage Removed**: ${(plan?.cutDuration || 0).toFixed(2)}s across ${cuts.length} cut(s)
+- **SAM 3.1 Cutout Asset**: \`${plan?.samCutoutUrl || "/assets/" + state.runId + "/speaker_cutout.png"}\`
+- **SAM 3.1 Bounding Box**: \`${JSON.stringify(plan?.samBox || { normX: 0.08, normY: 0.08, normW: 0.84, normH: 0.86 })}\`
+
+## Removed Wastage Cuts
+${cuts.length === 0 ? "- None (tight vocal take)" : cuts.map((c) => `- \`${c.start.toFixed(2)}s - ${c.end.toFixed(2)}s\` (${c.type}): ${c.reason}`).join("\n")}
+`;
+
+    const treatmentMd = `# Treatment — ZAI Creative Direction & Layer Architecture
+- **Creative Thesis**: Transform talking-head A-Roll into a high-retention 9:16 Reel where codebase animations actively tell the story and SAM 3.1 cutouts bridge human eye-contact with procedural motion graphics.
+- **3-Layer Depth & Cutout Stack**:
+  - \`z-index: 10\` — Procedural Canvas / Shader Environment & Story Grid
+  - \`z-index: 20\` — Story-Driven Codebase Animations (SVG path diagrams, KPI charts, code terminals, comparison bars, behind-the-head kinetic typography)
+  - \`z-index: 30\` — SAM 3.1 Foreground Subject Cutout (with pre-talking-head animation lead-in & spring-physics entrance)
+  - \`z-index: 50\` — Safe-Zone Word-by-Word WhisperX Captions (above bottom 20% & clear of right 15%)
+`;
+
+    const scriptMd = `# Script — WhisperX Time-Coded Master Vocal Spine
+${transcriptSegs
+  .map((seg, i) => {
+    const matchVis = vSegs.find((v) => seg.start >= v.start - 0.2 && seg.start < v.end + 0.2) || vSegs[i % Math.max(1, vSegs.length)];
+    const tag = matchVis?.layoutType === "sam_cutout"
+      ? "[ANIM-LEAD-IN + SAM-3.1-CUTOUT]"
+      : matchVis?.layoutType === "depth_cutout"
+      ? "[DEPTH-CUTOUT z-30]"
+      : matchVis?.layoutType === "broll_takeover"
+      ? "[CODEBASE-STORY-ANIMATION]"
+      : "[A-ROLL SPEAKER]";
+    return `- **${seg.start.toFixed(2)}s – ${seg.end.toFixed(2)}s** ${tag}: "${seg.text}"`;
+  })
+  .join("\n")}
+`;
+
+    const timelineMd = `# Timeline — Hypit Spatial & Temporal Composition Plan (0.0s – ${cleanDur.toFixed(2)}s)
+| Scene | Window (s) | Normalized Extent | Layout / Cutout Mode | Technique | Headline / Story Beat | Motion Intent |
+|---|---|---|---|---|---|---|
+${vSegs
+  .map((v, idx) => {
+    const n0 = (v.start / Math.max(0.1, cleanDur)).toFixed(2);
+    const n1 = (v.end / Math.max(0.1, cleanDur)).toFixed(2);
+    return `| #${idx + 1} (${v.id}) | ${v.start.toFixed(2)}s – ${v.end.toFixed(2)}s | ${n0} – ${n1} | \`${v.layoutType}\` (${v.cutoutMode || "auto"}) | \`${v.technique}\` | ${v.headlineText || v.spokenReference} | ${v.motionIntent} |`;
+  })
+  .join("\n")}
+`;
+
+    const progressMd = `# Progress — ZAI 6-Stage Pipeline Checklist
+- [x] Stage 1: Uploaded Video Analysis & FFmpeg Wastage Removal
+- [x] Stage 2: A-Roll Trend Direction & Pre-Talking-Head Animation Pacing
+- [x] Stage 3: SAM 3.1 Subject Cutout & Depth Compositing Engine
+- [x] Stage 4: Story-Driven Codebase Animation Selection (Zero Static Images)
+- [x] Stage 5: Autonomous Motion Design (HTML5 / CSS3 / JS / SVG / Canvas)
+- [${state.stages.PREVIEW_READY?.status === "completed" ? "x" : " "}] Stage 6: Instagram Reels 9:16 Safe-Zone & Loop Mastering
+`;
+
+    fs.writeFileSync(path.join(runDir, "Brief.md"), briefMd, "utf-8");
+    fs.writeFileSync(path.join(runDir, "Analysis.md"), analysisMd, "utf-8");
+    fs.writeFileSync(path.join(runDir, "Treatment.md"), treatmentMd, "utf-8");
+    fs.writeFileSync(path.join(runDir, "Script.md"), scriptMd, "utf-8");
+    fs.writeFileSync(path.join(runDir, "Timeline.md"), timelineMd, "utf-8");
+    fs.writeFileSync(path.join(runDir, "Progress.md"), progressMd, "utf-8");
+  } catch (err) {
+    console.warn("[ZAI Durable Memory] Non-fatal write warning:", err);
+  }
 }

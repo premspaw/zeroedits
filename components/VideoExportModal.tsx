@@ -49,6 +49,10 @@ interface VideoExportModalProps {
   sparkCode?: string;
   voiceTracks?: VoiceTrackInfo[];
   pipelineBRunId?: string;
+  regeneratedSceneCode?: string;
+  regeneratedSceneDuration?: number;
+  pipelineBVideoUrl?: string;
+  regeneratedSceneStart?: number;
 }
 
 export default function VideoExportModal({
@@ -58,12 +62,16 @@ export default function VideoExportModal({
   duration = 15,
   timing = "15s",
   theme,
-  topic = "Paper Studio Reel",
+  topic = "Zeroedits Reel",
   format = "paperCard",
   storyboard,
   sparkCode = "",
   voiceTracks = [],
   pipelineBRunId,
+  regeneratedSceneCode = "",
+  regeneratedSceneDuration,
+  pipelineBVideoUrl,
+  regeneratedSceneStart = 0,
 }: VideoExportModalProps) {
   // Locally composed code (when the reel arrived without animation code).
   // Effective code drives PATH A; the canvas fallback only runs if composing fails.
@@ -71,7 +79,7 @@ export default function VideoExportModal({
   const [phase, setPhase] = useState<"idle" | "composing" | "rendering">("idle");
   const [usedFallback, setUsedFallback] = useState(false);
   const [renderedFps, setRenderedFps] = useState(60);
-  const effectiveSparkCode = localSparkCode || sparkCode;
+  const effectiveSparkCode = regeneratedSceneCode ? sparkCode : (localSparkCode || sparkCode);
   // true = using Remotion server-side path; false = canvas fallback
   const hasSparkCode = effectiveSparkCode.trim().length > 30;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -104,7 +112,7 @@ export default function VideoExportModal({
   const totalDuration =
     beatsEnd > 0
       ? beatsEnd
-      : Number(timing.replace("s", "")) || duration || storyboard?.duration || 15;
+      : Number(storyboard?.duration) || Number(timing.replace("s", "")) || duration || 15;
   const fps = 60;
   const totalFramesCount = Math.max(60, Math.round(totalDuration * fps));
 
@@ -354,7 +362,7 @@ export default function VideoExportModal({
       ctx.fillStyle = isNeon ? "#00F0FF" : subTextColor;
       ctx.textAlign = "left";
       ctx.fillText(
-        `PAPER STUDIO • ${(format || "paperCard").toUpperCase()}`,
+        `ZEROEDITS • ${(format || "paperCard").toUpperCase()}`,
         cardX + 50,
         cardY + 70
       );
@@ -719,7 +727,7 @@ export default function VideoExportModal({
     setExportComplete(false);
 
     // ── PATH Pipeline B: Native Auto-Edit Video Export ──
-    if (pipelineBRunId) {
+    if (pipelineBRunId && !regeneratedSceneCode && !hasSparkCode) {
       setPhase("rendering");
       try {
         const resp = await fetch("/api/pipeline-b/export", {
@@ -797,13 +805,18 @@ export default function VideoExportModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sparkCode: codeToRender,
+            sceneOverlayCode: regeneratedSceneCode || undefined,
+            sceneOverlayStart: regeneratedSceneCode ? regeneratedSceneStart : undefined,
+            sceneOverlayDuration: regeneratedSceneCode ? regeneratedSceneDuration : undefined,
             duration: totalDuration,
             fps: 30, // 30fps for faster server render (still silky smooth)
             topic,
+            backgroundVideoUrl: pipelineBVideoUrl || undefined,
+            backgroundVideoStart: 0,
             // Same stage colours as SparkLiveRunner's preview iframe
             background: String(theme?.bg || storyboard?.theme?.bg || "#FFF8F0"),
             ink: String(theme?.ink || storyboard?.theme?.ink || "#3D2E22"),
-            audioTracks: (voiceTracks || [])
+            audioTracks: pipelineBVideoUrl ? [] : (voiceTracks || [])
               .filter((t) => t?.hasAudio && t?.url)
               .map((t) => ({ url: t.url, start: t.start })),
           }),
@@ -1003,7 +1016,7 @@ export default function VideoExportModal({
       const cleanName = topic.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30).replace(/_+/g, "_").replace(/^_|_$/g, "");
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cleanName || "PaperStudio"}_${totalDuration}s_Reel.${finalExt}`;
+      a.download = `${cleanName || "Zeroedits"}_${totalDuration}s_Reel.${finalExt}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1142,7 +1155,7 @@ export default function VideoExportModal({
                   <div className="pt-2">
                     <a
                       href={downloadUrl}
-                      download={`PaperStudio_${totalDuration}s_Reel.${exportFormat}`}
+                      download={`Zeroedits_${totalDuration}s_Reel.${exportFormat}`}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-full border-2 border-[#141414] bg-emerald-600 text-white mono text-[11px] font-bold shadow-[2px_2px_0px_#141414] hover:bg-emerald-700 transition"
                     >
                       <Download size={13} />

@@ -47,6 +47,13 @@ import {
   Rocket,
   Bot,
   Plus,
+  Smartphone,
+  MessageSquare,
+  Send,
+  Phone,
+  AlertTriangle,
+  Clapperboard,
+  Zap,
 } from "lucide-react";
 import Pip, { type PipMood } from "./Pip";
 import type { HeaderTab } from "./AppleDockNav";
@@ -54,10 +61,15 @@ import {
   useZeeBrain,
   CATEGORY_META,
   buildDigitalAssetsForItem,
+  buildScriptBeatsForStory,
+  inferSubSegment,
   getDynamicZeeMemoryPrompt,
   type LifeCategory,
   type GalleryMediaItem,
   type ZeeMatchedVariables,
+  type WhatsAppChatTurn,
+  type WhatsAppScriptBeat,
+  type MemoryBankItem,
 } from "@/lib/zee-brain";
 import {
   analyzeFileMetadataForGallery,
@@ -110,10 +122,23 @@ export default function YouView({
     scanLikedReel,
   } = useZeeBrain();
 
-  // Sub-Tab: Personalize Mind vs Creative Gallery (Gallery puts visual canvas FIRST at top, connections at bottom)
+  // Sub-Tab: Personalize Mind vs Creative Gallery (ONLY 2 existing pages — no separate page!)
   const [activeSubTab, setActiveSubTab] = useState<"personalize" | "gallery">(
     "personalize"
   );
+
+  // Input Channel Switcher inside the existing Digital Brain & Voice page ("studio_mic" vs "whatsapp_channel")
+  const [inputChannel, setInputChannel] = useState<
+    "studio_mic" | "whatsapp_channel"
+  >("studio_mic");
+
+  // WhatsApp Input Channel state (connected directly to the same Digital Brain & Bottom Connection Dock)
+  const [waUserPhone, setWaUserPhone] = useState("+91 98450 24110");
+  const [waSimDurationSec, setWaSimDurationSec] = useState<number>(84);
+  const [waIsProcessing, setWaIsProcessing] = useState(false);
+  const [waGuardAlert, setWaGuardAlert] = useState<string | null>(null);
+  const [waLastBotReply, setWaLastBotReply] = useState<string | null>(null);
+  const [waConnected, setWaConnected] = useState<boolean>(true);
 
   // Admin Mode toggle — ONLY shows {{user.*}} variables & Variable Matrix when Admin is enabled
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -440,6 +465,89 @@ export default function YouView({
     setSelectedStreamItemId(created.id);
     setMemoryFilter("all");
     setTimeout(() => setJustSavedMemoryId(null), 5000);
+  };
+
+  // Send / Simulate / Finalize WhatsApp Voice Note or Text via `/api/whatsapp/webhook` directly into the same Digital Brain page
+  const handleSendWhatsAppChannel = async (opts?: {
+    overrideText?: string;
+    overrideDurationSec?: number;
+    forceSegregate?: boolean;
+  }) => {
+    const textToSend = (opts?.overrideText ?? spokenOrTypedInput).trim();
+    const durationSec = opts?.overrideDurationSec ?? waSimDurationSec;
+
+    if (!textToSend && !opts?.forceSegregate) return;
+    if (waIsProcessing || isAnalyzingBrain) return;
+
+    setWaIsProcessing(true);
+    setIsAnalyzingBrain(true);
+    setWaGuardAlert(null);
+    setPipMood("reading");
+
+    try {
+      const res = await fetch("/api/whatsapp/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: opts?.forceSegregate ? "finalize" : "simulate",
+          userPhone: waUserPhone,
+          userName: brain.virtualYou.userName,
+          messageType: "voice",
+          durationSec,
+          text: textToSend,
+          forceSegregate: Boolean(opts?.forceSegregate ?? true),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+
+      if (res.ok && json?.success) {
+        if (json.rejectedOver2Min) {
+          setWaGuardAlert(json.botReply);
+          setWaLastBotReply(json.botReply);
+          setPipMood("thinking");
+          return;
+        }
+
+        if (json.botReply) {
+          setWaLastBotReply(json.botReply);
+        }
+
+        if (json.segregatedMemory) {
+          const seg: MemoryBankItem = json.segregatedMemory;
+          const created = addSpokenOrTypedMemory(
+            seg.story,
+            seg.category,
+            seg.source,
+            {
+              category: seg.category,
+              subSegment: seg.subSegment,
+              userPhone: seg.userPhone || waUserPhone,
+              scriptBeats: seg.scriptBeats,
+              whatsappThread: seg.whatsappThread,
+              title: seg.title,
+              story: seg.story,
+              zeeAnalysis: seg.zeeAnalysis,
+              emotionTone: seg.emotionTone,
+              tags: seg.tags,
+              reelHookIdea: seg.reelHookIdea,
+              durationLabel: seg.durationLabel,
+            }
+          );
+          setSelectedStreamItemId(created.id);
+          setSelectedPromptCategory(created.category);
+          setJustSavedMemoryId(created.id);
+          setMemoryFilter("all");
+          setSpokenOrTypedInput("");
+          setPipMood("excited");
+          setTimeout(() => setJustSavedMemoryId(null), 5000);
+        }
+      }
+    } catch (err) {
+      console.warn("WhatsApp channel sync error:", err);
+    } finally {
+      setWaIsProcessing(false);
+      setIsAnalyzingBrain(false);
+    }
   };
 
   // Helper to resolve or repair Folder Wallet assignment for any GalleryMediaItem
@@ -1482,18 +1590,28 @@ export default function YouView({
                         />
 
                         <div className="flex items-center justify-between gap-2 mt-1 mb-1.5">
-                          <span
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] mono font-bold uppercase border"
-                            style={{
-                              backgroundColor: meta.bg,
-                              color: meta.color,
-                              borderColor: meta.color,
-                            }}
-                          >
-                            {CATEGORY_ICONS[mem.category]}
-                            <span>{pillarBadge}</span>
-                          </span>
-                          <span className="mono text-[10px] font-bold text-[#6E6A63] bg-[#FAF8F3] px-2 py-0.5 rounded-md border border-[#D5D2C8]">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] mono font-bold uppercase border"
+                              style={{
+                                backgroundColor: meta.bg,
+                                color: meta.color,
+                                borderColor: meta.color,
+                              }}
+                            >
+                              {CATEGORY_ICONS[mem.category]}
+                              <span>{mem.subSegment || pillarBadge}</span>
+                            </span>
+                            {(mem.userPhone ||
+                              mem.source === "whatsapp_voice" ||
+                              mem.source === "whatsapp_chat") && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#DCF8C6] text-[#075E54] border border-[#25D366] mono text-[9px] font-bold">
+                                <Smartphone size={9} />
+                                <span>From {mem.userPhone || "+91..."}</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className="mono text-[10px] font-bold text-[#6E6A63] bg-[#FAF8F3] px-2 py-0.5 rounded-md border border-[#D5D2C8] shrink-0">
                             {mem.durationLabel || "2:00"}
                           </span>
                         </div>
@@ -1541,9 +1659,78 @@ export default function YouView({
 
               {/* ===============================================================
                   CENTER COLUMN: ANIMATED ZEE TALKING TO PREM + RADIAL VOICE MIC
-                  (Real Human-to-Human Interaction — NOT a Regular Chatbox!)
+                  (With Integrated Input Channel Switcher: Studio Mic vs WhatsApp Channel)
                  =============================================================== */}
-              <section className="flex flex-col justify-between p-5 sm:p-6 bg-gradient-to-b from-[#FFFEFB] via-[#FAF8F3] to-[#F6D9CC]/30 relative overflow-hidden">
+              <section
+                className="flex flex-col justify-between p-5 sm:p-6 relative overflow-hidden transition-colors duration-500"
+                style={{
+                  background:
+                    inputChannel === "whatsapp_channel"
+                      ? "linear-gradient(180deg, #F0FDF4 0%, #FAF8F3 55%, #DCF8C6 100%)"
+                      : `linear-gradient(180deg, #FFFEFB 0%, #FAF8F3 55%, ${CATEGORY_META[selectedPromptCategory].bg} 100%)`,
+                }}
+              >
+                {/* INPUT CHANNEL SWITCHER PILL BAR (Studio Voice Mic vs WhatsApp Cloud Channel) */}
+                <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pb-3 mb-2 border-b border-[#141414]/10">
+                  <div className="inline-flex p-1 rounded-full border-2 border-[#141414] bg-white shadow-[2px_2px_0px_#141414]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInputChannel("studio_mic");
+                        setWaGuardAlert(null);
+                      }}
+                      className={`px-3 py-1 rounded-full mono text-[10px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                        inputChannel === "studio_mic"
+                          ? "bg-[#141414] text-[#FFE17D]"
+                          : "text-[#4A4842] hover:text-[#141414]"
+                      }`}
+                    >
+                      <Mic size={11} />
+                      <span>Studio Voice Mic</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInputChannel("whatsapp_channel")}
+                      className={`px-3 py-1 rounded-full mono text-[10px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                        inputChannel === "whatsapp_channel"
+                          ? "bg-[#075E54] text-white"
+                          : "text-[#075E54] hover:bg-[#DCF8C6]/60"
+                      }`}
+                    >
+                      <Smartphone size={11} className="text-[#25D366]" />
+                      <span>WhatsApp Channel (2m API)</span>
+                    </button>
+                  </div>
+
+                  {inputChannel === "whatsapp_channel" ? (
+                    <div className="flex items-center gap-1.5 bg-[#DCF8C6] border border-[#25D366] px-2.5 py-1 rounded-full">
+                      <span className="w-2 h-2 rounded-full bg-[#075E54] animate-pulse" />
+                      <span className="mono text-[9.5px] font-bold text-[#075E54]">
+                        From:
+                      </span>
+                      <input
+                        type="text"
+                        value={waUserPhone}
+                        onChange={(e) => setWaUserPhone(e.target.value)}
+                        className="w-28 bg-transparent mono text-[10px] font-black text-[#141414] focus:outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <span
+                      className="px-2.5 py-1 rounded-full mono text-[9.5px] font-bold border"
+                      style={{
+                        backgroundColor:
+                          CATEGORY_META[selectedPromptCategory].bg,
+                        color: CATEGORY_META[selectedPromptCategory].color,
+                        borderColor:
+                          CATEGORY_META[selectedPromptCategory].color,
+                      }}
+                    >
+                      ● {CATEGORY_META[selectedPromptCategory].label}
+                    </span>
+                  )}
+                </div>
+
                 {/* Top Animated Zee Companion Stage — Zee Talks & Asks Questions */}
                 <div className="relative z-10 rounded-2xl border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_#141414]">
                   <div className="flex items-start gap-3.5">
@@ -1563,18 +1750,34 @@ export default function YouView({
                           showDialogue={false}
                         />
                       </motion.div>
-                      <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full bg-[#141414] text-[#FFE17D] mono text-[8px] font-bold uppercase">
-                        Zee Live
+                      <span
+                        className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full mono text-[8px] font-bold uppercase ${
+                          inputChannel === "whatsapp_channel"
+                            ? "bg-[#075E54] text-[#25D366]"
+                            : "bg-[#141414] text-[#FFE17D]"
+                        }`}
+                      >
+                        {inputChannel === "whatsapp_channel"
+                          ? "WA Bot"
+                          : "Zee Live"}
                       </span>
                     </div>
 
                     {/* Zee's Animated Human-to-Human Question Bubble */}
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
-                        <span className="mono text-[10px] font-bold uppercase tracking-wider text-[#E4491B] flex items-center gap-1">
+                        <span
+                          className={`mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                            inputChannel === "whatsapp_channel"
+                              ? "text-[#075E54]"
+                              : "text-[#E4491B]"
+                          }`}
+                        >
                           <Radio size={11} className="animate-pulse" />
                           <span>
-                            Zee • Talking with {brain.virtualYou.userName}
+                            {inputChannel === "whatsapp_channel"
+                              ? `WhatsApp Bot • Connected to ${waUserPhone}`
+                              : `Zee • Talking with ${brain.virtualYou.userName}`}
                           </span>
                         </span>
                         <span
@@ -1596,19 +1799,25 @@ export default function YouView({
                       </div>
 
                       <motion.h3
-                        key={`${selectedPromptCategory}-${activeStreamItem?.id || "default"}`}
+                        key={`${selectedPromptCategory}-${activeStreamItem?.id || "default"}-${inputChannel}`}
                         initial={{ opacity: 0, y: 4 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="serif text-base sm:text-lg font-bold text-[#141414] leading-snug"
                       >
-                        &ldquo;{dynamicZeePrompt.memoryAwareQuestion}&rdquo;
+                        &ldquo;
+                        {inputChannel === "whatsapp_channel" && waLastBotReply
+                          ? waLastBotReply
+                          : dynamicZeePrompt.memoryAwareQuestion}
+                        &rdquo;
                       </motion.h3>
 
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#FAF8F3] border border-[#D5D2C8] mono text-[9.5px] font-bold text-[#4A4842]">
                           <Sparkles size={10} className="text-[#E4491B]" />
                           <span>
-                            Memory-Adopted Prompt • {dynamicZeePrompt.matchedGalleryPlaceOrFolder}
+                            {inputChannel === "whatsapp_channel"
+                              ? "Auto-Segregates into Business / Breakup / Family / Travel"
+                              : `Memory-Adopted Prompt • ${dynamicZeePrompt.matchedGalleryPlaceOrFolder}`}
                           </span>
                         </span>
                         {isAdminMode && (
@@ -1626,6 +1835,8 @@ export default function YouView({
                           const label =
                             cat === "work"
                               ? "Business"
+                              : cat === "relationships"
+                              ? "Breakup & Bonds"
                               : cat === "personal"
                               ? "Personal Life"
                               : meta.shortLabel;
@@ -1664,14 +1875,37 @@ export default function YouView({
                   </div>
                 </div>
 
+                {/* 2-Min WhatsApp Guard Alert if > 120s */}
+                {waGuardAlert && (
+                  <div className="my-1.5 px-3.5 py-2 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-900 text-xs font-bold flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5">
+                      <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                      <span>{waGuardAlert}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWaSimDurationSec(90);
+                        setWaGuardAlert(null);
+                      }}
+                      className="px-2 py-0.5 rounded bg-rose-600 text-white mono text-[9.5px] font-bold shrink-0 cursor-pointer"
+                    >
+                      Set 1:30
+                    </button>
+                  </div>
+                )}
+
                 {/* COLORFUL 48-BAR CIRCULAR RADIAL VOICE DIAL & MIC */}
                 <div className="my-3 flex flex-col items-center justify-center">
                   <div className="relative w-52 h-52 sm:w-56 sm:h-56 flex items-center justify-center">
                     {/* Colorful Soft Glow Behind Dial */}
                     <div
-                      className="absolute inset-4 rounded-full blur-xl opacity-35 pointer-events-none transition-all duration-500"
+                      className="absolute inset-4 rounded-full blur-xl opacity-45 pointer-events-none transition-all duration-500"
                       style={{
-                        background: `radial-gradient(circle, ${CATEGORY_META[selectedPromptCategory].color}, transparent 70%)`,
+                        background:
+                          inputChannel === "whatsapp_channel"
+                            ? "radial-gradient(circle, #25D366, #075E54, transparent 70%)"
+                            : `radial-gradient(circle, ${CATEGORY_META[selectedPromptCategory].color}, transparent 70%)`,
                       }}
                     />
 
@@ -1680,7 +1914,11 @@ export default function YouView({
                       {radialTicks.map((heightPx, idx) => {
                         const deg = (idx / 48) * 360;
                         const activeColor =
-                          idx % 3 === 0
+                          inputChannel === "whatsapp_channel"
+                            ? idx % 2 === 0
+                              ? "#25D366"
+                              : "#075E54"
+                            : idx % 3 === 0
                             ? CATEGORY_META[selectedPromptCategory].color
                             : idx % 3 === 1
                             ? "#E4491B"
@@ -1690,10 +1928,12 @@ export default function YouView({
                             key={idx}
                             className="absolute w-1.5 rounded-full origin-center transition-all duration-100"
                             style={{
-                              height: `${isListeningMic ? heightPx + 4 : 12}px`,
+                              height: `${isListeningMic ? heightPx + 4 : 13}px`,
                               backgroundColor: isListeningMic
                                 ? activeColor
-                                : `${CATEGORY_META[selectedPromptCategory].color}55`,
+                                : inputChannel === "whatsapp_channel"
+                                ? "#075E5488"
+                                : `${CATEGORY_META[selectedPromptCategory].color}66`,
                               transform: `rotate(${deg}deg) translateY(-86px)`,
                             }}
                           />
@@ -1722,16 +1962,28 @@ export default function YouView({
                       className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all duration-300 cursor-pointer border-3 border-[#141414] shadow-[4px_4px_0px_#141414] ${
                         isListeningMic
                           ? "bg-[#E4491B] text-white scale-105"
+                          : inputChannel === "whatsapp_channel"
+                          ? "bg-[#075E54] text-white hover:bg-[#25D366] hover:text-[#141414] hover:scale-105"
                           : "bg-[#141414] text-white hover:bg-[#E4491B] hover:scale-105"
                       }`}
                     >
                       {isListeningMic ? (
                         <MicOff className="w-8 h-8 mb-1" />
                       ) : (
-                        <Mic className="w-8 h-8 mb-1 text-[#FFE17D]" />
+                        <Mic
+                          className={`w-8 h-8 mb-1 ${
+                            inputChannel === "whatsapp_channel"
+                              ? "text-[#25D366]"
+                              : "text-[#FFE17D]"
+                          }`}
+                        />
                       )}
                       <span className="mono text-[9px] uppercase tracking-widest font-bold">
-                        {isListeningMic ? "Listening" : "Tap to Talk"}
+                        {isListeningMic
+                          ? "Listening"
+                          : inputChannel === "whatsapp_channel"
+                          ? "WA Voice"
+                          : "Tap to Talk"}
                       </span>
                     </button>
                   </div>
@@ -1743,13 +1995,46 @@ export default function YouView({
                         ? `${Math.floor(recordingSec / 60)}:${String(
                             recordingSec % 60
                           ).padStart(2, "0")}`
+                        : inputChannel === "whatsapp_channel"
+                        ? `${Math.floor(waSimDurationSec / 60)}:${String(
+                            waSimDurationSec % 60
+                          ).padStart(2, "0")} / 2:00`
                         : activeStreamItem?.durationLabel || "2:00"}
                     </div>
-                    <p className="text-xs text-[#4A4842] mt-0.5 max-w-md mx-auto">
-                      Talk to Zee like a real friend about what happened today in your{" "}
-                      <strong className="text-[#141414]">Personal Life</strong>{" "}
-                      or <strong className="text-[#141414]">Business</strong>.
-                    </p>
+
+                    {inputChannel === "whatsapp_channel" ? (
+                      <div className="mt-1 flex items-center justify-center gap-2 max-w-xs mx-auto">
+                        <span className="mono text-[9.5px] font-bold text-[#075E54]">
+                          Voice Length:
+                        </span>
+                        <input
+                          type="range"
+                          min={20}
+                          max={150}
+                          step={5}
+                          value={waSimDurationSec}
+                          onChange={(e) =>
+                            setWaSimDurationSec(Number(e.target.value))
+                          }
+                          className="w-28 accent-[#075E54] cursor-pointer"
+                        />
+                        <span
+                          className={`mono text-[9.5px] font-bold px-1.5 py-0.5 rounded ${
+                            waSimDurationSec > 120
+                              ? "bg-rose-600 text-white"
+                              : "bg-[#DCF8C6] text-[#075E54]"
+                          }`}
+                        >
+                          {waSimDurationSec}s {waSimDurationSec > 120 ? "(>2m!)" : "✓"}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#4A4842] mt-0.5 max-w-md mx-auto">
+                        Talk to Zee like a real friend about what happened today in your{" "}
+                        <strong className="text-[#141414]">Personal Life</strong>{" "}
+                        or <strong className="text-[#141414]">Business</strong>.
+                      </p>
+                    )}
 
                     <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
                       <button
@@ -1758,12 +2043,18 @@ export default function YouView({
                         className={`px-4 py-2 rounded-xl text-xs font-bold mono uppercase tracking-wider inline-flex items-center gap-1.5 transition-all cursor-pointer border-2 border-[#141414] ${
                           isListeningMic
                             ? "bg-[#141414] text-white"
+                            : inputChannel === "whatsapp_channel"
+                            ? "bg-[#075E54] text-white hover:bg-[#054c44] shadow-[3px_3px_0px_#141414]"
                             : "bg-[#E4491B] text-white hover:bg-[#C93D14] shadow-[3px_3px_0px_#141414]"
                         }`}
                       >
                         <Mic className="w-3.5 h-3.5" />
                         <span>
-                          {isListeningMic ? "Pause Mic" : "Speak to Zee"}
+                          {isListeningMic
+                            ? "Pause Mic"
+                            : inputChannel === "whatsapp_channel"
+                            ? "Record WA Voice"
+                            : "Speak to Zee"}
                         </span>
                       </button>
 
@@ -1773,7 +2064,11 @@ export default function YouView({
                           (!spokenOrTypedInput.trim() && !isListeningMic) ||
                           isAnalyzingBrain
                         }
-                        onClick={handleAnalyzeAndSaveToMemory}
+                        onClick={() =>
+                          inputChannel === "whatsapp_channel"
+                            ? handleSendWhatsAppChannel({ forceSegregate: true })
+                            : handleAnalyzeAndSaveToMemory()
+                        }
                         className={`px-4 py-2 rounded-xl text-xs font-bold mono uppercase tracking-wider inline-flex items-center gap-1.5 transition-all cursor-pointer border-2 border-[#141414] ${
                           (spokenOrTypedInput.trim() || isListeningMic) &&
                           !isAnalyzingBrain
@@ -1784,12 +2079,16 @@ export default function YouView({
                         {isAnalyzingBrain ? (
                           <>
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Zee Analyzing...</span>
+                            <span>Decoding & Segregating...</span>
                           </>
                         ) : (
                           <>
                             <Sparkles className="w-3.5 h-3.5 text-[#E4491B]" />
-                            <span>Save & Analyze with Zee</span>
+                            <span>
+                              {inputChannel === "whatsapp_channel"
+                                ? "Decode & Segregate WA Story"
+                                : "Save & Analyze with Zee"}
+                            </span>
                           </>
                         )}
                       </button>
@@ -1800,11 +2099,19 @@ export default function YouView({
                 {/* LIVE SPOKEN STREAM & ZEE QUESTION PROMPTS */}
                 <div className="bg-white border-2 border-[#141414] rounded-2xl p-3.5 shadow-[3px_3px_0px_#141414]">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="mono text-[10px] uppercase tracking-widest text-[#E4491B] font-bold flex items-center gap-1.5">
+                    <span
+                      className={`mono text-[10px] uppercase tracking-widest font-bold flex items-center gap-1.5 ${
+                        inputChannel === "whatsapp_channel"
+                          ? "text-[#075E54]"
+                          : "text-[#E4491B]"
+                      }`}
+                    >
                       <Volume2 size={12} />
                       <span>
                         {spokenOrTypedInput.trim()
-                          ? "Speaking to Zee..."
+                          ? inputChannel === "whatsapp_channel"
+                            ? `WhatsApp Input (${waUserPhone})...`
+                            : "Speaking to Zee..."
                           : `Active Story • ${activeStreamItem?.title || "Prem's Story"}`}
                       </span>
                     </span>
@@ -1820,50 +2127,101 @@ export default function YouView({
                     rows={2}
                     value={spokenOrTypedInput}
                     onChange={(e) => setSpokenOrTypedInput(e.target.value)}
-                    placeholder={`Speak with the mic or tell Zee what happened today, ${brain.virtualYou.userName}...`}
+                    placeholder={
+                      inputChannel === "whatsapp_channel"
+                        ? `Send a 2-min WhatsApp voice story or reply from ${waUserPhone} (Business, Breakup, Family...)`
+                        : `Speak with the mic or tell Zee what happened today, ${brain.virtualYou.userName}...`
+                    }
                     className="w-full resize-none bg-transparent serif text-base text-[#141414] placeholder:text-[#6E6A63]/60 focus:outline-none leading-relaxed"
                   />
 
                   <div className="mt-2 pt-2 border-t border-[#1E1E1C]/10 flex flex-wrap items-center gap-1.5">
                     <span className="mono text-[9px] font-bold uppercase text-[#6E6A63]">
-                      Memory-Adopted Starters:
+                      {inputChannel === "whatsapp_channel"
+                        ? "1-Click WA Voice Channel Starters:"
+                        : "Memory-Adopted Starters:"}
                     </span>
-                    {(
-                      [
-                        {
-                          cat: "personal" as LifeCategory,
-                          label: "🌿 Personal Life Memory",
-                        },
-                        {
-                          cat: "work" as LifeCategory,
-                          label: "💼 Business Memory",
-                        },
-                        {
-                          cat: "travel" as LifeCategory,
-                          label: "🧭 Gokarna & Horizons",
-                        },
-                      ] as const
-                    ).map((chip) => {
-                      const chipPrompt = getDynamicZeeMemoryPrompt(
-                        brain,
-                        chip.cat,
-                        activeStreamItem
-                      );
-                      return (
-                        <button
-                          key={chip.label}
-                          type="button"
-                          onClick={() => {
-                            setSelectedPromptCategory(chip.cat);
-                            setSpokenOrTypedInput(chipPrompt.quickSpokenStarter);
-                            setPipMood("excited");
-                          }}
-                          className="px-2.5 py-1 rounded-full border border-[#141414]/25 bg-[#FAF8F3] hover:bg-[#F6D9CC] text-[10px] font-bold text-[#141414] transition cursor-pointer"
-                        >
-                          {chip.label}
-                        </button>
-                      );
-                    })}
+                    {inputChannel === "whatsapp_channel" ? (
+                      <>
+                        {[
+                          {
+                            cat: "work" as LifeCategory,
+                            label: "💼 Business Pitch (1:32)",
+                            dur: 92,
+                            text: "At 11pm our biggest enterprise client asked for 5 manual video revisions before morning. That night I decided we would never edit manually again and built our automated AI studio workflow.",
+                          },
+                          {
+                            cat: "relationships" as LifeCategory,
+                            label: "💔 Breakup / 2AM (1:48)",
+                            dur: 108,
+                            text: "After the breakup, I sat in my car at 2 AM looking at old voice notes and realized people don't fall in love with perfection—they connect with the unfiltered parts we usually hide.",
+                          },
+                          {
+                            cat: "family" as LifeCategory,
+                            label: "🏡 Family Dinner (1:18)",
+                            dur: 78,
+                            text: "At Sunday dinner my dad looked at my laptop and said: you are building tools for millions of strangers, just don't forget the four people sitting at this table.",
+                          },
+                        ].map((waChip) => (
+                          <button
+                            key={waChip.label}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPromptCategory(waChip.cat);
+                              setWaSimDurationSec(waChip.dur);
+                              setSpokenOrTypedInput(waChip.text);
+                              handleSendWhatsAppChannel({
+                                overrideText: waChip.text,
+                                overrideDurationSec: waChip.dur,
+                                forceSegregate: true,
+                              });
+                            }}
+                            className="px-2.5 py-1 rounded-full border border-[#075E54]/40 bg-[#DCF8C6] hover:bg-[#25D366] text-[10px] font-bold text-[#075E54] hover:text-[#141414] transition cursor-pointer"
+                          >
+                            {waChip.label}
+                          </button>
+                        ))}
+                      </>
+                    ) : (
+                      (
+                        [
+                          {
+                            cat: "personal" as LifeCategory,
+                            label: "🌿 Personal Life Memory",
+                          },
+                          {
+                            cat: "work" as LifeCategory,
+                            label: "💼 Business Memory",
+                          },
+                          {
+                            cat: "travel" as LifeCategory,
+                            label: "🧭 Gokarna & Horizons",
+                          },
+                        ] as const
+                      ).map((chip) => {
+                        const chipPrompt = getDynamicZeeMemoryPrompt(
+                          brain,
+                          chip.cat,
+                          activeStreamItem
+                        );
+                        return (
+                          <button
+                            key={chip.label}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPromptCategory(chip.cat);
+                              setSpokenOrTypedInput(
+                                chipPrompt.quickSpokenStarter
+                              );
+                              setPipMood("excited");
+                            }}
+                            className="px-2.5 py-1 rounded-full border border-[#141414]/25 bg-[#FAF8F3] hover:bg-[#F6D9CC] text-[10px] font-bold text-[#141414] transition cursor-pointer"
+                          >
+                            {chip.label}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               </section>
@@ -2003,6 +2361,59 @@ export default function YouView({
                         <p className="serif text-sm font-bold leading-snug">
                           &ldquo;{activeStreamItem.reelHookIdea}&rdquo;
                         </p>
+                      </div>
+
+                      {/* 4-BEAT REEL SCRIPT CARD PREVIEW (Decoded from Voice/WhatsApp) */}
+                      <div className="pt-1.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="mono text-[10px] font-bold uppercase text-[#141414] flex items-center gap-1">
+                            <Clapperboard size={11} className="text-[#E4491B]" />
+                            <span>Decoded 4-Beat Reel Script</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onSelectTopicForScript) {
+                                onSelectTopicForScript(activeStreamItem.story);
+                              } else if (onSwitchToTab) {
+                                onSwitchToTab("script");
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-[#E4491B] hover:bg-[#141414] text-white mono text-[9.5px] font-bold flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <span>Open in Scripting</span>
+                            <ArrowRight size={10} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {(
+                            activeStreamItem.scriptBeats ||
+                            buildScriptBeatsForStory(
+                              activeStreamItem.title,
+                              activeStreamItem.story,
+                              activeStreamItem.category,
+                              activeStreamItem.reelHookIdea
+                            )
+                          ).map((beat) => (
+                            <div
+                              key={beat.id}
+                              className="p-2.5 rounded-xl bg-[#FAF8F3] border border-[#141414]/15 flex items-start gap-2"
+                            >
+                              <span className="px-1.5 py-0.5 rounded bg-[#141414] text-[#FFE17D] mono text-[9px] font-bold shrink-0 mt-0.5">
+                                {beat.label} • {beat.range}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-[#141414] leading-snug">
+                                  &ldquo;{beat.text}&rdquo;
+                                </p>
+                                <p className="mono text-[9.5px] text-[#6E6A63] truncate mt-0.5">
+                                  🎬 {beat.visual}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
                       <div className="space-y-1.5 pt-1">
@@ -2448,6 +2859,155 @@ export default function YouView({
             </div>
           )}
 
+          {/* BOTTOM INPUT CHANNELS & CONNECTIONS DOCK (WhatsApp Channel + Cloud & Folder Channels on the same main page!) */}
+          <div className="rounded-3xl border-2 border-[#141414] bg-gradient-to-r from-[#FAF8F3] via-[#FFFEFB] to-[#DCF8C6]/45 p-5 sm:p-6 shadow-[4px_4px_0px_#141414]">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+              <div>
+                <span className="mono text-[10px] font-bold uppercase tracking-wider text-[#075E54] flex items-center gap-1.5">
+                  <Link2 size={12} />
+                  <span>Connected Input Channels • Same Brain, Any Channel</span>
+                </span>
+                <h3 className="serif text-xl sm:text-2xl font-bold text-[#141414]">
+                  Connect WhatsApp, Studio Mic & Cloud Vaults
+                </h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-[#DCF8C6] border border-[#25D366] text-[#075E54] mono text-[10px] font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#075E54] animate-pulse" />
+                  <span>WhatsApp Webhook: /api/whatsapp/webhook</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* CHANNEL 1: WHATSAPP CLOUD API INPUT CHANNEL */}
+              <div
+                className={`p-4 rounded-2xl border-2 transition flex flex-col justify-between gap-3 ${
+                  inputChannel === "whatsapp_channel"
+                    ? "border-[#075E54] bg-[#F0FDF4] shadow-[3px_3px_0px_#075E54]"
+                    : "border-[#141414] bg-white shadow-[2px_2px_0px_#141414]"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
+                      <Smartphone size={14} className="text-[#075E54]" />
+                      <span>1. WhatsApp Voice & Chat</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#DCF8C6] text-[#075E54] mono text-[9.5px] font-bold">
+                      Max 2m (120s)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#55534E] mb-2">
+                    Send 2-min voice notes or chat on WhatsApp → Zee interviews, decodes & segregates into Business, Breakup, or Family above.
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={waUserPhone}
+                      onChange={(e) => setWaUserPhone(e.target.value)}
+                      placeholder="+91 98450 24110"
+                      className="flex-1 px-3 py-1.5 rounded-xl border border-[#075E54]/40 bg-white mono text-xs font-bold text-[#141414] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWaConnected(true);
+                    setInputChannel(
+                      inputChannel === "whatsapp_channel"
+                        ? "studio_mic"
+                        : "whatsapp_channel"
+                    );
+                  }}
+                  className={`w-full py-2 px-3 rounded-xl border-2 border-[#141414] mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    inputChannel === "whatsapp_channel"
+                      ? "bg-[#25D366] text-[#141414]"
+                      : "bg-[#075E54] hover:bg-[#25D366] text-white hover:text-[#141414]"
+                  }`}
+                >
+                  <Smartphone size={12} />
+                  <span>
+                    {inputChannel === "whatsapp_channel"
+                      ? "✓ WhatsApp Channel Active Above"
+                      : "Switch Input to WhatsApp Channel"}
+                  </span>
+                </button>
+              </div>
+
+              {/* CHANNEL 2: STUDIO LIVE VOICE MIC CHANNEL */}
+              <div
+                className={`p-4 rounded-2xl border-2 transition flex flex-col justify-between gap-3 ${
+                  inputChannel === "studio_mic"
+                    ? "border-[#E4491B] bg-[#FFF8F5] shadow-[3px_3px_0px_#E4491B]"
+                    : "border-[#141414] bg-white shadow-[2px_2px_0px_#141414]"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
+                      <Mic size={14} className="text-[#E4491B]" />
+                      <span>2. Studio Voice Mic</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#F6D9CC] text-[#E4491B] mono text-[9.5px] font-bold">
+                      Meta STT Live
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#55534E]">
+                    Speak directly into the 48-bar radial dial above. Uses the exact same Zee Brain, Story DNA, and 4-Beat Script pipeline.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setInputChannel("studio_mic")}
+                  className={`w-full py-2 px-3 rounded-xl border-2 border-[#141414] mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    inputChannel === "studio_mic"
+                      ? "bg-[#FFE17D] text-[#141414]"
+                      : "bg-[#141414] text-white hover:bg-[#E4491B]"
+                  }`}
+                >
+                  <Mic size={12} />
+                  <span>
+                    {inputChannel === "studio_mic"
+                      ? "✓ Studio Mic Active Above"
+                      : "Switch Input to Studio Mic"}
+                  </span>
+                </button>
+              </div>
+
+              {/* CHANNEL 3: GOOGLE DRIVE & LOCAL EXIF FOLDER VAULT */}
+              <div className="p-4 rounded-2xl border-2 border-[#141414] bg-white flex flex-col justify-between gap-3 shadow-[2px_2px_0px_#141414]">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
+                      <FolderOpen size={14} className="text-[#2563EB]" />
+                      <span>3. Visual Gallery Channels</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#DBEAFE] text-[#2563EB] mono text-[9.5px] font-bold">
+                      {brain.gallery.length} Visuals
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#55534E]">
+                    Link Google Drive, Partner Photos, or Laptop EXIF folders to auto-pair B-roll with your WhatsApp & voice stories.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab("gallery")}
+                  className="w-full py-2 px-3 rounded-xl border-2 border-[#141414] bg-[#FAF8F3] hover:bg-[#141414] hover:text-white text-[#141414] mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <ImageIcon size={12} />
+                  <span>Open Visual Gallery Connections →</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* ADMIN-ONLY VARIABLES REGISTRY (Hidden unless Admin Mode is toggled ON) */}
           <AnimatePresence>
             {isAdminMode && (
@@ -2520,7 +3080,7 @@ export default function YouView({
            1) COMPACT HEADER BAR (Camera Wallets vs Separated AI Wallets)
            2) TACTILE FOLDER WALLETS GRID (Travel • Gokarna, Portraits, Family, Office | AI Images, AI Videos)
            3) ULTRA-CLEAN VISUAL PHOTO GRID (Minimal text, pure visual cards)
-           4) BOTTOM VAULT DOCK (Google Drive, Complete Folder Linker, Partner Photos)
+           4) BOTTOM VAULT DOCK (Google Drive, Complete Folder Linker, Partner Photos, WhatsApp Channel)
            ===================================================================== */
         <div className="space-y-7">
           {/* 1. COMPACT CREATIVE GALLERY WALLET HEADER */}
@@ -3287,7 +3847,7 @@ export default function YouView({
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* 1. REAL GOOGLE DRIVE LINK SYNC */}
               <div className="p-4 rounded-2xl border-2 border-[#141414] bg-white flex flex-col justify-between gap-3 shadow-[2px_2px_0px_#141414]">
                 <div>
@@ -3416,6 +3976,44 @@ export default function YouView({
                     }
                   />
                   <span>Sync Partner Stream</span>
+                </button>
+              </div>
+
+              {/* 4. WHATSAPP CLOUD API INPUT CHANNEL (Connected directly inside the existing Connection Dock!) */}
+              <div className="p-4 rounded-2xl border-2 border-[#141414] bg-gradient-to-br from-[#F0FDF4] via-white to-[#DCF8C6]/65 flex flex-col justify-between gap-3 shadow-[2px_2px_0px_#075E54]">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
+                      <Smartphone size={14} className="text-[#075E54]" />
+                      <span>4. WhatsApp Channel</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#DCF8C6] border border-[#25D366] text-[#075E54] mono text-[10px] font-bold">
+                      {waConnected ? "2m API Live" : "Ready"}
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={waUserPhone}
+                    onChange={(e) => setWaUserPhone(e.target.value)}
+                    placeholder="+91 98450 24110"
+                    className="w-full mt-1.5 px-3 py-2 rounded-xl border border-[#075E54]/35 bg-white text-xs font-bold text-[#141414] placeholder:text-[#9A978E] focus:outline-none focus:border-[#075E54]"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWaConnected(true);
+                    setInputChannel("whatsapp_channel");
+                    setActiveSubTab("personalize");
+                    setSyncSuccessMessage(
+                      `Connected WhatsApp Channel (${waUserPhone}) → Switched input channel to WhatsApp!`
+                    );
+                  }}
+                  className="w-full py-2 px-3 rounded-xl border-2 border-[#141414] bg-[#075E54] hover:bg-[#25D366] hover:text-[#141414] text-white mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Smartphone size={12} />
+                  <span>Use WhatsApp Channel</span>
                 </button>
               </div>
             </div>

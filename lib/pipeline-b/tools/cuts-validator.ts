@@ -142,6 +142,32 @@ export function validateApprovedCutsSemantic(
             overlapsProtected = true;
             break;
           }
+        } else if (start < pr.start && end > pr.end) {
+          // Cut straddles across protected speech!
+          const leftDur = pr.start - start;
+          const rightDur = end - pr.end;
+          if (leftDur >= 0.1) {
+            adjustedCuts.push({
+              original: rawCut,
+              adjusted: { ...rawCut, start, end: +pr.start.toFixed(2) },
+              reason: "Truncated cut to stop before protected speech [" + pr.start + ", " + pr.end + "]",
+            });
+            end = +pr.start.toFixed(2);
+          } else if (rightDur >= 0.1) {
+            adjustedCuts.push({
+              original: rawCut,
+              adjusted: { ...rawCut, start: +pr.end.toFixed(2), end },
+              reason: "Adjusted cut start to begin after protected speech [" + pr.start + ", " + pr.end + "]",
+            });
+            start = +pr.end.toFixed(2);
+          } else {
+            rejectedCuts.push({
+              cut: rawCut,
+              reason: "Cut swallowed protected speech [" + pr.start + ", " + pr.end + "] and residuals were < 0.1s",
+            });
+            overlapsProtected = true;
+            break;
+          }
         }
       }
     }
@@ -241,6 +267,10 @@ export function validateApprovedCutsSemantic(
       // Overlap detected: merge the two cuts cleanly
       prev.end = Math.max(prev.end, c.end);
       prev.reason = `${prev.reason}; merged with ${c.id}: ${c.reason}`;
+      // Priority for merged cut type: retake > filler > off_script > silence
+      if (c.type === "retake" || (c.type === "filler" && prev.type !== "retake") || (c.type === "off_script" && prev.type === "silence")) {
+        prev.type = c.type;
+      }
     } else {
       nonOverlappingCuts.push(c);
     }

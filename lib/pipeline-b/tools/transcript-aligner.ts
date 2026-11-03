@@ -36,6 +36,8 @@ export interface AlignmentResult {
   deviations: AlignedDeviation[];
   redundantWordIndices: number[];
   offScriptFillerIndices: number[];
+  /** Spoken word indices that land on the LAST word of a script sentence (script punctuation / line break). */
+  scriptSentenceEndIndices: number[];
   notes: string;
 }
 
@@ -53,15 +55,25 @@ export function alignTranscriptWithScript(
       deviations: [],
       redundantWordIndices: [],
       offScriptFillerIndices: [],
+      scriptSentenceEndIndices: [],
       notes: "No user script provided. Auto-editor will transcribe and enhance spontaneous speech.",
     };
   }
 
-  const scriptWords = userScript
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
+  // Tokenize the script while remembering which tokens close a sentence as the user wrote it
+  // (. ! ? … or a line break), so cut margins follow the script's own sentence structure.
+  const scriptTokens: { norm: string; sentenceEnd: boolean }[] = [];
+  for (const line of userScript.split(/\r?\n/)) {
+    for (const tok of line.split(/\s+/).filter(Boolean)) {
+      const norm = tok.toLowerCase().replace(/[^\w]/g, "");
+      const closes = /[.!?…]["'”’)\]]*$/.test(tok);
+      if (norm) scriptTokens.push({ norm, sentenceEnd: closes });
+      else if (closes && scriptTokens.length) scriptTokens[scriptTokens.length - 1].sentenceEnd = true;
+    }
+    if (scriptTokens.length) scriptTokens[scriptTokens.length - 1].sentenceEnd = true;
+  }
+  const scriptWords = scriptTokens.map((t) => t.norm);
+  const scriptSentenceEndIndices: number[] = [];
 
   const normalizedSpoken = allWords.map((w) =>
     w.word.toLowerCase().replace(/[^\w]/g, "")
@@ -124,6 +136,7 @@ export function alignTranscriptWithScript(
         matches++;
         scriptWordUsage.set(spoken, currentUsage + 1);
         scriptCursor = foundInScriptAt + 1;
+        if (scriptTokens[foundInScriptAt].sentenceEnd) scriptSentenceEndIndices.push(i);
       }
     } else {
       // Word is NOT in script!
@@ -168,6 +181,7 @@ export function alignTranscriptWithScript(
     deviations,
     redundantWordIndices,
     offScriptFillerIndices,
+    scriptSentenceEndIndices,
     notes,
   };
 }

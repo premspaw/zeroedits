@@ -7,8 +7,13 @@
  *   Stage B: Creative Direction (Rich narrative visual plan: kinetic typography, diagrams, B-roll, SAM, layouts)
  */
 
+import dns from "dns";
 import { readModelResponse } from "../../model-response.ts";
 import { withModelRetry } from "../../model-retry.ts";
+
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {}
 import type {
   CandidateCut,
   EditCut,
@@ -39,9 +44,9 @@ export const WONDER_STAGE_A_MAX_OUTPUT_TOKENS =
 export const WONDER_STAGE_B_MODEL_ID =
   process.env.WONDER_STAGE_B_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || "muse-wonder-1.0";
 export const WONDER_STAGE_B_REASONING_EFFORT =
-  process.env.WONDER_STAGE_B_REASONING_EFFORT || "xhigh";
+  process.env.WONDER_STAGE_B_REASONING_EFFORT || "medium";
 export const WONDER_STAGE_B_MAX_OUTPUT_TOKENS =
-  Number(process.env.WONDER_STAGE_B_MAX_OUTPUT_TOKENS) || 161187;
+  Number(process.env.WONDER_STAGE_B_MAX_OUTPUT_TOKENS) || 8192;
 
 // Legacy general aliases
 export const WONDER_MODEL_ID = WONDER_STAGE_A_MODEL_ID;
@@ -160,37 +165,75 @@ Your objective is to analyze the FINAL CLEAN NARRATIVE (after editorial cuts) an
 - "spokenReference" MUST be an exact verbatim phrase spoken by the speaker in the specified start..end window.
 - "headlineText" MUST be 2–4 punchy, uppercase words directly quoting or summarizing the speaker's core words in that specific segment.
 
-## CORE REEL EDITING RULES
+## ZAI (Z) — AUTONOMOUS DIRECTOR & CUTOUT PIPELINE RULES (NO STATIC AI IMAGES)
 
-1. START WITH FULL-SCREEN FACE VALUE ("fullscreen_speaker"):
-   - The opening hook (Segment 1 at the start of the topic) MUST ALWAYS be "fullscreen_speaker" so the viewer connects immediately with the speaker's face on the clean raw video.
-   - Never use 50/50 split screens ("split_screen" or "stacked_layout"). Never crowd the frame with multiple boxes.
+1. ZERO STATIC AI IMAGES — 100% CODEBASE STORY ANIMATIONS + SAM 3.1 CUTOUTS:
+   - NEVER use static AI images ("generated_image").
+   - As per the spoken story, you autonomously decide and trigger executable CODEBASE ANIMATIONS (HTML5/CSS3/JS/SVG/Canvas: "animated_diagram", "procedural_graphic", "ui_mockup", "kinetic_typography", "sam_cutout_pop") that visually tell the story beat-by-beat.
 
-2. FULL-SCREEN CLEAN ANIMATION CUTAWAYS ("broll_takeover") ONLY WHEN NEEDED:
-   - Whenever the speaker explains a concrete comparison, number/metric, step-by-step process, or core visual concept, cut to a 100% FULL-SCREEN CLEAN ANIMATION ("broll_takeover") with technique "animated_diagram", "ui_mockup", or "kinetic_typography".
-   - Immediately after the concept is illustrated, cut back to "fullscreen_speaker" (full face raw video) for personal reactions, transitions, and the closing payoff.
-   - Alternate naturally: Speaker (Full Face) -> Full-Screen Clean Animation -> Speaker (Full Face) -> Full-Screen Clean Animation -> Speaker (Full Face).
+2. CUTOUT TEMPLATE ("cutout" / "samCutoutExplainer") WORKFLOW:
+   - PRE-TALKING-HEAD ANIMATION LEAD-IN ("sam_cutout"): Before you include the talking-head video, the codebase story animation can run first (0.0s–0.85s of the beat) to hook the viewer and illustrate the concept, and then the SAM 3.1 speaker cutout pops in over the live animation!
+   - 3 WAYS TO USE SAM 3.1 CUTOUTS:
+     a) "sam_cutout" (Animation Lead-In + Floating Cutout): Full-screen codebase animation runs first, then the SAM 3.1 speaker cutout pops in with spring physics, cutout border, and drop shadow.
+     b) "depth_cutout" (3-Layer Depth Typography & Motion Graphics): SAM 3.1 speaker mask on top layer (z-index: 30), bold kinetic titles & SVG rings on middle layer (z-index: 20) moving BEHIND the speaker's head/shoulders, and canvas shader backdrop on bottom layer (z-index: 10).
+     c) "broll_takeover" (Full Codebase Animation Takeover): Cover A-Roll completely with a 100% full-screen codebase story animation (charts, code terminal, process steps, comparison bars) while the speaker's voice continues underneath.
+     d) "fullscreen_speaker" (Pure A-Roll Window): High-trust eye contact with 1.0x–1.12x punch-in cuts on emphasis words.
 
-3. ULTRA-CLEAN, MINIMAL SINGLE-FOCUS VISUALS:
-   - Short-form viewers get confused if a frame has too many elements.
-   - Each "broll_takeover" animation scene must illustrate ONE simple, effortless-to-understand idea directly from the spoken words.
-   - Set "headlineText" to 2–4 punchy, crystal-clear words maximum derived from that segment's speech. Never put long sentences in headlineText.
+3. YAPPING STYLE / STORY EXPLAINER TEMPLATE ("storyExplainer" / "auto") WORKFLOW — GENIUS REEL EDITOR RULES:
+   - FACE VALUE IS KING (80–85% ON SPEAKER'S FACE): In Yapping Style, viewers connect with the speaker's face. Keep 80–85% of segments on "fullscreen_speaker" with dynamic camera punch-ins (1.0x -> 1.12x) and script-specific pop-up motion graphics appearing around the speaker's face (top-left, top-right, mid-left, mid-right) synced to the exact spoken words.
+   - SHORT 3-SECOND FULL-SCREEN BURSTS ONLY: Never hide the speaker's face behind a long, slow full-screen animation (>3.5s) or people will get bored. Only use "broll_takeover" on 1 or at most 2 climax beats in the entire reel, and keep any full-screen cutaway segment tight (2.5s–3.5s max) before cutting right back to the speaker's face.
+   - ZERO GENERIC TEMPLATES: Every pop-up motion and cutaway in "motionIntent" MUST be custom-designed for the exact nouns, numbers, actions, and metaphors in the speaker's script. Never use 50/50 split screens.
+- For each beat, return a visualRecipe with a beat-specific metaphor and 2–5 concrete objects. Choose each object's shape, movement, and position to illustrate the actual script. Do not reuse an object set or composition on adjacent beats. Never use a phone unless the dialogue explicitly mentions one.
 
-4. CONTINUOUS UNINTERRUPTED CAPTIONS:
-   - Word-by-word captions run continuously in the lower-third across both "fullscreen_speaker" and "broll_takeover" scenes without interruption.
+4. ULTRA-CLEAN, MINIMAL SINGLE-FOCUS STORY VISUALS & 9:16 SAFE ZONES:
+   - Author all visual systems on a 9:16 vertical Canvas (1080x1920).
+   - Keep captions, key cutouts, and focal points out of the bottom 20% and right 15% safe zones.
+   - Set "headlineText" to 2–4 punchy, crystal-clear words maximum derived from that segment's speech.
 
-5. SEGMENT REQUIREMENTS:
-   Each visual segment must include:
-   - start & end timestamps (on the clean edited timeline: 0 to cleanDuration)
-   - layoutType ("fullscreen_speaker" or "broll_takeover"), technique, spokenReference (exact words spoken), motionIntent (why this shot is full-face speaker or what clean single-focus animation is shown)
-   - requiredAssets (type, description, prompt)
-   - layerArrangement ("background" | "main" | "overlay" | "foreground")
-   - transitionDirection ("slide_up" | "slide_down" | "slide_left" | "slide_right" | "pop_in" | "zoom_in" | "fade" | "none")
-   - cameraZoom (1.0 to 1.12)
-   - headlineText (2 to 4 clean words max from the spoken dialogue)
+5. CONTINUOUS UNINTERRUPTED CAPTIONS:
+   - Word-by-word WhisperX captions run continuously in the safe zone across all scenes without interruption.
 
 6. OUTPUT FORMAT:
    Return valid JSON strictly matching the schema without markdown fences or extraneous text.`;
+
+export const ZAI_TIMELINE_DIRECTOR_INSTRUCTIONS = {
+  id: "zai-hypit-full-pipeline-director",
+  title: "ZAI (Z) — Autonomous Cutout & Codebase Story Animation Director",
+  summary:
+    "Zero static AI images. Every story beat is driven by executable codebase animations (HTML5/CSS3/JS/SVG/Canvas) synced to WhisperX timestamps, layered with SAM 3.1 speaker cutouts and A-Roll windows.",
+  stages: [
+    {
+      stage: "Stage 1",
+      name: "FFmpeg Wastage Removal & WhisperX Locking",
+      detail: "Slices out dead air (>0.4s), filler words, and retakes; locks word-level timestamps as Timeline triggers.",
+    },
+    {
+      stage: "Stage 2",
+      name: "Pre-Talking-Head Animation & A-Roll Pacing",
+      detail: "Codebase story animation runs first to establish the visual hook before the talking-head SAM 3.1 cutout pops in; pattern interrupts every 2.0s–3.5s.",
+    },
+    {
+      stage: "Stage 3",
+      name: "SAM 3.1 Subject Cutout & 3-Layer Depth Engine",
+      detail: "z-10 Canvas Backdrop -> z-20 Behind-the-Head Kinetic Story Typography & Diagrams -> z-30 SAM 3.1 Speaker Cutout.",
+    },
+    {
+      stage: "Stage 4",
+      name: "Autonomous Codebase Story Animations (No Images)",
+      detail: "AI selects the exact procedural animation for the story: Step Stack, KPI Gauge/Chart, Contrast Diff, Code Terminal, or Architecture Flow.",
+    },
+    {
+      stage: "Stage 5",
+      name: "HTML5 / CSS3 / JS / SVG / Canvas Motion Stack",
+      detail: "Spring physics cubic-bezier(0.16, 1, 0.3, 1), SVG stroke-dashoffset connectors, and deterministic 60fps canvas rendering.",
+    },
+    {
+      stage: "Stage 6",
+      name: "9:16 Safe-Zone & Seamless Loop Mastering",
+      detail: "1080x1920 vertical canvas keeping cutouts & captions clear of bottom 20% and right 15%.",
+    },
+  ],
+};
 
 export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
   type: "object",
@@ -218,6 +261,7 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
               "picture_in_picture",
               "broll_takeover",
               "sam_cutout",
+              "depth_cutout",
             ],
           },
           technique: {
@@ -226,6 +270,7 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
               "kinetic_typography",
               "dynamic_captions",
               "animated_diagram",
+              "procedural_graphic",
               "ui_mockup",
               "broll_clip",
               "generated_image",
@@ -237,6 +282,30 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
           },
           spokenReference: { type: "string" },
           motionIntent: { type: "string" },
+          visualRecipe: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              metaphor: { type: "string" },
+              objects: {
+                type: "array",
+                minItems: 2,
+                maxItems: 5,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    label: { type: "string" },
+                    shape: { type: "string", enum: ["circle", "rect", "diamond", "line", "text"] },
+                    motion: { type: "string", enum: ["rise", "orbit", "pulse", "slide", "unfold", "scatter"] },
+                    position: { type: "string", enum: ["upper-left", "upper-right", "center", "lower-left", "lower-right"] },
+                  },
+                  required: ["label", "shape", "motion", "position"],
+                },
+              },
+            },
+            required: ["metaphor", "objects"],
+          },
           requiredAssets: {
             type: "array",
             items: {
@@ -269,6 +338,7 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
           "technique",
           "spokenReference",
           "motionIntent",
+          "visualRecipe",
           "requiredAssets",
           "layerArrangement",
           "transitionDirection",
@@ -307,6 +377,8 @@ export interface WonderEditorialCleanupParams {
   templateId?: string;
   userScript?: string;
   pacingProfile?: string;
+  /** Acoustically measured silences (ffmpeg). Ground truth: Whisper word times can be off by 0.3-0.8s. */
+  silences?: { start: number; end: number; duration: number }[];
   runId: string;
   mode?: "wonder-ai" | "rules-only";
   onLogEvent?: (event: string, meta?: any) => void;
@@ -379,6 +451,7 @@ export async function callWonderEditorialCleanup(
     templateId = "hormoziPunch",
     userScript,
     pacingProfile = "natural",
+    silences = [],
     runId,
     mode = "wonder-ai",
     onLogEvent,
@@ -438,6 +511,7 @@ export async function callWonderEditorialCleanup(
         end: w.end,
       })),
     })),
+    measuredSilences: silences.map((x) => ({ start: x.start, end: x.end })),
     candidateCuts: candidateCuts.map((c) => ({
       id: c.id,
       start: c.start,
@@ -449,7 +523,7 @@ export async function callWonderEditorialCleanup(
       alternativeKeepOption: c.alternativeKeepOption,
     })),
     instruction:
-      "Stage A: Analyze the full transcript and candidate cuts at the sentence and word level. Core mandates: (1) ELIMINATE all vocal fillers ('ah', 'ahh', 'um', 'umm', 'uh', 'uhhh', 'er', 'hmm', 'like') and surrounding empty space; (2) CUT starting fillers and initial/trailing empty space so the video hooks immediately; (3) SENTENCE & PHRASE RETAKES: Whenever the speaker starts a sentence or phrase, hesitates at a retake point ('uhhh', 'um', 'wait', or empty space), and repeats or restarts the sentence/words, APPROVE cutting the entire aborted first sentence/phrase + 'uhhh' + empty space so the same words are never spoken or captioned twice. Return approved cuts, protected ranges, and uncertain decisions matching the schema.",
+      "Stage A: Analyze the full transcript and candidate cuts at the sentence and word level. Core mandates: (1) ELIMINATE all vocal fillers ('ah', 'ahh', 'um', 'umm', 'uh', 'uhhh', 'er', 'hmm', 'like') and surrounding empty space; (2) CUT starting fillers and initial/trailing empty space so the video hooks immediately; (3) SENTENCE & PHRASE RETAKES: Whenever the speaker starts a sentence or phrase, hesitates at a retake point ('uhhh', 'um', 'wait', or empty space), and repeats or restarts the sentence/words, APPROVE cutting the entire aborted first sentence/phrase + 'uhhh' + empty space so the same words are never spoken or captioned twice. (4) NEVER cut a word that belongs to the take you keep: for every repeated phrase decide the single best complete take IN SPOKEN ORDER and keep that take whole (all of its words contiguous, never mixing words from different takes); cut the whole failed take, not individual words. (5) Word timestamps are approximate; 'measuredSilences' are the true acoustic silences. Prefer cut boundaries that lie inside a measuredSilence and never cut where no silence exists between two kept words, so sentence-final words ('life', 'phones', 'dreams') are never clipped. Return approved cuts, protected ranges, and uncertain decisions matching the schema.",
   };
 
   const payload = {
@@ -495,6 +569,9 @@ export async function callWonderEditorialCleanup(
     rawJson = await withModelRetry(
       async () => {
         const fetchFn = fetchImpl || fetch;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 90_000);
+        try {
         const response = await fetchFn("https://api.meta.ai/v1/responses", {
           method: "POST",
           headers: {
@@ -503,6 +580,7 @@ export async function callWonderEditorialCleanup(
             Accept: "text/event-stream",
           },
           body: JSON.stringify(payload),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -510,10 +588,16 @@ export async function callWonderEditorialCleanup(
           throw new Error(`Wonder API returned HTTP ${response.status}: ${errBody}`);
         }
         return await readModelResponse(response);
+        } catch (err: any) {
+          if (err?.name === "AbortError") throw new Error("Wonder editorial analysis timed out after 90 seconds.");
+          throw err;
+        } finally {
+          clearTimeout(timeout);
+        }
       },
       {
-        attempts: 2,
-        delayMs: 1200,
+        attempts: 1,
+        delayMs: 1600,
         onAttemptError: (err: any, attempt) => {
           onLogEvent?.("WONDER_REQUEST_RETRY", { runId, attempt, error: err?.message || String(err) });
         },
@@ -521,9 +605,16 @@ export async function callWonderEditorialCleanup(
     );
   } catch (apiErr: any) {
     const elapsed = Date.now() - startTime;
-    const failMsg = `Wonder AI Director API call failed after ${elapsed}ms: ${apiErr.message}. In accordance with fail-safe policy, automatic rule-based cutting was not applied.`;
-    onLogEvent?.("WONDER_REQUEST_FAILED", { runId, elapsedMs: elapsed, error: failMsg });
-    throw new Error(failMsg);
+    const warnMsg = `Wonder AI Director API call failed after ${elapsed}ms (${apiErr.message}). Falling back to deterministic ZAI editorial cleanup.`;
+    onLogEvent?.("WONDER_FALLBACK_TO_RULES", { runId, elapsedMs: elapsed, warning: warnMsg });
+    return createDeterministicFallbackPlan({
+      candidateCuts,
+      transcript,
+      allWords,
+      totalDuration,
+      template,
+      runId,
+    });
   }
 
   const responseElapsed = Date.now() - startTime;
@@ -539,16 +630,30 @@ export async function callWonderEditorialCleanup(
     const cleanJson = rawJson.replace(/^```[a-zA-Z]*\s*/, "").replace(/```\s*$/, "").trim();
     parsed = JSON.parse(cleanJson);
   } catch (parseErr: any) {
-    const failMsg = `Wonder AI Director returned invalid JSON: ${parseErr.message}. In accordance with fail-safe policy, automatic rule-based cutting was not applied.`;
-    onLogEvent?.("WONDER_JSON_PARSE_ERROR", { runId, error: failMsg });
-    throw new Error(failMsg);
+    const warnMsg = `Wonder AI Director returned invalid JSON (${parseErr.message}). Falling back to deterministic ZAI editorial cleanup.`;
+    onLogEvent?.("WONDER_FALLBACK_TO_RULES", { runId, warning: warnMsg });
+    return createDeterministicFallbackPlan({
+      candidateCuts,
+      transcript,
+      allWords,
+      totalDuration,
+      template,
+      runId,
+    });
   }
 
   if (!parsed || !Array.isArray(parsed.approvedCuts)) {
-    const failMsg =
-      "Wonder AI Director response does not conform to the required editorial schema. In accordance with fail-safe policy, automatic rule-based cutting was not applied.";
-    onLogEvent?.("WONDER_VALIDATION_ERROR", { runId, error: failMsg });
-    throw new Error(failMsg);
+    const warnMsg =
+      "Wonder AI Director response does not conform to the required editorial schema. Falling back to deterministic ZAI editorial cleanup.";
+    onLogEvent?.("WONDER_FALLBACK_TO_RULES", { runId, warning: warnMsg });
+    return createDeterministicFallbackPlan({
+      candidateCuts,
+      transcript,
+      allWords,
+      totalDuration,
+      template,
+      runId,
+    });
   }
 
   // Extract raw protected ranges
@@ -607,7 +712,48 @@ export async function callWonderEditorialCleanup(
 
   // Combine AI approved cuts with non-rejected high-confidence candidate cuts
   const approvedIds = new Set((parsed.approvedCuts || []).map((c: any) => c.id));
-  const mergedApprovedCuts: any[] = [...(parsed.approvedCuts || [])];
+  const candById = new Map<string, CandidateCut>(candidateCuts.map((c) => [c.id, c]));
+  const mergedApprovedCuts: any[] = (parsed.approvedCuts || []).map((rawCut: any) => {
+    const cand = candById.get(rawCut.id);
+    let cutType = rawCut.type || "silence";
+    const r = ((rawCut.reason || "") + " " + (cand?.reason || "")).toLowerCase();
+    if (
+      cand?.type === "phrase_retake" ||
+      cand?.type === "false_start" ||
+      cand?.type === "repetition" ||
+      cand?.classification === "accidental_stutter" ||
+      r.includes("aborted") ||
+      r.includes("retake") ||
+      r.includes("repeat") ||
+      r.includes("false start") ||
+      r.includes("stumble") ||
+      r.includes("hesitant")
+    ) {
+      cutType = "retake";
+    } else if (
+      cand?.type === "filler" ||
+      cand?.classification === "filler_pause" ||
+      r.includes("filler") ||
+      r.includes("hesitation sound")
+    ) {
+      cutType = "filler";
+    }
+    return {
+      ...rawCut,
+      type: cutType,
+    };
+  });
+
+  // Wonder AI is the sole editorial decision-maker for cuts and retakes.
+  // Only include candidate cuts that Wonder AI explicitly approved in approvedCuts
+  // or explicitly marked as actionTaken === "cut" in uncertainDecisions, plus initial/trailing dead air.
+  const uncertainCutIds = new Set<string>(
+    Array.isArray(parsed.uncertainDecisions)
+      ? parsed.uncertainDecisions
+          .filter((d: any) => d && d.actionTaken === "cut" && typeof d.candidateId === "string")
+          .map((d: any) => d.candidateId)
+      : []
+  );
 
   for (const cand of candidateCuts) {
     if (approvedIds.has(cand.id) || rejectedCandidateIds.has(cand.id)) continue;
@@ -616,24 +762,9 @@ export async function callWonderEditorialCleanup(
       cand.id === "cand-lead-silence" ||
       cand.id === "cand-trail-silence" ||
       cand.id === "cand-lead-filler";
-    const isRetakeOrRepetition =
-      cand.classification === "accidental_stutter" ||
-      cand.type === "phrase_retake" ||
-      cand.type === "repetition" ||
-      cand.type === "false_start" ||
-      cand.id.startsWith("cand-script-") ||
-      cand.id.startsWith("cand-utterance-retake-") ||
-      cand.id.startsWith("cand-utterance-stumble-") ||
-      cand.id.startsWith("cand-sentence-retake-") ||
-      cand.id.startsWith("cand-phrase-retake-");
-    const isStutterGap = cand.id.startsWith("cand-stutter-gap") || cand.id.startsWith("cand-run-");
-    const isHighConfFiller =
-      (cand.classification === "filler_pause" || (cand.type as string) === "filler") &&
-      cand.confidence >= 0.90;
-    const isHighConfSilence =
-      cand.classification === "dead_air" && cand.confidence >= 0.92;
+    const isExplicitlyCutByWonder = uncertainCutIds.has(cand.id);
 
-    if (isLeadOrTrailCut || isRetakeOrRepetition || isStutterGap || isHighConfFiller || isHighConfSilence) {
+    if (isLeadOrTrailCut || isExplicitlyCutByWonder) {
       // Check if inside legitimate protected speech (excluding fillers)
       const isProtected = cleanedProtectedRanges.some((p) => {
         const oStart = Math.max(cand.start, p.start);
@@ -907,8 +1038,8 @@ export async function callWonderCreativeDirector(
         end: w.editedEnd,
       })),
     })),
-    instruction:
-      "Stage B: Analyze the final clean narrative and design a rich visual edit plan using talking-head footage, kinetic typography, dynamic captions, split-screen/stacked layouts, picture-in-picture, animated diagrams, B-roll clips, generated images, SAM cutouts, and camera zooms. Make narrative-relevant decisions without robotic emojis.",
+  instruction:
+      "Analyze this exact script and direct a distinct, executable visual treatment for each beat. For every motionIntent, specify the concrete subject, physical action, visual metaphor, materials/shapes, camera/motion, and deliberate screen position. Do not reuse a motif, object, composition, or placement on adjacent beats. Do not default to phones, feeds, terminals, charts, or generic cards unless the spoken words demand them. Keep every visual grounded in the transcript.",
   };
 
   const payload = {
@@ -954,6 +1085,9 @@ export async function callWonderCreativeDirector(
     rawJson = await withModelRetry(
       async () => {
         const fetchFn = fetchImpl || fetch;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 90_000);
+        try {
         const response = await fetchFn("https://api.meta.ai/v1/responses", {
           method: "POST",
           headers: {
@@ -962,6 +1096,7 @@ export async function callWonderCreativeDirector(
             Accept: "text/event-stream",
           },
           body: JSON.stringify(payload),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -969,10 +1104,16 @@ export async function callWonderCreativeDirector(
           throw new Error(`Wonder Creative API returned HTTP ${response.status}: ${errBody}`);
         }
         return await readModelResponse(response);
+        } catch (err: any) {
+          if (err?.name === "AbortError") throw new Error("Wonder creative direction timed out after 90 seconds.");
+          throw err;
+        } finally {
+          clearTimeout(timeout);
+        }
       },
       {
-        attempts: 2,
-        delayMs: 1200,
+        attempts: 1,
+        delayMs: 1600,
         onAttemptError: (err: any, attempt) => {
           onLogEvent?.("WONDER_VISUAL_REQUEST_RETRY", { runId, attempt, error: err?.message || String(err) });
         },
@@ -980,9 +1121,9 @@ export async function callWonderCreativeDirector(
     );
   } catch (apiErr: any) {
     const elapsed = Date.now() - startTime;
-    const failMsg = `Wonder Creative Director API call failed after ${elapsed}ms: ${apiErr.message}.`;
-    onLogEvent?.("WONDER_VISUAL_REQUEST_FAILED", { runId, elapsedMs: elapsed, error: failMsg });
-    throw new Error(failMsg);
+    const error = `Wonder visual direction failed after ${elapsed}ms: ${apiErr.message}. No template-based visuals were substituted.`;
+    onLogEvent?.("WONDER_VISUAL_REQUEST_FAILED", { runId, elapsedMs: elapsed, error });
+    throw new Error(error);
   }
 
   const responseElapsed = Date.now() - startTime;
@@ -997,15 +1138,13 @@ export async function callWonderCreativeDirector(
     const cleanJson = rawJson.replace(/^```[a-zA-Z]*\s*/, "").replace(/```\s*$/, "").trim();
     parsed = JSON.parse(cleanJson);
   } catch (parseErr: any) {
-    const failMsg = `Wonder Creative Director returned invalid JSON: ${parseErr.message}.`;
-    onLogEvent?.("WONDER_VISUAL_JSON_PARSE_ERROR", { runId, error: failMsg });
-    throw new Error(failMsg);
+    const error = `Wonder returned an invalid visual plan: ${parseErr.message}`;
+    onLogEvent?.("WONDER_VISUAL_PLAN_INVALID", { runId, error });
+    throw new Error(error);
   }
 
   if (!parsed || !Array.isArray(parsed.visualSegments)) {
-    const failMsg = "Wonder Creative Director response does not contain valid visualSegments array.";
-    onLogEvent?.("WONDER_VISUAL_VALIDATION_ERROR", { runId, error: failMsg });
-    throw new Error(failMsg);
+    throw new Error("Wonder returned a visual plan without visualSegments.");
   }
 
   // Check transcript grounding & overlap: detect and discard any LLM hallucination
@@ -1038,36 +1177,77 @@ export async function callWonderCreativeDirector(
       totalSegWords,
       reason: "Visual segments deviate from spoken transcript; falling back to deterministic creative planner",
     });
-    return createDeterministicCreativePlan({
-      editedTranscript,
-      cleanDuration,
-      template,
-      runId,
-    });
+    throw new Error("Wonder's visual plan did not match the spoken script; generation stopped instead of using a generic template.");
   }
 
-  // Validate and map visualSegments — enforce Pro Reel Editor cadence:
-  // Segment 0 is always fullscreen_speaker (face value at start of topic),
-  // and any 50/50 split_screen / stacked_layout / sam_cutout is converted to clean full-screen animation (broll_takeover)
+  // Validate and map visualSegments — support ZAI Cutout & Codebase Story Animation pipeline
+  const isCutoutTemplate = template.id === "cutout" || template.id === "samCutoutExplainer";
   const validatedSegments: VisualPlanSegment[] = parsed.visualSegments
     .filter((s: any) => typeof s.start === "number" && typeof s.end === "number" && s.end > s.start)
     .map((s: any, idx: number) => {
       let normalizedLayout: VisualPlanSegment["layoutType"] = "fullscreen_speaker";
-      if (idx === 0) {
-        normalizedLayout = "fullscreen_speaker";
-      } else if (
-        s.layoutType === "broll_takeover" ||
-        s.layoutType === "split_screen" ||
-        s.layoutType === "stacked_layout" ||
-        s.layoutType === "sam_cutout" ||
-        s.layoutType === "picture_in_picture" ||
-        s.technique === "animated_diagram" ||
-        s.technique === "ui_mockup"
-      ) {
-        normalizedLayout = "broll_takeover";
+      let cutoutMode: VisualPlanSegment["cutoutMode"] = "fullscreen_speaker";
+      let animationLeadInSec: number | undefined = undefined;
+
+      if (isCutoutTemplate) {
+        // In the ZAI Cutout workflow:
+        // Scene 1 starts with the codebase story animation running first (0.85s lead-in), then SAM 3.1 speaker cutout pops in!
+        if (idx === 0) {
+          normalizedLayout = "sam_cutout";
+          cutoutMode = "animation_then_cutout";
+          animationLeadInSec = 0.85;
+        } else if (s.layoutType === "depth_cutout" || idx % 4 === 1) {
+          normalizedLayout = "depth_cutout";
+          cutoutMode = "depth_behind_speaker";
+        } else if (s.layoutType === "broll_takeover" || idx % 4 === 2) {
+          normalizedLayout = "broll_takeover";
+          cutoutMode = "pure_animation";
+        } else if (s.layoutType === "sam_cutout" || idx % 4 === 3) {
+          normalizedLayout = "sam_cutout";
+          cutoutMode = "collage_cutout";
+          animationLeadInSec = 0.65;
+        } else {
+          normalizedLayout = "fullscreen_speaker";
+          cutoutMode = "fullscreen_speaker";
+        }
       } else {
-        normalizedLayout = "fullscreen_speaker";
+        if (idx === 0) {
+          normalizedLayout = "fullscreen_speaker";
+          cutoutMode = "fullscreen_speaker";
+        } else if (s.layoutType === "sam_cutout") {
+          normalizedLayout = "sam_cutout";
+          cutoutMode = "animation_then_cutout";
+          animationLeadInSec = 0.75;
+        } else if (s.layoutType === "depth_cutout") {
+          normalizedLayout = "depth_cutout";
+          cutoutMode = "depth_behind_speaker";
+        } else if (
+          s.layoutType === "broll_takeover" ||
+          s.layoutType === "split_screen" ||
+          s.layoutType === "stacked_layout" ||
+          s.layoutType === "picture_in_picture" ||
+          s.technique === "animated_diagram" ||
+          s.technique === "ui_mockup"
+        ) {
+          normalizedLayout = "broll_takeover";
+          cutoutMode = "pure_animation";
+        } else {
+          normalizedLayout = "fullscreen_speaker";
+          cutoutMode = "fullscreen_speaker";
+        }
       }
+
+      // Enforce ZERO static AI images — always use executable codebase story animations
+      let safeTechnique: VisualPlanSegment["technique"] =
+        s.technique && s.technique !== "generated_image"
+          ? s.technique
+          : normalizedLayout === "sam_cutout"
+          ? "sam_cutout_pop"
+          : normalizedLayout === "depth_cutout"
+          ? "kinetic_typography"
+          : normalizedLayout === "broll_takeover"
+          ? "animated_diagram"
+          : "dynamic_captions";
 
       const rawHeadline = s.headlineText ? String(s.headlineText).trim() : "";
       const cleanHeadline = rawHeadline
@@ -1079,12 +1259,35 @@ export async function callWonderCreativeDirector(
         start: Math.max(0, +s.start.toFixed(2)),
         end: Math.min(cleanDuration, +s.end.toFixed(2)),
         layoutType: normalizedLayout,
-        technique: s.technique || (normalizedLayout === "broll_takeover" ? "animated_diagram" : "dynamic_captions"),
+        cutoutMode,
+        animationLeadInSec,
+        technique: safeTechnique,
         spokenReference: String(s.spokenReference || ""),
-        motionIntent: String(s.motionIntent || ""),
-        requiredAssets: Array.isArray(s.requiredAssets) ? s.requiredAssets : [],
-        layerArrangement: normalizedLayout === "broll_takeover" ? "foreground" : "overlay",
-        transitionDirection: s.transitionDirection || "fade",
+        motionIntent: String(
+          s.motionIntent ||
+            (normalizedLayout === "sam_cutout"
+              ? "Codebase story animation runs first, followed by SAM 3.1 speaker cutout pop-in"
+              : normalizedLayout === "depth_cutout"
+              ? "3-Layer SAM 3.1 depth composite with behind-the-head kinetic story typography"
+              : normalizedLayout === "broll_takeover"
+              ? "100% Full-Screen Codebase Story Animation illustrating spoken beat"
+              : "High-trust A-Roll speaker window with dynamic punch-in")
+        ),
+        visualRecipe: {
+          metaphor: String(s.visualRecipe?.metaphor || s.motionIntent || "Script-led visual metaphor"),
+          objects: (Array.isArray(s.visualRecipe?.objects) ? s.visualRecipe.objects : []).slice(0, 5).map((obj: any) => ({
+            label: String(obj.label || "Story element").slice(0, 48),
+            shape: ["circle", "rect", "diamond", "line", "text"].includes(obj.shape) ? obj.shape : "text",
+            motion: ["rise", "orbit", "pulse", "slide", "unfold", "scatter"].includes(obj.motion) ? obj.motion : "rise",
+            position: ["upper-left", "upper-right", "center", "lower-left", "lower-right"].includes(obj.position) ? obj.position : "center",
+          })),
+        },
+        requiredAssets: [],
+        layerArrangement:
+          normalizedLayout === "broll_takeover" || normalizedLayout === "sam_cutout"
+            ? "foreground"
+            : "overlay",
+        transitionDirection: s.transitionDirection || (normalizedLayout === "sam_cutout" ? "pop_in" : "fade"),
         cameraZoom: typeof s.cameraZoom === "number" ? s.cameraZoom : idx % 2 === 0 ? 1.0 : 1.08,
         headlineText: cleanHeadline,
         brandSettings: {
@@ -1198,7 +1401,7 @@ export async function callWonderEditorialDirector(
           start: curr,
           end: c.start,
           duration: dur,
-          zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.15,
+          zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.08,
         });
       }
     }
@@ -1211,7 +1414,7 @@ export async function callWonderEditorialDirector(
         start: curr,
         end: totalDuration,
         duration: dur,
-        zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.15,
+        zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.08,
       });
     }
   }
@@ -1340,10 +1543,112 @@ export function createDeterministicCreativePlan(params: {
   const visualSegments: VisualPlanSegment[] = [];
   const visualPlan: VisualOverlayItem[] = [];
 
+  // ZAI Cutout Template ("cutout" / "samCutoutExplainer"):
+  // Codebase story animation runs first to hook & tell the story, followed by SAM 3.1 speaker cutout pop-in,
+  // 3-layer behind-the-head depth typography, full-screen codebase story animation, and high-trust A-Roll speaker windows.
+  if (
+    (template.id === "cutout" || template.id === "samCutoutExplainer") &&
+    cleanDuration >= 2.5 &&
+    allEditedWords.length > 0
+  ) {
+    const numScenes = Math.max(3, Math.min(5, Math.ceil(cleanDuration / 3.2)));
+    const sliceDur = cleanDuration / numScenes;
+    const layoutSequence: VisualPlanSegment["layoutType"][] = [
+      "sam_cutout",         // Scene 1: Codebase Story Animation runs first -> Exact SAM 3.1 Character Cutout pops in bottom-left corner
+      "sam_cutout",         // Scene 2: Codebase Story Animation + Exact SAM 3.1 Character Cutout in bottom-left corner
+      "broll_takeover",     // Scene 3: 100% Full-Screen Codebase Story Animation (Diagram / Chart / Code Flow)
+      "sam_cutout",         // Scene 4: Codebase Story Animation + Exact SAM 3.1 Character Cutout in bottom-left corner
+      "fullscreen_speaker", // Scene 5: High-Trust A-Roll Payoff with 1.08x punch-in
+    ];
+    const cutoutModeSequence: VisualPlanSegment["cutoutMode"][] = [
+      "animation_then_cutout",
+      "collage_cutout",
+      "pure_animation",
+      "collage_cutout",
+      "fullscreen_speaker",
+    ];
+    const techniqueSequence: VisualPlanSegment["technique"][] = [
+      "sam_cutout_pop",
+      "sam_cutout_pop",
+      "animated_diagram",
+      "ui_mockup",
+      "camera_punch_in",
+    ];
+
+    for (let sIdx = 0; sIdx < numScenes; sIdx++) {
+      const sStart = +(sIdx * sliceDur).toFixed(2);
+      const sEnd = sIdx === numScenes - 1 ? cleanDuration : +((sIdx + 1) * sliceDur).toFixed(2);
+      const sceneWords = allEditedWords
+        .filter((w) => w.editedStart >= sStart - 0.05 && w.editedStart < sEnd)
+        .map((w) => w.word);
+      const spokenRef = sceneWords.join(" ") || allEditedWords.slice(0, 5).map((w) => w.word).join(" ");
+      const headline = sceneWords.slice(0, 3).join(" ").toUpperCase() || `BEAT 0${sIdx + 1}`;
+      const layoutType = layoutSequence[sIdx % layoutSequence.length];
+      const cutoutMode = cutoutModeSequence[sIdx % cutoutModeSequence.length];
+      const technique = techniqueSequence[sIdx % techniqueSequence.length];
+
+      visualSegments.push({
+        id: `vseg-cutout-${sIdx + 1}-${runId}`,
+        start: sStart,
+        end: sEnd,
+        layoutType,
+        cutoutMode,
+        animationLeadInSec: layoutType === "sam_cutout" ? (sIdx === 0 ? 0.85 : 0.65) : undefined,
+        technique,
+        spokenReference: spokenRef,
+        motionIntent:
+          layoutType === "sam_cutout"
+            ? "ZAI Cutout: Codebase story animation runs first on canvas, then SAM 3.1 speaker cutout pops in with spring physics"
+            : layoutType === "depth_cutout"
+            ? "ZAI 3-Layer Depth Composite: Giant kinetic story typography & SVG rings behind SAM 3.1 foreground speaker mask (z-index: 30)"
+            : layoutType === "broll_takeover"
+            ? "ZAI Codebase Story Animation: 100% full-screen procedural diagram/chart/code flow synced to WhisperX words"
+            : "ZAI Pure A-Roll Window: High-trust speaker eye contact with 1.08x emphasis punch-in",
+        layerArrangement: layoutType === "broll_takeover" || layoutType === "sam_cutout" ? "foreground" : "overlay",
+        transitionDirection: layoutType === "sam_cutout" ? "pop_in" : "fade",
+        cameraZoom: layoutType === "fullscreen_speaker" ? 1.08 : 1.0,
+        headlineText: headline,
+        brandSettings: {
+          primaryColor: template.primaryColor,
+          highlightColor: template.highlightColor,
+          fontFamily: template.fontFamily,
+        },
+      });
+
+      visualPlan.push({
+        id: `overlay-cutout-${sIdx + 1}`,
+        segmentId: `vseg-cutout-${sIdx + 1}-${runId}`,
+        type: layoutType === "fullscreen_speaker" || layoutType === "depth_cutout" ? "kinetic_word" : "image_overlay",
+        timestamp: sStart,
+        duration: +(sEnd - sStart).toFixed(2),
+        content: headline,
+        animation: layoutType === "sam_cutout" ? "bounce" : "pop",
+        style: {
+          bg: template.cardBg,
+          textColor: template.highlightColor,
+          border: template.primaryColor,
+        },
+      });
+    }
+
+    const hookDisplay = allEditedWords.slice(0, 6).map((w) => w.word).join(" ");
+    return {
+      planId: `zai-cutout-director-${runId}`,
+      title: hookDisplay || "ZAI Cutout Story Reel",
+      hookLine: hookDisplay ? `"${hookDisplay}..."` : "ZAI Cutout Story Reel",
+      narrativeTheme:
+        "ZAI (Z) Cutout Pipeline: Pre-Talking-Head Codebase Story Animation -> SAM 3.1 Speaker Cutout -> 3-Layer Behind-the-Head Depth Typography -> Full Codebase Animation",
+      visualSegments,
+      visualPlan,
+      editorialNotes:
+        "ZAI Autonomous Director (Zero Static Images): Story-driven codebase animations (HTML5/CSS3/JS/SVG/Canvas) run first and layer with SAM 3.1 speaker cutouts synced to WhisperX timestamps.",
+    };
+  }
+
   // Story Explainer: Pro Reel Editor Cutaway Rhythm (No 50/50 split)
   // Always starts on Fullscreen Speaker (face value), then cuts to 100% Fullscreen Clean Animation when concepts/numbers are explained, and cuts back to Fullscreen Speaker
   if (
-    (template.id === "storyExplainer" || template.id === "samCutoutExplainer") &&
+    template.id === "storyExplainer" &&
     cleanDuration >= 3.0 &&
     allEditedWords.length > 0
   ) {
@@ -1356,13 +1661,6 @@ export function createDeterministicCreativePlan(params: {
       "broll_takeover",     // Scene 4: 100% Full-Screen Clean Visual Animation Cutaway
       "fullscreen_speaker", // Scene 5: Final Payoff on Full-Screen Speaker
     ];
-    const techniqueSequence: VisualPlanSegment["technique"][] = [
-      "camera_punch_in",
-      "animated_diagram",
-      "dynamic_captions",
-      "ui_mockup",
-      "camera_punch_in",
-    ];
 
     for (let sIdx = 0; sIdx < numScenes; sIdx++) {
       const sStart = +(sIdx * sliceDur).toFixed(2);
@@ -1373,7 +1671,15 @@ export function createDeterministicCreativePlan(params: {
       const spokenRef = sceneWords.join(" ") || allEditedWords.slice(0, 5).map((w) => w.word).join(" ");
       const headline = sceneWords.slice(0, 3).join(" ").toUpperCase() || `SCENE 0${sIdx + 1}`;
       const layoutType = layoutSequence[sIdx % layoutSequence.length];
-      const technique = techniqueSequence[sIdx % techniqueSequence.length];
+      
+      // Dynamically infer technique from spokenRef instead of hardcoding "ui_mockup"
+      const technique: VisualPlanSegment["technique"] = layoutType === "fullscreen_speaker"
+        ? (sIdx === 0 ? "camera_punch_in" : "dynamic_captions")
+        : /\b(app|phone|mobile|ui|dashboard|screen)\b/i.test(spokenRef)
+        ? "ui_mockup"
+        : /\b(step|process|how|system|grow|build|chart|metric)\b/i.test(spokenRef)
+        ? "animated_diagram"
+        : "procedural_graphic";
 
       visualSegments.push({
         id: `vseg-story-${sIdx + 1}-${runId}`,

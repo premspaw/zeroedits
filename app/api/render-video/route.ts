@@ -132,7 +132,25 @@ async function renderVideoRequest(
       background = "#FFF8F0",
       ink = "#3D2E22",
       audioTracks = [],
+      backgroundVideoUrl,
+      backgroundVideoStart = 0,
+      sceneOverlayCode,
+      sceneOverlayStart = 0,
+      sceneOverlayDuration = 0,
     } = body;
+
+    let resolvedBackgroundVideoUrl = "";
+    if (typeof backgroundVideoUrl === "string" && backgroundVideoUrl.trim()) {
+      const parsedBackgroundUrl = new URL(backgroundVideoUrl, req.nextUrl.origin);
+      if (parsedBackgroundUrl.protocol !== "http:" && parsedBackgroundUrl.protocol !== "https:") {
+        throw new Error("The background video URL must use HTTP or HTTPS.");
+      }
+      if (parsedBackgroundUrl.origin !== req.nextUrl.origin || !parsedBackgroundUrl.pathname.startsWith("/api/pipeline-b/media/")) {
+        throw new Error("The background video must be a Pipeline B media URL from this app.");
+      }
+      resolvedBackgroundVideoUrl = parsedBackgroundUrl.toString();
+    }
+    const backgroundStartFrame = Math.max(0, Math.round(Number(backgroundVideoStart || 0) * Math.min(60, Math.max(1, Number(fps)))));
 
     if (!sparkCode || typeof sparkCode !== "string" || sparkCode.trim().length < 20) {
       throw new Error("sparkCode is required and must be non-empty.");
@@ -159,11 +177,29 @@ async function renderVideoRequest(
     const componentFile = path.join(renderDir, "SparkComponent.tsx");
     fs.writeFileSync(componentFile, cleanedSparkCode, "utf-8");
 
+    const hasSceneOverlay = typeof sceneOverlayCode === "string" && sceneOverlayCode.trim().length >= 20;
+    let cleanedSceneOverlayCode = "";
+    if (hasSceneOverlay) {
+      cleanedSceneOverlayCode = sceneOverlayCode
+        .trim()
+        .replace(/^```(?:tsx|jsx|typescript|javascript)?\s*\r?\n/i, "")
+        .replace(/\r?\n```\s*$/, "")
+        .trim();
+      if (!/import\s+React\b/.test(cleanedSceneOverlayCode) && !/import\s+\*\s+as\s+React\b/.test(cleanedSceneOverlayCode)) {
+        cleanedSceneOverlayCode = 'import React from "react";\n' + cleanedSceneOverlayCode;
+      }
+      fs.writeFileSync(path.join(renderDir, "SceneOverlay.tsx"), cleanedSceneOverlayCode, "utf-8");
+    }
+
     // Detect the exported name so we can reference it directly
     const detectedName = detectComponentName(cleanedSparkCode);
     const componentRef = detectedName
       ? `SparkModule.default ?? (SparkModule as any).${detectedName} ?? SparkModule`
       : `SparkModule.default ?? (SparkModule as any).GeneratedReel ?? (SparkModule as any).FullReel ?? SparkModule`;
+    const detectedSceneOverlayName = hasSceneOverlay ? detectComponentName(cleanedSceneOverlayCode) : null;
+    const sceneOverlayRef = detectedSceneOverlayName
+      ? `SceneOverlayModule.default ?? (SceneOverlayModule as any).${detectedSceneOverlayName} ?? SceneOverlayModule`
+      : `SceneOverlayModule.default ?? (SceneOverlayModule as any).GeneratedReel ?? (SceneOverlayModule as any).FullReel ?? SceneOverlayModule`;
 
     const totalFrames = Math.max(1, Math.round(Number(duration) * Number(fps)));
     const safeFps = Math.min(60, Math.max(1, Number(fps)));
@@ -172,8 +208,9 @@ async function renderVideoRequest(
     const entryFile = path.join(renderDir, "index.tsx");
     const entryContent = [
       'import React from "react";',
-      'import { registerRoot, Composition, useCurrentFrame, useVideoConfig } from "remotion";',
+      'import { registerRoot, Composition, Video, useCurrentFrame, useVideoConfig } from "remotion";',
       'import * as SparkModule from "./SparkComponent";',
+      ...(hasSceneOverlay ? ['import * as SceneOverlayModule from "./SceneOverlay";'] : []),
       "",
       "try {",
       '  if (typeof window !== "undefined" && window.SVGElement) {',
@@ -186,9 +223,14 @@ async function renderVideoRequest(
       "} catch {}",
       "",
       `const SparkComponent: React.ComponentType<any> = ${componentRef};`,
+      ...(hasSceneOverlay ? [`const SceneOverlayComponent: React.ComponentType<any> = ${sceneOverlayRef};`] : []),
+      `const SCENE_OVERLAY_START = ${Math.max(0, Number(sceneOverlayStart) || 0)};`,
+      `const SCENE_OVERLAY_DURATION = ${Math.max(0, Number(sceneOverlayDuration) || 0)};`,
       "",
       // Mirror the preview iframe's #root stage exactly (spark-preview-document.ts)
-      `const STAGE_BG = ${JSON.stringify(String(background))};`,
+      `const STAGE_BG = ${JSON.stringify(resolvedBackgroundVideoUrl ? "transparent" : String(background))};`,
+      `const BASE_VIDEO_URL = ${JSON.stringify(resolvedBackgroundVideoUrl)};`,
+      `const BASE_VIDEO_START_FRAME = ${backgroundStartFrame};`,
       `const STAGE_INK = ${JSON.stringify(String(ink))};`,
       "const STAGE_CSS = `@import url('https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Montserrat:ital,wght@0,700;0,800;0,900;1,900&family=Poppins:wght@800;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;700&display=swap'); #spark-stage > * { width: 100% !important; height: 100% !important; min-height: 100% !important; } * { box-sizing: border-box; }`;",
       "",
@@ -197,6 +239,8 @@ async function renderVideoRequest(
       "  const { fps, durationInFrames, width, height } = useVideoConfig();",
       "  const duration = durationInFrames / fps;",
       "  const currentTime = Math.min(duration, frame / fps);",
+      "  const sceneOverlayActive = SCENE_OVERLAY_DURATION > 0 && currentTime >= SCENE_OVERLAY_START && currentTime < SCENE_OVERLAY_START + SCENE_OVERLAY_DURATION;",
+      "  const sceneLocalTime = Math.max(0, currentTime - SCENE_OVERLAY_START);",
       "  return React.createElement(",
       "    'div',",
       "    {",
@@ -204,9 +248,13 @@ async function renderVideoRequest(
       "      style: { position: 'absolute', inset: 0, width, height, overflow: 'hidden', background: STAGE_BG, color: STAGE_INK, fontFamily: 'Inter, system-ui, sans-serif' },",
       "    },",
       "    React.createElement('style', null, STAGE_CSS),",
-      "    React.createElement(SparkComponent, {",
-      "      currentTime, time: currentTime, duration, fps, frame, width, height, isPlaying: false,",
-      "    })",
+      "    BASE_VIDEO_URL ? React.createElement(Video, { src: BASE_VIDEO_URL, startFrom: BASE_VIDEO_START_FRAME, endAt: BASE_VIDEO_START_FRAME + durationInFrames, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } }) : null,",
+      "    React.createElement(React.Fragment, null,",
+      "      !sceneOverlayActive ? React.createElement(SparkComponent, { currentTime, time: currentTime, duration, fps, frame, width, height, isPlaying: false }) : null,",
+      hasSceneOverlay
+        ? "      sceneOverlayActive ? React.createElement('div', { style: { position: 'absolute', inset: 0, width, height, overflow: 'hidden' } }, React.createElement(SceneOverlayComponent, { currentTime: sceneLocalTime, time: sceneLocalTime, duration: SCENE_OVERLAY_DURATION, fps, frame: Math.floor(sceneLocalTime * fps), width, height, isPlaying: false })) : null"
+        : "      null",
+      "    )",
       "  );",
       "};",
       "",

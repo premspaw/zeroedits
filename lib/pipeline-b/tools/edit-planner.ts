@@ -18,6 +18,7 @@ import type {
 } from "../types.ts";
 import { getPipelineBTemplate } from "../templates/registry.ts";
 import { alignTranscriptWithScript } from "./transcript-aligner.ts";
+import { refineCutsWithAudio, type AudioEnvelope } from "./audio-boundaries.ts";
 
 export const PACING_CONFIGS: Record<PacingProfile, PacingConfig> = {
   natural: {
@@ -25,20 +26,75 @@ export const PACING_CONFIGS: Record<PacingProfile, PacingConfig> = {
     minSilenceDuration: 0.75, // Conversational pacing preserves breath pauses up to 0.75s
     preservedSilenceMargin: 0.20, // Leave 0.20s natural breathing room
     minSpeechMargin: 0.05, // Never clip speech boundaries
+    sentenceBoundaryMargin: 0.22,
+    dramaticPauseThreshold: 1.5,
+    dramaticPauseMargin: 0.35,
   },
   snappy: {
     profile: "snappy",
     minSilenceDuration: 0.30, // Hyper-fast short-form reel cut
-    preservedSilenceMargin: 0.08,
+    preservedSilenceMargin: 0.08, // Mid-sentence word gaps only
     minSpeechMargin: 0.04,
+    sentenceBoundaryMargin: 0.20, // 0.18-0.25s at sentence ends so it never sounds breathless
+    dramaticPauseThreshold: 1.5,
+    dramaticPauseMargin: 0.30,
   },
   relaxed: {
     profile: "relaxed",
     minSilenceDuration: 0.70,
     preservedSilenceMargin: 0.22,
     minSpeechMargin: 0.06,
+    sentenceBoundaryMargin: 0.25,
+    dramaticPauseThreshold: 1.5,
+    dramaticPauseMargin: 0.40,
   },
 };
+
+const SENTENCE_END_REGEX = /[.!?…]["')\]]*$/;
+
+/**
+ * Decide how much silence to keep after `prevWord` before cutting.
+ * - Sentence boundary (punctuation or transcript segment end): sentenceBoundaryMargin (~0.2s)
+ * - Long mid-sentence gap (e.g. "your … life"): deliberate dramatic pause, keep more
+ * - Otherwise: preservedSilenceMargin (0.08s in snappy)
+ */
+export function resolveGapMargins(
+  pacing: PacingConfig,
+  gapDur: number,
+  prevWord: TranscriptWord | undefined,
+  isSegmentEnd: boolean,
+  /** When a script is uploaded, its sentence boundaries override Whisper's punctuation/segments. */
+  scriptSentenceEnd?: boolean
+): { lead: number; tail: number; kind: "sentence" | "dramatic" | "word" } {
+  const sentenceMargin = pacing.sentenceBoundaryMargin ?? Math.max(0.18, pacing.preservedSilenceMargin);
+  const isSentence =
+    scriptSentenceEnd !== undefined
+      ? scriptSentenceEnd
+      : isSegmentEnd || (!!prevWord && SENTENCE_END_REGEX.test(prevWord.word.trim()));
+  if (isSentence) {
+    return { lead: sentenceMargin, tail: Math.max(pacing.minSpeechMargin, 0.06), kind: "sentence" };
+  }
+  if (gapDur >= (pacing.dramaticPauseThreshold ?? Infinity)) {
+    const m = pacing.dramaticPauseMargin ?? sentenceMargin;
+    // Keep a beat on both sides so the pause still lands after the cut
+    return { lead: m, tail: Math.max(pacing.minSpeechMargin, m * 0.5), kind: "dramatic" };
+  }
+  return { lead: pacing.preservedSilenceMargin, tail: pacing.minSpeechMargin, kind: "word" };
+}
+
+/** Find the last word ending at/before t (within tolerance) and whether it ends a transcript segment. */
+function wordBefore(
+  t: number,
+  words: TranscriptWord[],
+  segmentEndTimes: Set<number>
+): { word?: TranscriptWord; isSegmentEnd: boolean } {
+  let found: TranscriptWord | undefined;
+  for (const w of words) {
+    if (w.end <= t + 0.1) found = w;
+    else break;
+  }
+  return { word: found, isSegmentEnd: !!found && segmentEndTimes.has(found.end) };
+}
 
 const INTENTIONAL_EMPHASIS_WORDS = new Set([
   "very",
@@ -251,17 +307,30 @@ export function generateCandidateCuts(params: {
   }
 
   // 1. Acoustic Silences from silence detection
+  const segmentEndTimes = new Set(transcript.map((seg) => seg.end));
+  // Script-driven sentence boundaries: end times of spoken words that close a sentence in the uploaded script
+  const hasScript = !!(userScript && userScript.trim());
+  const scriptSentenceEndTimes = new Set<number>();
+  if (hasScript) {
+    const spokenAll = transcript.flatMap((seg) => seg.words);
+    for (const idx of alignTranscriptWithScript(transcript, userScript).scriptSentenceEndIndices) {
+      if (spokenAll[idx]) scriptSentenceEndTimes.add(spokenAll[idx].end);
+    }
+  }
+  const scriptEndFor = (w?: TranscriptWord) => (hasScript ? !!w && scriptSentenceEndTimes.has(w.end) : undefined);
   for (let i = 0; i < silences.length; i++) {
     const s = silences[i];
     if (s.duration >= pacing.minSilenceDuration) {
       const isStartOfVideo = s.start <= 0.06;
       const isEndOfVideo = s.end >= totalDuration - 0.06;
+      const prev = wordBefore(s.start, validWords, segmentEndTimes);
+      const margins = resolveGapMargins(pacing, s.duration, prev.word, prev.isSegmentEnd, scriptEndFor(prev.word));
       const cStart = isStartOfVideo
         ? 0
-        : Math.max(0, +(s.start + pacing.preservedSilenceMargin).toFixed(2));
+        : Math.max(0, +(s.start + margins.lead).toFixed(2));
       const cEnd = isEndOfVideo
         ? totalDuration
-        : Math.min(totalDuration, +(s.end - pacing.preservedSilenceMargin).toFixed(2));
+        : Math.min(totalDuration, +(s.end - Math.max(margins.tail, pacing.preservedSilenceMargin)).toFixed(2));
       if (cEnd > cStart && (cEnd - cStart) >= 0.12) {
         candidates.push({
           id: `cand-silence-${i + 1}`,
@@ -269,9 +338,9 @@ export function generateCandidateCuts(params: {
           end: cEnd,
           type: "silence",
           classification: "dead_air",
-          confidence: 0.96,
+          confidence: margins.kind === "dramatic" ? 0.7 : 0.96,
           affectedText: `[Pause ${s.duration.toFixed(2)}s]`,
-          reason: `Trim dead air (${s.duration.toFixed(2)}s)${isStartOfVideo || isEndOfVideo ? "" : ` leaving ${pacing.preservedSilenceMargin}s natural breathing room`}`,
+          reason: `Trim dead air (${s.duration.toFixed(2)}s)${isStartOfVideo || isEndOfVideo ? "" : ` leaving ${margins.lead}s ${margins.kind === "sentence" ? "sentence-boundary" : margins.kind === "dramatic" ? "dramatic-pause" : "word-gap"} breathing room`}`,
         });
       }
     } else if (pacing.profile === "natural" && s.duration >= 0.35 && s.duration < pacing.minSilenceDuration) {
@@ -334,7 +403,8 @@ export function generateCandidateCuts(params: {
     const pauseDur = segNext.start - segCurrent.end;
 
     if (pauseDur >= pacing.minSilenceDuration) {
-      const pStart = +(segCurrent.end + pacing.preservedSilenceMargin).toFixed(2);
+      const sentenceMargin = pacing.sentenceBoundaryMargin ?? Math.max(0.18, pacing.preservedSilenceMargin);
+      const pStart = +(segCurrent.end + sentenceMargin).toFixed(2);
       const pEnd = +(segNext.start - pacing.minSpeechMargin).toFixed(2);
       if (pEnd > pStart && (pEnd - pStart) >= 0.12) {
         candidates.push({
@@ -358,8 +428,9 @@ export function generateCandidateCuts(params: {
     const pauseDur = +(wNext.start - wCurrent.end).toFixed(2);
 
     if (pauseDur >= pacing.minSilenceDuration) {
-      const pStart = +(wCurrent.end + pacing.preservedSilenceMargin).toFixed(2);
-      const pEnd = +(wNext.start - pacing.minSpeechMargin).toFixed(2);
+      const margins = resolveGapMargins(pacing, pauseDur, wCurrent, segmentEndTimes.has(wCurrent.end), scriptEndFor(wCurrent));
+      const pStart = +(wCurrent.end + margins.lead).toFixed(2);
+      const pEnd = +(wNext.start - margins.tail).toFixed(2);
       if (pEnd > pStart && (pEnd - pStart) >= 0.12) {
         candidates.push({
           id: `cand-word-gap-${i + 1}`,
@@ -367,9 +438,9 @@ export function generateCandidateCuts(params: {
           end: pEnd,
           type: "silence",
           classification: "dead_air",
-          confidence: 0.94,
+          confidence: margins.kind === "dramatic" ? 0.7 : 0.94,
           affectedText: `[Pause ${pauseDur.toFixed(2)}s between '${wCurrent.word}' and '${wNext.word}']`,
-          reason: `Trim dead air (${pauseDur.toFixed(2)}s) between '${wCurrent.word}' and '${wNext.word}' leaving ${pacing.preservedSilenceMargin}s natural breathing room`,
+          reason: `Trim dead air (${pauseDur.toFixed(2)}s) between '${wCurrent.word}' and '${wNext.word}' leaving ${margins.lead}s ${margins.kind === "dramatic" ? "(likely deliberate dramatic pause — review)" : margins.kind === "sentence" ? "sentence-boundary" : "word-gap"} breathing room`,
         });
       }
     }
@@ -544,10 +615,12 @@ export function generateCandidateCuts(params: {
 
         const sameOpening =
           core1[0].replace(/s$/, "") === core2[0].replace(/s$/, "") ||
-          (core1.length >= 2 && core2.length >= 2 && core1[1].replace(/s$/, "") === core2[1].replace(/s$/, ""));
+          (core1.length >= 2 && core2.length >= 2 && core1[1].replace(/s$/, "") === core2[1].replace(/s$/, "")) ||
+          (core1.length >= 3 && core2.length >= 3 && core1.slice(0, 3).some((w1) => core2.slice(0, 3).includes(w1)));
 
         // Case A: seg1 is an aborted prefix or duplicate take of seg2 (keep seg2, cut seg1 + surrounding pauses)
-        if (sameOpening && overlap1In2 >= 0.65 && core2.length >= core1.length) {
+        // Note: Do NOT advance segIdx by 2 so chained 3-take sequences (Take 1 -> Take 2 -> Take 3) also compare Take 2 against Take 3!
+        if (sameOpening && overlap1In2 >= 0.65 && core2.length >= core1.length - 1) {
           const cStart =
             segIdx > 0
               ? Math.max(0, +(transcript[segIdx - 1].end + 0.04).toFixed(2))
@@ -1134,6 +1207,9 @@ export function assembleFinalEditPlan(params: {
   templateId?: string;
   pacingProfile?: PacingProfile;
   transcript: TranscriptSegment[];
+  /** Real audio energy envelope; when present, cut edges are grounded in actual silence instead of Whisper timestamps. */
+  audioEnvelope?: AudioEnvelope | null;
+  onRefineLog?: (log: string[]) => void;
 }): EditPlan {
   const {
     candidateCuts,
@@ -1142,28 +1218,39 @@ export function assembleFinalEditPlan(params: {
     templateId = "hormoziPunch",
     pacingProfile = "natural",
     transcript,
+    audioEnvelope,
   } = params;
+
+  if (audioEnvelope) {
+    const refined = refineCutsWithAudio(editorial.approvedCuts, audioEnvelope, totalDuration);
+    editorial.approvedCuts = refined.cuts;
+    params.onRefineLog?.(refined.log);
+  }
 
   const template = getPipelineBTemplate(templateId);
   const allWords = transcript.flatMap((s) => s.words);
   const fullText = allWords.map((w) => w.word).join(" ");
 
   // 1. Validate and Merge Overlapping Cuts cleanly without gap deletion
-  const cuts = mergeOverlappingCuts(editorial.approvedCuts, totalDuration);
+  const cuts = mergeOverlappingCuts(editorial.approvedCuts, totalDuration, editorial.protectedRanges || [], allWords);
 
-  // 2. Calculate Keep Segments (Preserve short speech intervals, never discard speech)
+  // 2. Calculate Keep Segments (Preserve spoken intervals; never create wordless micro-fragments < 0.35s)
   const keepSegments: KeepSegment[] = [];
   let currentStart = 0;
 
   for (const cut of cuts) {
     if (cut.start > currentStart) {
       const dur = +(cut.start - currentStart).toFixed(2);
-      if (dur > 0.05) {
+      const hasSpeechOrProtected =
+        allWords.some((w) => w.start < cut.start && w.end > currentStart) ||
+        (editorial.protectedRanges || []).some((pr) => pr.start < cut.start && pr.end > currentStart);
+
+      if (dur >= 0.35 || (dur >= 0.06 && hasSpeechOrProtected)) {
         keepSegments.push({
           start: +currentStart.toFixed(2),
           end: +cut.start.toFixed(2),
           duration: dur,
-          zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.15, // Alternating punch-in
+          zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.12, // Alternating 1.12x punch-in
         });
       }
     }
@@ -1172,12 +1259,16 @@ export function assembleFinalEditPlan(params: {
 
   if (currentStart < totalDuration) {
     const finalDur = +(totalDuration - currentStart).toFixed(2);
-    if (finalDur > 0.05) {
+    const hasSpeechOrProtected =
+      allWords.some((w) => w.start < totalDuration && w.end > currentStart) ||
+      (editorial.protectedRanges || []).some((pr) => pr.start < totalDuration && pr.end > currentStart);
+
+    if (finalDur >= 0.35 || (finalDur >= 0.06 && hasSpeechOrProtected)) {
       keepSegments.push({
         start: +currentStart.toFixed(2),
         end: +totalDuration.toFixed(2),
         duration: finalDur,
-        zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.15,
+        zoomScale: keepSegments.length % 2 === 0 ? 1.0 : 1.12,
       });
     }
   }
@@ -1311,7 +1402,38 @@ export function planTalkingHeadEdit(params: PlanTalkingHeadEditParams): EditPlan
 /**
  * Validates and merges overlapping cuts strictly without destroying speech between them.
  */
-export function mergeOverlappingCuts(cuts: EditCut[], totalDuration: number): EditCut[] {
+const CUT_PRIORITY: Record<EditCut["type"], number> = {
+  retake: 4,
+  filler: 3,
+  off_script: 2,
+  user_specified: 2,
+  silence: 1,
+};
+
+function inferCutTypeFromReason(reason: string, currentType: EditCut["type"]): EditCut["type"] {
+  const r = (reason || "").toLowerCase();
+  if (
+    r.includes("aborted") ||
+    r.includes("retake") ||
+    r.includes("repeat") ||
+    r.includes("false start") ||
+    r.includes("stumble") ||
+    r.includes("hesitant")
+  ) {
+    return "retake";
+  }
+  if (r.includes("filler") || r.includes("hesitation sound") || r.includes("vocal filler")) {
+    return "filler";
+  }
+  return currentType;
+}
+
+export function mergeOverlappingCuts(
+  cuts: EditCut[],
+  totalDuration: number,
+  protectedRanges: ProtectedRange[] = [],
+  words: TranscriptWord[] = []
+): EditCut[] {
   if (cuts.length === 0) return [];
 
   // Filter valid positive-duration cuts
@@ -1320,28 +1442,77 @@ export function mergeOverlappingCuts(cuts: EditCut[], totalDuration: number): Ed
   if (valid.length === 0) return [];
 
   const merged: EditCut[] = [];
-  let current: EditCut = { ...valid[0] };
+  let current: EditCut = { ...valid[0], type: inferCutTypeFromReason(valid[0].reason, valid[0].type) };
 
   for (let i = 1; i < valid.length; i++) {
-    const next = valid[i];
-    // Only merge if strictly overlapping
-    if (next.start <= current.end) {
+    const next: EditCut = { ...valid[i], type: inferCutTypeFromReason(valid[i].reason, valid[i].type) };
+
+    const isStrictlyOverlapping = next.start <= current.end;
+    const gap = +(next.start - current.end).toFixed(3);
+    const candStart = Math.min(current.start, next.start);
+    const candEnd = Math.max(current.end, next.end);
+
+    // Check if the potential merged cut interval [candStart, candEnd]
+    // would newly overlap or swallow any protected speech range
+    const overlapsProtectedSpeech = protectedRanges.some((pr) => {
+      const overlapStart = Math.max(candStart, pr.start);
+      const overlapEnd = Math.min(candEnd, pr.end);
+      const overlapDur = overlapEnd - overlapStart;
+      if (overlapDur <= 0.05) return false;
+
+      // If neither current nor next individually overlapped this protected range by > 0.05s,
+      // then merging them would swallow or newly violate this protected range!
+      const currentOverlap = Math.min(current.end, pr.end) - Math.max(current.start, pr.start);
+      const nextOverlap = Math.min(next.end, pr.end) - Math.max(next.start, pr.start);
+      return currentOverlap <= 0.05 && nextOverlap <= 0.05;
+    });
+
+    // Check if any transcript words fall inside the gap between current and next
+    const hasWordInGap = words.some((w) => {
+      const wordMid = (w.start + w.end) / 2;
+      return (
+        (w.start < next.start && w.end > current.end && Math.min(next.start, w.end) - Math.max(current.end, w.start) > 0.05) ||
+        (wordMid >= current.end && wordMid <= next.start)
+      );
+    });
+
+    // Decision: Should we merge current and next?
+    // Case A: Strictly overlapping (gap <= 0) AND does not newly violate protected speech
+    // Case B: Small empty dead-air gap (gap <= 0.15s) with NO spoken words in the gap and NO protected speech violated
+    const shouldMerge =
+      !overlapsProtectedSpeech &&
+      (isStrictlyOverlapping || (gap <= 0.15 && !hasWordInGap));
+
+    if (shouldMerge) {
       current.end = Math.max(current.end, next.end);
-      current.reason = `${current.reason}; ${next.reason}`;
-      if (next.type !== "silence") {
+      current.reason = current.reason + '; ' + next.reason;
+      const nextPri = CUT_PRIORITY[next.type] || 1;
+      const currPri = CUT_PRIORITY[current.type] || 1;
+      if (nextPri > currPri) {
         current.type = next.type;
       }
+      current.type = inferCutTypeFromReason(current.reason, current.type);
     } else {
-      merged.push(current);
+      // If strictly overlapping but cannot be merged (e.g. Due to protected speech), clamp current to avoid overlap error
+      if (current.end > next.start) {
+        current.end = +Math.max(current.start, next.start).toFixed(2);
+      }
+      if (current.end > current.start) {
+        merged.push(current);
+      }
       current = { ...next };
     }
   }
   merged.push(current);
 
-  return merged.map((c, idx) => ({
-    ...c,
-    id: `cut-opt-${idx + 1}`,
-    start: Math.max(0, +c.start.toFixed(2)),
-    end: Math.min(totalDuration, +c.end.toFixed(2)),
-  }));
+  return merged.map((c, idx) => {
+    const finalType = inferCutTypeFromReason(c.reason, c.type);
+    return {
+      ...c,
+      id: 'cut-opt-' + (idx + 1),
+      type: finalType,
+      start: Math.max(0, +c.start.toFixed(2)),
+      end: Math.min(totalDuration, +c.end.toFixed(2)),
+    };
+  });
 }

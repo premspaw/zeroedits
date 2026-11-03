@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
 import { resumePipelineB } from "@/lib/pipeline-b/orchestrator";
 
 export async function POST(req: NextRequest) {
@@ -15,11 +16,15 @@ export async function POST(req: NextRequest) {
       customApprovedCuts,
       customCaptionOverrides,
     });
+    const motionCode = state.motionCodePath && fs.existsSync(state.motionCodePath)
+      ? fs.readFileSync(state.motionCodePath, "utf-8")
+      : "";
 
     return NextResponse.json({
       success: true,
       runId,
       state,
+      motionCode,
     });
   } catch (err: any) {
     return NextResponse.json(

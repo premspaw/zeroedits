@@ -46,6 +46,12 @@ import {
   type LifeCategory,
   type MemoryBankItem,
 } from "@/lib/zee-brain";
+import {
+  CreatorLaptopDoodle,
+  PencilAscendingStepsDoodle,
+  HighFiveCelebrationDoodle,
+  DoodleFlourishCurl,
+} from "@/components/ScriptAngleCardDoodles";
 
 export interface ScriptBeatCard {
   id: number;
@@ -456,6 +462,7 @@ const ANGLES = ["POV burnout", "Client savage", "Founder flex", "Gokarna horizon
 export interface ScriptAngleOption {
   id: string;
   badge: string;
+  subtitle?: string;
   title: string;
   hook: string;
   tone: string;
@@ -639,7 +646,8 @@ export function buildScriptAnglesForMemory(
     {
       id: "angle-vulnerable",
       badge: "High Retention · 92% Hook",
-      title: "The Raw POV (Vulnerable Founder)",
+      subtitle: "YOU ONLY NEED ONE SCRIPT",
+      title: "Access your real voice, no filter",
       hook: opt1Beats[0].text,
       tone: "Vulnerable · Personal Story · High Trust",
       targetLength: "15s",
@@ -650,7 +658,8 @@ export function buildScriptAnglesForMemory(
     {
       id: "angle-contrarian",
       badge: "Scroll Stopper · +188% Saves",
-      title: "Contrarian Pattern-Interrupt",
+      subtitle: "YOU ONLY NEED ONE SCRIPT",
+      title: "Quick snap-and-hook process",
       hook: opt2Beats[0].text,
       tone: "Bold · Pattern Interrupt · Debate Starter",
       targetLength: "15s",
@@ -661,7 +670,8 @@ export function buildScriptAnglesForMemory(
     {
       id: "angle-breakdown",
       badge: "High Saves · 3.2x Bookmarks",
-      title: "3-Step Rapid Breakdown",
+      subtitle: "YOU ONLY NEED ONE SCRIPT",
+      title: "Secure viral retention always",
       hook: opt3Beats[0].text,
       tone: "Educational · Framework · High Saves",
       targetLength: "15s",
@@ -710,7 +720,9 @@ export default function StoryBankView({
           time: m.durationLabel || `2:0${(idx * 3 + 4) % 9}`,
           emotion: m.emotionTone.split(" ")[0].toLowerCase() || "calm",
           color: palette[idx % palette.length],
-          note: isTravel
+          note: m.userPhone
+            ? `From ${m.userPhone} • ${m.subSegment || m.category}`
+            : isTravel
             ? "Gokarna GPS matched"
             : notes[idx % notes.length],
           category: m.category,
@@ -723,7 +735,16 @@ export default function StoryBankView({
           suggestionSub: `Use your ${m.durationLabel || "2:04"} voice log + paper-cut ${
             matchedPhoto?.folderTitle || "studio"
           } B-roll.`,
-          beats: [
+          beats:
+            Array.isArray(m.scriptBeats) && m.scriptBeats.length > 0
+              ? m.scriptBeats.map((b) => ({
+                  ...b,
+                  bRollLabel: matchedPhoto?.folderTitle
+                    ? `${matchedPhoto.folderTitle.toUpperCase()}`
+                    : "B-ROLL + PAPER CUT",
+                  matchedPhotoUrl: matchedPhoto?.url,
+                }))
+              : [
             {
               id: 1,
               label: "HOOK",
@@ -791,14 +812,14 @@ export default function StoryBankView({
         };
       });
 
-    // Combine curated signature logs + live brain memories so Prem sees the exact 5 compact cards + any new memories
-    const combined = [...CURATED_MEMORY_LOGS];
-    dynamicFromBrain.forEach((dyn) => {
-      if (!combined.some((c) => c.title.toLowerCase() === dyn.title.toLowerCase())) {
-        combined.push(dyn);
+    // Put live WhatsApp / Brain memories FIRST so newly segregated WhatsApp stories appear at the top of the Memory Bank!
+    const combined = [...dynamicFromBrain];
+    CURATED_MEMORY_LOGS.forEach((cur) => {
+      if (!combined.some((c) => c.title.toLowerCase() === cur.title.toLowerCase())) {
+        combined.push(cur);
       }
     });
-    return combined.slice(0, 7);
+    return combined.slice(0, 8);
   }, [brain.memories, brain.gallery, userName]);
 
   const [selectedMemoryId, setSelectedMemoryId] = useState<string>(
@@ -1700,48 +1721,95 @@ export default function StoryBankView({
             CENTER MAIN COLUMN: AI DIRECTOR'S GREETING + COMPLETE SCRIPT + ZEE BRAINSTORMING
            =================================================================== */}
         <main className="min-w-0 space-y-2.5">
-          {/* Top Greeting Card — Zero wasted padding */}
-          <div className="relative overflow-hidden rounded-[20px] border border-[#EDE8E3] bg-white p-3.5 sm:p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+          {/* Top Greeting Card — Zero wasted padding, Styled with Design Selection Box like reference */}
+          <div className="relative overflow-hidden rounded-[24px] sm:rounded-[28px] border-2 border-[#141414] bg-white p-4 sm:p-6 shadow-[4px_6px_0px_#141414]">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#111] text-white text-[10px] mono">
-                  <Sparkles size={11} /> AI DIRECTOR
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#141414] text-white text-[10px] mono font-bold tracking-wide">
+                  <Sparkles size={11} className="text-[#FBBF24]" /> ZEROEDITS SCRIPT LAB
                 </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EFF5FF] text-[#0066FF] text-[10px] mono">
-                  <Eye size={11} /> High save potential
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#EFF5FF] text-[#0066FF] text-[10.5px] mono font-semibold">
+                  <Eye size={11} /> High Save Potential
                 </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FFF0EB] text-[#FF6B35] text-[10px] mono">
-                  <Flame size={11} /> Ready to shoot
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FFF0EB] text-[#FF6B35] text-[10.5px] mono font-semibold">
+                  <Flame size={11} /> Ready to Shoot
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5 text-[11px] mono text-[#666]">
+              <div className="flex items-center gap-1.5 text-[11px] mono text-[#6B6A64]">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>story: <strong className="text-[#111]">{activeMemory.title}</strong> ({activeMemory.time})</span>
+                <span>active memory: <strong className="text-[#141414] font-bold">{activeMemory.title}</strong></span>
               </div>
             </div>
 
-            <h1 className="serif text-[24px] sm:text-[30px] leading-[1.05] tracking-tight font-normal text-[#111]">
-              Hey {userName}, here&apos;s what we&apos;re creating today ⚡
-            </h1>
+            {/* Headline with Design Selection Box & Corner Handles (matching reference) */}
+            <div className="text-center py-2 sm:py-3">
+              <h1 className="text-[24px] sm:text-[34px] font-black text-[#141414] tracking-tight leading-[1.2]">
+                Transform{" "}
+                <span className="relative inline-block px-3 py-0.5 mx-1.5 rounded-md bg-[#DCFCE7] text-[#15803D] font-mono font-bold text-[0.88em] border border-[#86EFAC] shadow-2xs">
+                  {/* 4 corner handles */}
+                  <span className="absolute -top-1 -left-1 w-2 h-2 rounded-xs bg-[#22C55E] border border-white shadow-xs" />
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-xs bg-[#22C55E] border border-white shadow-xs" />
+                  <span className="absolute -bottom-1 -left-1 w-2 h-2 rounded-xs bg-[#22C55E] border border-white shadow-xs" />
+                  <span className="absolute -bottom-1 -right-1 w-2 h-2 rounded-xs bg-[#22C55E] border border-white shadow-xs" />
+                  {activeMemory.title.toLowerCase()}
+                </span>{" "}
+                into viral scripts.
+              </h1>
+              <p className="mt-1.5 text-[12px] sm:text-[13px] text-[#6B6A64] max-w-[65ch] mx-auto">
+                AI shaped your voice memo into 3 high-converting script angles below. Pick a card to preview beats, edit lines, or load into studio in 1 click.
+              </p>
 
-            <p className="mt-1 text-[12px] sm:text-[13px] text-[#777] max-w-[70ch]">
-              I transformed your <strong className="text-[#111] font-medium">&apos;{activeMemory.title.toLowerCase()}&apos;</strong> story into 3 high-retention script angles. Pick an angle below, review the complete script, brainstorm with Zee to adjust it, then lock it before shooting.
-            </p>
+              {/* Action Pills Row matching reference photo */}
+              <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRegenerateAngle}
+                  className="px-3 py-1.5 rounded-full bg-[#F7F5EF] hover:bg-[#EAE7DF] border border-[#D5D2C8] text-[#141414] text-[11px] mono font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-2xs cursor-pointer"
+                >
+                  <RefreshCw size={11} className="text-[#6B6A64]" />
+                  <span>Regenerate Hooks</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingFullScript(true)}
+                  className="px-3 py-1.5 rounded-full bg-[#F7F5EF] hover:bg-[#EAE7DF] border border-[#D5D2C8] text-[#141414] text-[11px] mono font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-2xs cursor-pointer"
+                >
+                  <Edit3 size={11} className="text-[#6B6A64]" />
+                  <span>Custom Script</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRecordStageOpen(true)}
+                  className="px-3 py-1.5 rounded-full bg-[#F7F5EF] hover:bg-[#EAE7DF] border border-[#D5D2C8] text-[#141414] text-[11px] mono font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-2xs cursor-pointer"
+                >
+                  <Smartphone size={11} className="text-[#6B6A64]" />
+                  <span>Teleprompter</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLockAndProceed}
+                  className="px-4 py-1.5 rounded-full bg-[#16A34A] hover:bg-[#15803D] text-white text-[11px] mono font-bold flex items-center gap-1.5 shadow-[0_2px_12px_rgba(22,163,74,0.35)] transition active:scale-95 cursor-pointer"
+                >
+                  <Sparkles size={11} />
+                  <span>Load into Studio</span>
+                </button>
+              </div>
+            </div>
 
             {/* Horizontal Story Quick-Switcher Chips */}
             <div className="mt-2.5 pt-2 border-t border-[#F0EBE5] flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-              <span className="text-[10px] mono uppercase text-[#888] shrink-0 mr-1">Switch Story:</span>
-              {memoryBankList.slice(0, 5).map((mem) => {
+              <span className="text-[10px] mono uppercase font-bold text-[#8A8880] shrink-0 mr-1">Switch Story:</span>
+              {memoryBankList.slice(0, 6).map((mem) => {
                 const isSelected = mem.id === activeMemory.id;
                 return (
                   <button
                     key={mem.id}
                     type="button"
                     onClick={() => handleSelectMemory(mem)}
-                    className={`h-6 px-2.5 rounded-full text-[11px] mono font-medium shrink-0 transition flex items-center gap-1 cursor-pointer ${
+                    className={`h-6 px-3 rounded-full text-[11px] mono font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
                       isSelected
-                        ? "bg-[#111] text-white shadow-xs"
+                        ? "bg-[#141414] text-white shadow-xs"
                         : "bg-[#F3EFEA] hover:bg-[#EBE5DE] text-[#444]"
                     }`}
                   >
@@ -1754,73 +1822,95 @@ export default function StoryBankView({
           </div>
 
           {/* =================================================================
-              2-3 SCRIPT CHOICES / ANGLES (FIRST VISUAL ATTENTION)
+              3 SCRIPT CHOICES / ANGLES (MATCHING USER REFERENCE CARDS WITH ANIMATIONS)
              ================================================================= */}
           <div>
-            <div className="flex items-center justify-between mb-1.5 px-0.5">
+            <div className="flex items-center justify-between mb-2 px-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] mono uppercase tracking-wider font-semibold text-[#555]">
-                  Select Script Angle (3 Choices):
+                <span className="text-[11px] mono uppercase tracking-wider font-bold text-[#141414]">
+                  Suggested Script Angles (3 Choices):
                 </span>
-                <span className="text-[10px] mono text-[#888]">click to preview complete script</span>
+                <span className="text-[10px] mono text-[#888]">tap any card to preview full script</span>
               </div>
               <button
                 type="button"
                 onClick={handleRegenerateAngle}
-                className="text-[10px] mono text-[#666] hover:text-[#111] flex items-center gap-1 cursor-pointer"
+                className="text-[10px] mono text-[#666] hover:text-[#111] flex items-center gap-1 cursor-pointer font-medium"
               >
-                <RefreshCw size={11} /> Regenerate hooks
+                <RefreshCw size={11} /> Refresh Angles
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 relative">
               {scriptAngles.map((opt, idx) => {
                 const isSelected = selectedOptionIndex === idx;
                 return (
-                  <div
+                  <motion.div
                     key={opt.id}
                     data-angle-option={idx}
                     onClick={() => handleSelectOption(idx)}
-                    className={`p-3 rounded-[16px] border transition cursor-pointer flex flex-col justify-between ${
+                    whileHover={{ y: -6, transition: { duration: 0.2, ease: "easeOut" } }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`relative p-5 sm:p-5.5 rounded-[24px] sm:rounded-[28px] border-2 transition-all cursor-pointer flex flex-col justify-between overflow-hidden ${
                       isSelected
-                        ? "bg-white border-[#111] shadow-[0_4px_16px_rgba(0,0,0,0.08)] ring-2 ring-[#111]"
-                        : "bg-white/80 border-[#EDE8E3] hover:border-[#111]/40 hover:bg-white"
+                        ? "bg-[#FFFDF9] border-[#141414] shadow-[6px_8px_0px_#141414] ring-2 ring-[#141414]"
+                        : "bg-white border-[#141414]/20 hover:border-[#141414] shadow-[0_8px_20px_rgba(0,0,0,0.04)] hover:shadow-[4px_6px_0px_#141414]"
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] mono font-semibold ${
-                            isSelected
-                              ? "bg-[#111] text-white"
-                              : "bg-[#EDE8E3] text-[#555]"
-                          }`}
-                        >
-                          {opt.badge}
-                        </span>
-                        {isSelected && (
-                          <span className="w-4 h-4 rounded-full bg-[#111] text-white grid place-items-center">
-                            <Check size={10} />
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[13px] font-bold text-[#111] tracking-tight">
+                    {/* Top Centered Subtitle Badge (e.g. "YOU ONLY NEED ONE SCRIPT") */}
+                    <div className="text-center mb-1">
+                      <span className="mono text-[10px] tracking-[0.16em] uppercase font-bold text-[#8A8880]">
+                        {opt.subtitle || "YOU ONLY NEED ONE SCRIPT"}
+                      </span>
+                    </div>
+
+                    {/* Main Title (Centered, bold, clean) */}
+                    <div className="text-center px-1 mb-1">
+                      <h3 className="text-[15px] sm:text-[16px] font-black text-[#141414] leading-[1.25] tracking-tight">
                         {opt.title}
-                      </p>
-                      <p className="mt-1 text-[11px] text-[#555] line-clamp-2 italic leading-snug">
+                      </h3>
+                      <p className="mt-1 text-[11px] text-[#6B6A64] italic line-clamp-2 leading-relaxed">
                         &ldquo;{opt.hook}&rdquo;
                       </p>
                     </div>
 
-                    <div className="mt-2.5 pt-2 border-t border-[#F0EBE5] flex items-center justify-between text-[10px] mono text-[#888]">
-                      <span>{opt.targetLength} · ~45 words</span>
-                      <span className="font-semibold text-[#111]">
-                        {opt.metrics.hookRate} hook rate
-                      </span>
+                    {/* ANIMATED DOODLE ILLUSTRATION (Matching User's Reference) */}
+                    <div className="my-1 py-1 flex items-center justify-center">
+                      {idx === 0 && <CreatorLaptopDoodle isSelected={isSelected} />}
+                      {idx === 1 && <PencilAscendingStepsDoodle isSelected={isSelected} />}
+                      {idx === 2 && <HighFiveCelebrationDoodle isSelected={isSelected} />}
                     </div>
-                  </div>
+
+                    {/* Card Footer / Metrics + Selection Indicator */}
+                    <div className="mt-2 pt-2.5 border-t border-[#F0EBE5] flex items-center justify-between text-[10.5px] mono">
+                      <span className="text-[#8A8880]">{opt.targetLength} · ~45w</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-[#141414] bg-[#F4F4F1] px-2 py-0.5 rounded-full">
+                          {opt.metrics.hookRate} hook
+                        </span>
+                        {isSelected && (
+                          <span className="w-4 h-4 rounded-full bg-[#141414] text-white grid place-items-center">
+                            <Check size={10} />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Selected Active Top Pill */}
+                    {isSelected && (
+                      <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-[#141414] text-white text-[9px] mono font-bold uppercase tracking-wide flex items-center gap-1 shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Active</span>
+                      </div>
+                    )}
+                  </motion.div>
                 );
               })}
+
+              {/* Decorative flourish curl doodle in bottom-right like in reference photo */}
+              <div className="hidden md:block absolute -bottom-3 -right-3 pointer-events-none">
+                <DoodleFlourishCurl />
+              </div>
             </div>
           </div>
 

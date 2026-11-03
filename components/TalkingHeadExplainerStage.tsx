@@ -49,6 +49,7 @@ import {
   SpokenContrastPlan,
   FaceSpaceCallout,
   SceneSegment,
+  GalleryClipItem,
   buildSceneDialoguePlan,
   resolveActivePalette,
   extractWordsFromPlan,
@@ -58,9 +59,11 @@ import {
   renderExplainerFrameToCanvas,
   exportExactExplainerMp4,
   inferIconKey,
+  inferStoryVisualArchetype,
 } from "@/lib/pipeline-b/explainer-canvas-renderer";
 import { CaptionStyleId, CAPTION_STYLES, CAPTION_STYLE_LIST } from "@/lib/captions/styles";
 import CaptionLayerOverlay from "@/components/CaptionLayerOverlay";
+import SparkLiveRunner from "@/components/SparkLiveRunner";
 
 export type {
   ExplainerLayoutMode,
@@ -71,6 +74,7 @@ export type {
   SpokenContrastPlan,
   FaceSpaceCallout,
   SceneSegment,
+  GalleryClipItem,
 };
 
 export { PALETTES, buildSceneDialoguePlan };
@@ -312,10 +316,13 @@ interface TalkingHeadExplainerStageProps {
   finalVideoUrl?: string;
   runId?: string;
   editPlan?: any;
+  sparkCode?: string;
   beats?: any[];
   topic?: string;
   compact?: boolean;
-  onRecreateScene?: (sceneIndex: number, instruction: string) => Promise<void> | void;
+  galleryClips?: GalleryClipItem[];
+  onExportMP4?: () => void;
+  onRecreateScene?: (sceneIndex: number, instruction: string, visualStyle?: string, customStart?: number, customEnd?: number) => Promise<any> | any;
 }
 
 /**
@@ -333,17 +340,34 @@ export default function TalkingHeadExplainerStage({
   finalVideoUrl,
   runId: propRunId,
   editPlan,
+  sparkCode = "",
   beats = [],
   topic = "",
   compact = false,
+  galleryClips = [],
+  onExportMP4,
   onRecreateScene,
 }: TalkingHeadExplainerStageProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const brollImagesRef = useRef<Record<string, HTMLImageElement>>({});
+  const brollImagesRef = useRef<Record<string, HTMLImageElement | HTMLVideoElement>>({});
 
-  const [layoutMode, setLayoutMode] = useState<ExplainerLayoutMode>("auto_reel");
+  const isCutoutTemplate =
+    editPlan?.templateId === "cutout" || editPlan?.templateId === "samCutoutExplainer";
+
+  const [layoutMode, setLayoutMode] = useState<ExplainerLayoutMode>(
+    isCutoutTemplate ? "cutout_reel" : "auto_reel"
+  );
+
+  useEffect(() => {
+    if (isCutoutTemplate) {
+      setLayoutMode("cutout_reel");
+    } else {
+      setLayoutMode("auto_reel");
+    }
+  }, [editPlan?.templateId, isCutoutTemplate]);
+  const [showZaiInstructions, setShowZaiInstructions] = useState(false);
   const [paletteChoice, setPaletteChoice] = useState<PaletteId>("auto");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -353,6 +377,16 @@ export default function TalkingHeadExplainerStage({
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloadingMp3, setIsDownloadingMp3] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [downloadModal, setDownloadModal] = useState<{
+    isOpen: boolean;
+    status: "rendering" | "downloading" | "ready" | "error";
+    progress: number;
+    stepMessage: string;
+    blobUrl?: string;
+    directUrl?: string;
+    filename: string;
+    error?: string;
+  } | null>(null);
 
   // =========================================================================
   // INTERACTIVE EDITING STATE
@@ -373,6 +407,20 @@ export default function TalkingHeadExplainerStage({
   const [customTranscriptInput, setCustomTranscriptInput] = useState<string>("");
   const [showTranscriptPasteBox, setShowTranscriptPasteBox] = useState<boolean>(false);
 
+  // Cutout Positioning & Scale State (25% bigger base, corner default, interactive hold-to-move)
+  const [cutoutSide, setCutoutSide] = useState<"left" | "right">("left");
+  const [isCustomCutoutPos, setIsCustomCutoutPos] = useState<boolean>(false);
+  const [cutoutXPercent, setCutoutXPercent] = useState<number>(5.7);
+  const [cutoutYPercent, setCutoutYPercent] = useState<number>(86.6);
+  const [cutoutScale, setCutoutScale] = useState<number>(1.0);
+  const [isDraggingCutout, setIsDraggingCutout] = useState<boolean>(false);
+  const cutoutDragStartRef = useRef<{
+    clientX: number;
+    clientY: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
   // Inline Callout Editor Popover
   const [editingCallout, setEditingCallout] = useState<{
     sceneIdx: number;
@@ -380,12 +428,6 @@ export default function TalkingHeadExplainerStage({
     title: string;
     subtitle: string;
   } | null>(null);
-
-  // Pin & Recreate Scene Modal State
-  const [recreateModalSceneIdx, setRecreateModalSceneIdx] = useState<number | null>(null);
-  const [recreateInstruction, setRecreateInstruction] = useState("");
-  const [isRecreatingScene, setIsRecreatingScene] = useState(false);
-  const [recreateStatusMessage, setRecreateStatusMessage] = useState("");
 
   const currentTimeRef = useRef(0);
   const lastUiScrubUpdateRef = useRef(0);
@@ -402,10 +444,15 @@ export default function TalkingHeadExplainerStage({
     (cleanVideoUrl ? cleanVideoUrl.match(/run-b-[^/?#&]+/)?.[0] : undefined) ||
     (finalVideoUrl ? finalVideoUrl.match(/run-b-[^/?#&]+/)?.[0] : undefined);
 
-  const activeVideoSrc =
-    cleanVideoUrl ||
-    (runId ? `/api/pipeline-b/media/${runId}/clean` : undefined) ||
-    finalVideoUrl;
+  const serverFinalUrl = runId ? `/api/pipeline-b/media/${runId}/final` : finalVideoUrl;
+  const normalizedCleanUrl = cleanVideoUrl
+    ? cleanVideoUrl.replace(/\/final(\?.*)?$/, "/clean$1")
+    : undefined;
+  const serverCleanUrl =
+    normalizedCleanUrl || (runId ? `/api/pipeline-b/media/${runId}/clean` : undefined);
+
+  // Always use the clean cut video as the source for the unified template + live CC canvas stage
+  const activeVideoSrc = serverCleanUrl || serverFinalUrl || finalVideoUrl;
 
   // 1. Extract word-by-word timestamps
   const words: WordItem[] = useMemo(() => {
@@ -416,10 +463,10 @@ export default function TalkingHeadExplainerStage({
     return customWords && customWords.length > 0 ? customWords : words;
   }, [customWords, words]);
 
-  // 2. Build Base Dialogue-Synced Story Explainer Timeline
+  // 2. Build Base Dialogue-Synced Story Explainer Timeline (with Personal Gallery B-Roll matching)
   const initialScenes: SceneSegment[] = useMemo(() => {
-    return buildExplainerScenes(duration, editPlan, effectiveWords, beats, topic);
-  }, [duration, editPlan, effectiveWords, beats, topic]);
+    return buildExplainerScenes(duration, editPlan, effectiveWords, beats, topic, galleryClips);
+  }, [duration, editPlan, effectiveWords, beats, topic, galleryClips]);
 
   // 3. Mutable user scene segments (allows modifying headlineText, callouts, etc.)
   const [userScenes, setUserScenes] = useState<SceneSegment[]>([]);
@@ -451,6 +498,20 @@ export default function TalkingHeadExplainerStage({
   }, [currentTime, activeScenes]);
 
   const activeScene = activeScenes[activeSceneIndex] || activeScenes[0];
+  const activeVisualSegment = (editPlan?.visualSegments || []).find(
+    (segment: any, index: number) => currentTime >= Number(segment.start || 0) &&
+      (index === (editPlan?.visualSegments?.length || 0) - 1
+        ? currentTime <= Number(segment.end || 0) + 0.05
+        : currentTime < Number(segment.end || 0))
+  );
+  const activeSceneSparkCode = typeof activeVisualSegment?.sparkCode === "string"
+    ? activeVisualSegment.sparkCode
+    : "";
+  const activeSparkCode = activeSceneSparkCode || sparkCode;
+  const activeSparkStart = activeSceneSparkCode ? Number(activeVisualSegment?.start || 0) : 0;
+  const activeSparkDuration = activeSceneSparkCode
+    ? Math.max(0.5, Number(activeVisualSegment?.end || 0) - activeSparkStart)
+    : duration;
 
   // Derive active callout within current scene
   const activeFaceCallout = useMemo(() => {
@@ -484,20 +545,6 @@ export default function TalkingHeadExplainerStage({
       cancelled = true;
     };
   }, [activeScenes]);
-
-  // Handle external seek events
-  useEffect(() => {
-    const handleSeek = (e: Event) => {
-      const custom = e as CustomEvent<{ time: number }>;
-      if (custom.detail && typeof custom.detail.time === "number" && videoRef.current) {
-        videoRef.current.currentTime = custom.detail.time;
-        currentTimeRef.current = custom.detail.time;
-        setCurrentTime(custom.detail.time);
-      }
-    };
-    window.addEventListener("seek-pipeline-b", handleSeek);
-    return () => window.removeEventListener("seek-pipeline-b", handleSeek);
-  }, []);
 
   // Smooth mouse pointer drag tracking for CC Titles across Top, Center, Bottom
   useEffect(() => {
@@ -546,64 +593,213 @@ export default function TalkingHeadExplainerStage({
     };
   }, [isDraggingCaptions]);
 
-  // Continuous 60fps RAF preview render loop decoupled from React state updates
+  // Base cutout size is 450x575 (25% bigger than previous 360x460 base)
+  const baseCutW = 450;
+  const baseCutH = 575;
+  const effectiveCutW = Math.round(baseCutW * cutoutScale);
+  const effectiveCutH = Math.round(baseCutH * cutoutScale);
+
+  const { computedCutX, computedCutY } = useMemo(() => {
+    let cutX = 36;
+    let cutY = 1920 - effectiveCutH - 180;
+
+    if (isCustomCutoutPos) {
+      cutX = Math.round((cutoutXPercent / 100) * (1080 - effectiveCutW));
+      cutY = Math.round((cutoutYPercent / 100) * (1920 - effectiveCutH));
+    } else if (cutoutSide === "right") {
+      cutX = 1080 - effectiveCutW - 36;
+      cutY = 1920 - effectiveCutH - 180;
+    } else {
+      cutX = 36;
+      cutY = 1920 - effectiveCutH - 180;
+    }
+
+    cutX = Math.max(16, Math.min(1080 - effectiveCutW - 16, cutX));
+    cutY = Math.max(80, Math.min(1920 - effectiveCutH - 40, cutY));
+
+    return { computedCutX: cutX, computedCutY: cutY };
+  }, [isCustomCutoutPos, cutoutSide, cutoutXPercent, cutoutYPercent, effectiveCutW, effectiveCutH]);
+
+  const hotspotLeftPct = (computedCutX / 1080) * 100;
+  const hotspotTopPct = (computedCutY / 1920) * 100;
+  const hotspotWidthPct = (effectiveCutW / 1080) * 100;
+  const hotspotHeightPct = (effectiveCutH / 1920) * 100;
+
+  const handleCutoutPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hasDraggedRef.current = false;
+    cutoutDragStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      startX: computedCutX,
+      startY: computedCutY,
+    };
+    setIsDraggingCutout(true);
+    setIsCustomCutoutPos(true);
+  };
+
+  // Interactive Cutout Dragging (hold-to-move anywhere in preview player)
   useEffect(() => {
+    if (!isDraggingCutout) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!containerRef.current || !cutoutDragStartRef.current) return;
+      hasDraggedRef.current = true;
+      const rect = containerRef.current.getBoundingClientRect();
+      const scaleX = 1080 / rect.width;
+      const scaleY = 1920 / rect.height;
+
+      const dx = (e.clientX - cutoutDragStartRef.current.clientX) * scaleX;
+      const dy = (e.clientY - cutoutDragStartRef.current.clientY) * scaleY;
+
+      let newX = cutoutDragStartRef.current.startX + dx;
+      let newY = cutoutDragStartRef.current.startY + dy;
+
+      const maxMoveX = 1080 - effectiveCutW;
+      const maxMoveY = 1920 - effectiveCutH;
+
+      // Magnetic Snapping to Corners
+      if (newX < 90 && newY > maxMoveY - 260) {
+        newX = 36;
+        newY = 1920 - effectiveCutH - 180;
+        setCutoutSide("left");
+        setIsCustomCutoutPos(false);
+      } else if (newX > maxMoveX - 90 && newY > maxMoveY - 260) {
+        newX = 1080 - effectiveCutW - 36;
+        newY = 1920 - effectiveCutH - 180;
+        setCutoutSide("right");
+        setIsCustomCutoutPos(false);
+      } else {
+        setIsCustomCutoutPos(true);
+      }
+
+      newX = Math.max(16, Math.min(maxMoveX - 16, newX));
+      newY = Math.max(80, Math.min(maxMoveY - 40, newY));
+
+      const pctX = maxMoveX > 0 ? (newX / maxMoveX) * 100 : 0;
+      const pctY = maxMoveY > 0 ? (newY / maxMoveY) * 100 : 0;
+
+      setCutoutXPercent(pctX);
+      setCutoutYPercent(pctY);
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingCutout(false);
+      cutoutDragStartRef.current = null;
+      setTimeout(() => {
+        hasDraggedRef.current = false;
+      }, 200);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [isDraggingCutout, effectiveCutW, effectiveCutH]);
+
+  const drawSingleFrame = useCallback(
+    (overrideTime?: number) => {
+      const v = videoRef.current;
+      const c = canvasRef.current;
+      if (!c) return;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      const t =
+        typeof overrideTime === "number"
+          ? overrideTime
+          : v && !v.paused
+          ? v.currentTime
+          : currentTimeRef.current;
+      currentTimeRef.current = t;
+      renderExplainerFrameToCanvas(ctx, v, t, {
+        scenes: activeScenes,
+        words: effectiveWords,
+        duration: Math.max(duration, 0.5),
+        palette,
+        layoutMode,
+        brollImages: brollImagesRef.current,
+        captionPosition,
+        captionYOffset,
+        captionYPercent,
+        captionStyleId,
+        captionSizeScale,
+        hideCaptions: true,
+        hideStoryVisuals: sparkCode.trim().length > 30,
+        hiddenCalloutIds,
+        cutoutPosition: isCustomCutoutPos
+          ? { xPercent: cutoutXPercent, yPercent: cutoutYPercent }
+          : cutoutSide === "right"
+          ? "bottom-right"
+          : "bottom-left",
+        cutoutScale,
+      });
+    },
+    [
+      activeScenes,
+      effectiveWords,
+      duration,
+      palette,
+      sparkCode,
+      layoutMode,
+      captionPosition,
+      captionYOffset,
+      captionYPercent,
+      captionStyleId,
+      captionSizeScale,
+      hiddenCalloutIds,
+      isCustomCutoutPos,
+      cutoutXPercent,
+      cutoutYPercent,
+      cutoutSide,
+      cutoutScale,
+    ]
+  );
+
+  // Redraw immediately when paused and any visual setting changes
+  useEffect(() => {
+    if (!isPlaying) {
+      drawSingleFrame();
+    }
+  }, [isPlaying, currentTime, drawSingleFrame]);
+
+  // Continuous 60fps RAF loop ONLY while video is playing or user is actively dragging
+  useEffect(() => {
+    if (!isPlaying && !isDraggingCaptions && !isDraggingCutout) {
+      drawSingleFrame();
+      return;
+    }
+
     let rafId: number;
     const renderLoop = () => {
       const v = videoRef.current;
-      const c = canvasRef.current;
       const t = v && !v.paused ? v.currentTime : currentTimeRef.current;
       currentTimeRef.current = t;
 
       if (v && !v.paused) {
         const now = performance.now();
-        if (now - lastUiScrubUpdateRef.current > 120) {
+        if (now - lastUiScrubUpdateRef.current > 33) {
           lastUiScrubUpdateRef.current = now;
           setCurrentTime(t);
         }
       }
 
-      if (c) {
-        const ctx = c.getContext("2d");
-        if (ctx) {
-          renderExplainerFrameToCanvas(ctx, v, t, {
-            scenes: activeScenes,
-            words: effectiveWords,
-            duration: Math.max(duration, 0.5),
-            palette,
-            layoutMode,
-            brollImages: brollImagesRef.current,
-            captionPosition,
-            captionYOffset,
-            captionYPercent,
-            captionStyleId,
-            captionSizeScale,
-            hideCaptions: true, // Live DOM overlay renders captions smoothly
-            hiddenCalloutIds,
-          });
-        }
-      }
+      drawSingleFrame(t);
       rafId = requestAnimationFrame(renderLoop);
     };
 
     rafId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(rafId);
   }, [
-    activeScenes,
-    effectiveWords,
-    captionStyleId,
-    captionSizeScale,
-    duration,
-    palette,
-    layoutMode,
-    captionPosition,
-    captionYOffset,
-    captionYPercent,
-    hideCaptions,
-    hiddenCalloutIds,
+    isPlaying,
+    isDraggingCaptions,
+    isDraggingCutout,
+    drawSingleFrame,
   ]);
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     if (hasDraggedRef.current) {
       hasDraggedRef.current = false;
       return;
@@ -617,9 +813,9 @@ export default function TalkingHeadExplainerStage({
       v.pause();
       setIsPlaying(false);
     }
-  };
+  }, []);
 
-  const handleRestart = () => {
+  const handleRestart = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = 0;
@@ -627,7 +823,30 @@ export default function TalkingHeadExplainerStage({
     setCurrentTime(0);
     v.play().catch(() => {});
     setIsPlaying(true);
-  };
+  }, []);
+
+  // Handle external seek & playback events from parent header buttons
+  useEffect(() => {
+    const handleSeek = (e: Event) => {
+      const custom = e as CustomEvent<{ time: number }>;
+      if (custom.detail && typeof custom.detail.time === "number" && videoRef.current) {
+        videoRef.current.currentTime = custom.detail.time;
+        currentTimeRef.current = custom.detail.time;
+        setCurrentTime(custom.detail.time);
+        drawSingleFrame(custom.detail.time);
+      }
+    };
+    const handleExtTogglePlay = () => togglePlay();
+    const handleExtRestart = () => handleRestart();
+    window.addEventListener("seek-pipeline-b", handleSeek);
+    window.addEventListener("toggle-play-pipeline-b", handleExtTogglePlay);
+    window.addEventListener("restart-pipeline-b", handleExtRestart);
+    return () => {
+      window.removeEventListener("seek-pipeline-b", handleSeek);
+      window.removeEventListener("toggle-play-pipeline-b", handleExtTogglePlay);
+      window.removeEventListener("restart-pipeline-b", handleExtRestart);
+    };
+  }, [drawSingleFrame, togglePlay, handleRestart]);
 
   const toggleMute = () => {
     const v = videoRef.current;
@@ -691,37 +910,33 @@ export default function TalkingHeadExplainerStage({
     setEditingCallout(null);
   };
 
-  // Pin & Recreate Scene trigger
-  const handleTriggerRecreate = async () => {
-    if (recreateModalSceneIdx === null || !onRecreateScene) return;
-    setIsRecreatingScene(true);
-    setRecreateStatusMessage(
-      `Recreating Scene ${recreateModalSceneIdx + 1} with Meta Wonder & Image 1.0...`
-    );
-
-    try {
-      await onRecreateScene(
-        recreateModalSceneIdx,
-        recreateInstruction.trim() ||
-          "Make this scene punchier with bold kinetic visuals and clean badges"
-      );
-      setRecreateModalSceneIdx(null);
-      setRecreateInstruction("");
-    } catch (err: any) {
-      console.error("Recreate scene failed:", err);
-      setExportError(err?.message || "Failed to recreate scene.");
-    } finally {
-      setIsRecreatingScene(false);
-      setRecreateStatusMessage("");
-    }
-  };
-
   // Exact 1080×1920 Frame-by-Frame MP4 Exporter (100% Shared Canvas Parity)
   const handleDownloadMp4 = useCallback(async () => {
+    if (sparkCode.trim().length > 30 && onExportMP4) {
+      onExportMP4();
+      return;
+    }
     if (!activeVideoSrc || isDownloading) return;
     setIsDownloading(true);
     setDownloadProgress(2);
     setExportError(null);
+
+    const cleanName = (topic || "Zee_Story_Explainer")
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .slice(0, 36)
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
+    const filename = `${cleanName || "Zee_Reel"}_1080x1920.mp4`;
+    const serverDirectUrl = runId ? `/api/pipeline-b/media/${runId}/final?download=1` : null;
+
+    setDownloadModal({
+      isOpen: true,
+      status: "rendering",
+      progress: 4,
+      stepMessage: "Rendering your exact template & CC subtitles (1080×1920)...",
+      directUrl: serverDirectUrl || undefined,
+      filename,
+    });
 
     try {
       if (videoRef.current && !videoRef.current.paused) {
@@ -729,42 +944,84 @@ export default function TalkingHeadExplainerStage({
         setIsPlaying(false);
       }
 
-      const mp4Blob = await exportExactExplainerMp4({
-        cleanVideoUrl: activeVideoSrc,
-        runId,
-        scenes: activeScenes,
-        words: effectiveWords,
-        captionStyleId,
-        captionSizeScale,
-        duration: Math.max(duration, 0.5),
-        palette,
-        layoutMode,
-        brollImages: brollImagesRef.current,
-        captionPosition,
-        captionYOffset,
-        captionYPercent,
-        hideCaptions,
-        hiddenCalloutIds,
-        onProgress: (pct) => setDownloadProgress(pct),
-      });
+      let mp4Blob: Blob | null = null;
+      try {
+        mp4Blob = await exportExactExplainerMp4({
+          cleanVideoUrl: activeVideoSrc,
+          runId,
+          scenes: activeScenes,
+          words: effectiveWords,
+          captionStyleId,
+          captionSizeScale,
+          duration: Math.max(duration, 0.5),
+          palette,
+          layoutMode,
+          brollImages: brollImagesRef.current,
+          captionPosition,
+          captionYOffset,
+          captionYPercent,
+          hideCaptions,
+          hiddenCalloutIds,
+          cutoutPosition: isCustomCutoutPos
+            ? { xPercent: cutoutXPercent, yPercent: cutoutYPercent }
+            : (cutoutSide === "right" ? "bottom-right" : "bottom-left"),
+          cutoutScale,
+          onProgress: (pct) => {
+            setDownloadProgress(pct);
+            setDownloadModal((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    progress: pct,
+                    stepMessage:
+                      pct < 85
+                        ? `Rendering frames (${pct}%)...`
+                        : pct < 95
+                        ? "Muxing synced audio & encoding H.264..."
+                        : "Finalizing video download...",
+                  }
+                : null
+            );
+          },
+        });
+      } catch (renderErr) {
+        // Never fall back to the server FFmpeg render: it is a different video than the preview.
+        console.warn("[Export] Canvas rendering failed:", renderErr);
+        throw renderErr;
+      }
 
       const blobUrl = URL.createObjectURL(mp4Blob);
-      const cleanName = (topic || "Zee_Story_Explainer")
-        .replace(/[^a-zA-Z0-9_-]/g, "_")
-        .slice(0, 36)
-        .replace(/_+/g, "_")
-        .replace(/^_|_$/g, "");
 
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = `${cleanName || "Zee_Reel"}_1080x1920.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 20000);
+      try {
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch {}
+
+      // Keep downloadModal OPEN so user can clearly see and click to save!
+      setDownloadModal({
+        isOpen: true,
+        status: "ready",
+        progress: 100,
+        stepMessage: "Your 1080×1920 reel is ready!",
+        blobUrl,
+        directUrl: blobUrl,
+        filename,
+      });
     } catch (err: any) {
       console.error("Exact MP4 export error:", err);
       setExportError(err?.message || "Failed to render exact MP4 reel.");
+      setDownloadModal({
+        isOpen: true,
+        status: "error",
+        progress: 0,
+        stepMessage: "Export failed",
+        filename,
+        error: err?.message || "Could not generate MP4 file.",
+      });
     } finally {
       setIsDownloading(false);
       setDownloadProgress(0);
@@ -784,8 +1041,15 @@ export default function TalkingHeadExplainerStage({
     captionYPercent,
     hideCaptions,
     hiddenCalloutIds,
+    isCustomCutoutPos,
+    cutoutSide,
+    cutoutXPercent,
+    cutoutYPercent,
+    cutoutScale,
     topic,
     isDownloading,
+    sparkCode,
+    onExportMP4,
   ]);
 
   // Extract and download clean MP3 audio from active video
@@ -860,201 +1124,119 @@ export default function TalkingHeadExplainerStage({
         </div>
       )}
 
-      {/* =====================================================================
-          1. COMPACT TOP TOOLBAR: Colors, Mode & Edit Controls
-         ===================================================================== */}
-      <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2 flex flex-col gap-1.5 shadow-lg text-white">
-        {/* Row 1: Colors & Format Mode */}
-        <div className="flex items-center justify-between gap-1.5">
-          {/* Color Palette Swatches (Always visible) */}
-          <div className="flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-full border border-white/10">
-            <Palette size={11} className="text-white/70 shrink-0" />
-            <div className="flex items-center gap-1.5">
-              {(
-                [
-                  ["editorial_warm", "#E4491B", "Warm Orange"],
-                  ["midnight_neon", "#FF5520", "Neon Flame"],
-                  ["cyber_blue", "#38BDF8", "Cyber Blue"],
-                  ["emerald_growth", "#10B981", "Emerald Growth"],
-                  ["royal_violet", "#A855F7", "Royal Violet"],
-                ] as const
-              ).map(([id, hex, label]) => {
-                const isSel = palette.id === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPaletteChoice(id);
-                    }}
-                    className={`w-4 h-4 rounded-full transition-all transform cursor-pointer flex items-center justify-center ${
-                      isSel
-                        ? "scale-125 ring-2 ring-white shadow-lg"
-                        : "opacity-75 hover:opacity-100 hover:scale-110"
-                    }`}
-                    style={{ backgroundColor: hex }}
-                    title={label}
-                  >
-                    {isSel && (
-                      <Check size={8} className="text-white drop-shadow stroke-[3]" />
-                    )}
-                  </button>
-                );
-              })}
+      {/* Cutout Corner & Size Placement Controls (Only shown when Cutout template was explicitly selected) */}
+      {isCutoutTemplate && layoutMode === "cutout_reel" && (
+        <div className="w-full bg-[#12141C] border border-amber-400/30 rounded-2xl px-2.5 py-1.5 flex items-center justify-between gap-2 shadow-lg animate-fade-in text-white">
+          <div className="flex items-center gap-1.5">
+            <span className="mono text-[9px] font-extrabold text-amber-300 uppercase tracking-wider flex items-center gap-1">
+              <Sparkles size={11} className="text-amber-400" />
+              Cutout:
+            </span>
+            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/10">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCustomCutoutPos(false);
+                  setCutoutSide("left");
+                }}
+                className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                  !isCustomCutoutPos && cutoutSide === "left"
+                    ? "bg-amber-400 text-black font-extrabold shadow-sm"
+                    : "text-white/70 hover:text-white"
+                }`}
+                title="Place character in bottom-left corner"
+              >
+                <span>Left Corner</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCustomCutoutPos(false);
+                  setCutoutSide("right");
+                }}
+                className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                  !isCustomCutoutPos && cutoutSide === "right"
+                    ? "bg-amber-400 text-black font-extrabold shadow-sm"
+                    : "text-white/70 hover:text-white"
+                }`}
+                title="Place character in bottom-right corner"
+              >
+                <span>Right Corner</span>
+              </button>
             </div>
           </div>
 
-          {/* Right: Format Mode & Edit Toggle */}
-          <div className="flex items-center gap-1">
-            <div className="inline-flex items-center gap-0.5 bg-black/40 p-0.5 rounded-full border border-white/10">
+          {/* Size Controls (+25% bigger default base) */}
+          <div className="flex items-center gap-1.5">
+            <span className="mono text-[8px] font-bold text-white/60 uppercase">Scale:</span>
+            <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/10">
               <button
                 type="button"
-                onClick={() => setLayoutMode("auto_reel")}
-                className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
-                  layoutMode === "auto_reel"
-                    ? "bg-white text-black shadow-sm font-extrabold"
-                    : "text-white/75 hover:text-white"
-                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCutoutScale((s) => Math.max(0.7, Number((s - 0.1).toFixed(2))));
+                }}
+                className="w-5 h-5 rounded flex items-center justify-center hover:bg-white/20 text-white cursor-pointer"
+                title="Make cutout smaller"
               >
-                Story
+                <Minus size={10} />
               </button>
+              <span className="mono text-[9px] font-extrabold text-amber-300 px-1 min-w-[34px] text-center">
+                {(cutoutScale * 1.25).toFixed(2).replace(/\.?0+$/, "")}x
+              </span>
               <button
                 type="button"
-                onClick={() => setLayoutMode("speaker_only")}
-                className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
-                  layoutMode === "speaker_only"
-                    ? "bg-white text-black shadow-sm font-extrabold"
-                    : "text-white/75 hover:text-white"
-                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCutoutScale((s) => Math.min(1.6, Number((s + 0.1).toFixed(2))));
+                }}
+                className="w-5 h-5 rounded flex items-center justify-center hover:bg-white/20 text-white cursor-pointer"
+                title="Make cutout bigger"
               >
-                Face
+                <Plus size={10} />
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                if (!isEditMode && videoRef.current && !videoRef.current.paused) {
-                  videoRef.current.pause();
-                  setIsPlaying(false);
-                }
-                setIsEditMode(!isEditMode);
-              }}
-              className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer flex items-center gap-1 border shadow-sm ${
-                isEditMode
-                  ? "bg-amber-400 text-black border-amber-300 font-extrabold"
-                  : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
-              }`}
-              title="Toggle interactive element deletion & editing"
-            >
-              <Edit3 size={10} className={isEditMode ? "text-black" : "text-amber-400"} />
-              <span>{isEditMode ? "Done" : "Edit"}</span>
-            </button>
+            {isCustomCutoutPos && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCustomCutoutPos(false);
+                  setCutoutSide("left");
+                }}
+                className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-[8px] font-bold flex items-center gap-1 cursor-pointer transition"
+                title="Reset cutout position to bottom-left corner"
+              >
+                <RotateCcw size={9} />
+                <span>Reset</span>
+              </button>
+            )}
           </div>
         </div>
-
-        {/* Row 2: CC Subtitle Placement & Mouse Drag Slider (Expanded when in Edit Mode) */}
-        {isEditMode && (
-          <div className="flex items-center justify-between gap-2 bg-black/50 px-2.5 py-1 rounded-xl border border-white/10 animate-fade-in">
-            <div className="flex items-center gap-1.5">
-              <span className="mono text-[9px] font-extrabold text-sky-400 uppercase tracking-wider">
-                CC:
-              </span>
-              <div className="inline-flex items-center gap-0.5 bg-white/10 p-0.5 rounded-lg border border-white/10">
-                {(
-                  [
-                    ["bottom", "Bottom", 84.6],
-                    ["center", "Center", 50.0],
-                    ["top", "Top", 14.5],
-                  ] as const
-                ).map(([pos, label, yPct]) => {
-                  const isSel = captionPosition === pos;
-                  return (
-                    <button
-                      key={pos}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCaptionPosition(pos);
-                        setCaptionYPercent(yPct);
-                        setCaptionYOffset(0);
-                      }}
-                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold capitalize transition cursor-pointer ${
-                        isSel
-                          ? "bg-sky-500 text-black font-extrabold shadow-sm"
-                          : "text-white/70 hover:text-white"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Mouse Drag Slider */}
-            <div className="flex items-center gap-1.5 flex-1 max-w-[130px]">
-              <input
-                type="range"
-                min="12"
-                max="88"
-                step="0.5"
-                value={captionYPercent}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setCaptionYPercent(val);
-                  setCaptionYOffset(0);
-                  if (Math.abs(val - 14.5) < 5) setCaptionPosition("top");
-                  else if (Math.abs(val - 50.0) < 5) setCaptionPosition("center");
-                  else if (Math.abs(val - 84.6) < 5) setCaptionPosition("bottom");
-                  else setCaptionPosition(val < 32 ? "top" : val < 68 ? "center" : "bottom");
-                }}
-                className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-sky-400"
-                title="Slide to move CC titles up or down with mouse"
-              />
-              <span className="mono text-[8px] font-bold text-white/70 min-w-[24px] text-right">
-                {captionYPercent.toFixed(0)}%
-              </span>
-            </div>
-
-            {/* Visibility toggle */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setHideCaptions(!hideCaptions);
-              }}
-              className={`p-1 rounded-md text-[9px] font-bold flex items-center transition cursor-pointer ${
-                hideCaptions
-                  ? "bg-rose-500/80 text-white"
-                  : "bg-white/10 hover:bg-white/20 text-white"
-              }`}
-              title={hideCaptions ? "Show CC Captions" : "Hide CC Captions"}
-            >
-              {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* =====================================================================
-          2. PURE CLEAN 9:16 PREVIEW SCREEN (Unobstructed Canvas Video View)
+          PURE CLEAN 9:16 PREVIEW SCREEN (Unobstructed Canvas Video View)
          ===================================================================== */}
       <div
         ref={containerRef}
         className={`aspect-[9/16] w-full rounded-[22px] border-2 border-[#1E2028] shadow-[0_18px_50px_-22px_rgba(0,0,0,0.6)] overflow-hidden relative bg-[#0B0C10] select-none flex flex-col items-center justify-center ${
-          isDraggingCaptions ? "cursor-grabbing" : ""
+          isDraggingCaptions || isDraggingCutout ? "cursor-grabbing" : ""
         }`}
       >
-        {/* Hardware Audio & Video Decoder */}
+        {/* Hardware Audio & Video Decoder / Final Reel Player */}
         <video
           ref={videoRef}
-          key={activeVideoSrc}
           src={activeVideoSrc}
-          crossOrigin="anonymous"
+          preload="auto"
           playsInline
           muted={isMuted}
+          onClick={() => {
+            if (!isEditMode && !showCCStudio) togglePlay();
+          }}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onTimeUpdate={(e) => {
@@ -1064,14 +1246,27 @@ export default function TalkingHeadExplainerStage({
             if (e.currentTarget.duration && Number.isFinite(e.currentTarget.duration)) {
               setDuration(e.currentTarget.duration);
             }
+            drawSingleFrame(e.currentTarget.currentTime);
+          }}
+          onLoadedData={(e) => {
+            drawSingleFrame(e.currentTarget.currentTime);
+          }}
+          onCanPlay={(e) => {
+            drawSingleFrame(e.currentTarget.currentTime);
+          }}
+          onSeeked={(e) => {
+            drawSingleFrame(e.currentTarget.currentTime);
           }}
           onEnded={() => setIsPlaying(false)}
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-          style={{ opacity: 0.001, zIndex: 0 }}
+          className={`absolute inset-0 w-full h-full object-cover pointer-events-none z-0 ${
+            activeSparkCode.trim().length > 30 ? "opacity-100" : "opacity-0"
+          }`}
         />
 
-        {/* 100% Exact Shared Canvas Preview */}
-        <div className="absolute inset-0 z-10 overflow-hidden bg-[#0B0C10] flex items-center justify-center">
+        {/* 100% Unified Template Canvas Preview */}
+        <div className={`absolute inset-0 z-10 overflow-hidden bg-[#0B0C10] flex items-center justify-center ${
+          activeSparkCode.trim().length > 30 ? "invisible" : "visible"
+        }`}>
           <canvas
             ref={canvasRef}
             width={1080}
@@ -1085,18 +1280,35 @@ export default function TalkingHeadExplainerStage({
           />
         </div>
 
-        {/* Real-time Kinetic Typography & Multi-Style Caption Layer */}
-        <CaptionLayerOverlay
-          words={effectiveWords}
-          currentTime={currentTime}
-          styleId={captionStyleId}
-          sizeScale={captionSizeScale}
-          captionYPercent={captionYPercent}
-          hideCaptions={hideCaptions}
-        />
+        {activeSparkCode.trim().length > 30 && (
+          <SparkLiveRunner
+            code={activeSparkCode}
+            duration={activeSparkDuration}
+            playbackTime={Math.max(0, currentTime - activeSparkStart)}
+            playbackIsPlaying={isPlaying}
+            transparent
+            theme={{ bg: "transparent", ink: "#FFFFFF" }}
+            topic={activeVisualSegment?.spokenReference || topic}
+            showControls={false}
+            className="pointer-events-none absolute inset-0 z-20 !h-full !w-full !aspect-auto !rounded-none !border-0 !shadow-none"
+            onError={(message) => setExportError(`Spark overlay: ${message}`)}
+          />
+        )}
 
-        {/* On-Video Subtitle Drag Hotspot */}
+        {/* Real-time Kinetic Typography & Multi-Style Caption Layer */}
         {!hideCaptions && (
+          <CaptionLayerOverlay
+            words={effectiveWords}
+            currentTime={currentTime}
+            styleId={captionStyleId}
+            sizeScale={captionSizeScale}
+            captionYPercent={captionYPercent}
+            hideCaptions={hideCaptions}
+          />
+        )}
+
+        {/* On-Video Subtitle Drag Hotspot (Shown when CC Studio or Edit Mode is open) */}
+        {!hideCaptions && (showCCStudio || isEditMode || isDraggingCaptions) && (
           <div
             onPointerDown={(e) => {
               e.preventDefault();
@@ -1104,7 +1316,7 @@ export default function TalkingHeadExplainerStage({
               hasDraggedRef.current = false;
               setIsDraggingCaptions(true);
             }}
-            className="pointer-events-auto absolute left-6 right-6 z-25 flex items-center justify-center select-none opacity-80 hover:opacity-100 transition-opacity"
+            className="pointer-events-auto absolute left-6 right-6 z-25 flex items-center justify-center select-none opacity-85 hover:opacity-100 transition-opacity"
             style={{
               top: `${captionYPercent}%`,
               transform: "translateY(-50%)",
@@ -1126,6 +1338,100 @@ export default function TalkingHeadExplainerStage({
                 {isDraggingCaptions
                   ? `CC: ${captionYPercent.toFixed(0)}%`
                   : `↕ Drag CC (${captionPosition})`}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* On-Video Interactive Cutout Drag Hotspot (Only active when Cutout template was selected) */}
+        {isCutoutTemplate && layoutMode === "cutout_reel" && (
+          <div
+            onPointerDown={handleCutoutPointerDown}
+            className={`pointer-events-auto absolute z-26 select-none cursor-grab active:cursor-grabbing rounded-3xl transition-colors duration-75 flex flex-col items-center justify-between p-2 border-2 ${
+              isDraggingCutout
+                ? "border-amber-400 bg-amber-400/20 shadow-[0_0_30px_rgba(251,191,36,0.6)] ring-2 ring-amber-300"
+                : "border-amber-400/0 hover:border-amber-400/60 hover:bg-amber-400/10 group"
+            }`}
+            style={{
+              left: `${hotspotLeftPct}%`,
+              top: `${hotspotTopPct}%`,
+              width: `${hotspotWidthPct}%`,
+              height: `${hotspotHeightPct}%`,
+            }}
+            title="Click and hold to drag character anywhere on screen"
+          >
+            {/* Floating Handle Pill */}
+            <div
+              className={`px-2 py-0.5 rounded-full bg-black/90 text-amber-300 border border-amber-400/60 text-[9px] font-mono font-bold flex items-center gap-1 shadow-lg transition-opacity ${
+                isDraggingCutout
+                  ? "opacity-100 scale-105"
+                  : "opacity-0 group-hover:opacity-100"
+              }`}
+            >
+              <GripVertical size={11} className="text-amber-400" />
+              <span>
+                {isDraggingCutout
+                  ? `Cutout: ${hotspotLeftPct.toFixed(0)}%, ${hotspotTopPct.toFixed(0)}%`
+                  : "Hold to Move Cutout"}
+              </span>
+            </div>
+
+            {/* Corner guide indicators on active drag */}
+            {isDraggingCutout && (
+              <div className="w-full flex justify-between items-end px-1 pb-1">
+                <span className="mono text-[8px] font-bold text-amber-300 bg-black/85 px-1.5 py-0.5 rounded">
+                  {!isCustomCutoutPos && cutoutSide === "left"
+                    ? "LEFT CORNER"
+                    : !isCustomCutoutPos && cutoutSide === "right"
+                    ? "RIGHT CORNER"
+                    : "CUSTOM"}
+                </span>
+                <span className="mono text-[8px] text-white/80 bg-black/85 px-1.5 py-0.5 rounded">
+                  {(cutoutScale * 1.25).toFixed(1)}x
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Magnetic Corner Snap Guides during Cutout Drag */}
+        {isDraggingCutout && (
+          <div className="absolute inset-0 pointer-events-none z-24">
+            {/* Left Corner Target */}
+            <div
+              className={`absolute rounded-3xl border-2 border-dashed transition-all duration-150 flex items-center justify-center ${
+                cutoutSide === "left" && !isCustomCutoutPos
+                  ? "border-amber-400 bg-amber-400/20 scale-105 shadow-[0_0_20px_rgba(251,191,36,0.5)]"
+                  : "border-white/20 bg-white/5 opacity-50"
+              }`}
+              style={{
+                left: "3.33%",
+                bottom: "9.37%",
+                width: `${hotspotWidthPct}%`,
+                height: `${hotspotHeightPct}%`,
+              }}
+            >
+              <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-amber-300 bg-black/85 px-2 py-0.5 rounded shadow">
+                Left Corner
+              </span>
+            </div>
+
+            {/* Right Corner Target */}
+            <div
+              className={`absolute rounded-3xl border-2 border-dashed transition-all duration-150 flex items-center justify-center ${
+                cutoutSide === "right" && !isCustomCutoutPos
+                  ? "border-amber-400 bg-amber-400/20 scale-105 shadow-[0_0_20px_rgba(251,191,36,0.5)]"
+                  : "border-white/20 bg-white/5 opacity-50"
+              }`}
+              style={{
+                right: "3.33%",
+                bottom: "9.37%",
+                width: `${hotspotWidthPct}%`,
+                height: `${hotspotHeightPct}%`,
+              }}
+            >
+              <span className="mono text-[8px] font-extrabold uppercase tracking-wider text-amber-300 bg-black/85 px-2 py-0.5 rounded shadow">
+                Right Corner
               </span>
             </div>
           </div>
@@ -1358,30 +1664,114 @@ export default function TalkingHeadExplainerStage({
           </div>
         )}
 
-        {/* Export Progress Overlay */}
-        {isDownloading && (
-          <div className="absolute inset-0 z-45 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white select-none">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 grid place-items-center mb-3 shadow-lg">
-              <Loader2 size={24} className="animate-spin text-white" />
-            </div>
-            <div className="mono text-[12px] font-bold uppercase tracking-wider mb-1">
-              Rendering 1080×1920 Reel
-            </div>
-            <div className="text-[11px] text-white/70 max-w-[240px] mb-3">
-              Deterministic seek-and-render encoding matching live preview with your exact deletions & shifted CC titles...
-            </div>
-            <div className="w-48 bg-white/15 h-2 rounded-full overflow-hidden border border-white/20">
-              <div
-                className="h-full rounded-full transition-all duration-150"
-                style={{
-                  width: `${downloadProgress}%`,
-                  backgroundColor: palette.highlight,
-                }}
-              />
-            </div>
-            <div className="mono text-[10px] font-bold text-white/90 mt-2">
-              {downloadProgress}% complete
-            </div>
+        {/* Export Progress & Download Success/Error Modal */}
+        {downloadModal?.isOpen && (
+          <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-white select-none animate-fade-in">
+            {downloadModal.status === "rendering" || downloadModal.status === "downloading" ? (
+              <div className="w-full max-w-[280px] flex flex-col items-center">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#E4491B] to-[#C93D14] grid place-items-center mb-3 shadow-[0_0_25px_rgba(228,73,27,0.4)]">
+                  <Loader2 size={26} className="animate-spin text-white" />
+                </div>
+                <div className="mono text-[13px] font-black uppercase tracking-wider mb-1 text-white">
+                  Rendering 1080×1920 Reel
+                </div>
+                <p className="text-[11px] text-white/70 mb-3 leading-snug">
+                  {downloadModal.stepMessage}
+                </p>
+                <div className="w-full bg-white/15 h-2.5 rounded-full overflow-hidden border border-white/20 mb-2">
+                  <div
+                    className="h-full rounded-full transition-all duration-200 bg-[#E4491B]"
+                    style={{ width: `${downloadModal.progress}%` }}
+                  />
+                </div>
+                <div className="mono text-[10px] font-bold text-amber-300">
+                  {downloadModal.progress}% complete • 1080×1920
+                </div>
+                {downloadModal.directUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (downloadModal.directUrl) {
+                        window.open(downloadModal.directUrl, "_blank");
+                      }
+                    }}
+                    className="mt-4 text-[10px] text-white/60 hover:text-white underline cursor-pointer"
+                  >
+                    Skip wait and download master reel directly ↗
+                  </button>
+                )}
+              </div>
+            ) : downloadModal.status === "ready" ? (
+              <div className="w-full max-w-[300px] flex flex-col items-center">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border-2 border-emerald-400 grid place-items-center mb-3 shadow-[0_0_25px_rgba(52,211,153,0.3)] text-emerald-400">
+                  <CheckCircle2 size={30} />
+                </div>
+                <div className="mono text-[14px] font-black uppercase tracking-wider mb-1 text-white">
+                  Download Ready!
+                </div>
+                <p className="text-[11px] text-white/70 mb-4 leading-relaxed">
+                  Your 1080×1920 reel has started downloading. If it didn&apos;t save automatically, tap below:
+                </p>
+
+                {/* Big Prominent Direct Save Button */}
+                <a
+                  href={downloadModal.blobUrl || downloadModal.directUrl}
+                  download={downloadModal.filename}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-[12px] flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer mb-2"
+                >
+                  <Download size={15} />
+                  <span>Save Video (.MP4)</span>
+                </a>
+
+                {downloadModal.directUrl && (
+                  <a
+                    href={downloadModal.directUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10.5px] text-white/60 hover:text-white flex items-center gap-1 cursor-pointer py-1"
+                  >
+                    <span>Open video in new tab ↗</span>
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setDownloadModal(null)}
+                  className="mt-3 w-full py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 text-[11px] font-semibold transition cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="w-full max-w-[300px] flex flex-col items-center">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500 grid place-items-center mb-3 text-rose-400">
+                  <AlertCircle size={24} />
+                </div>
+                <div className="mono text-[12px] font-bold text-rose-300 mb-1">
+                  {downloadModal.stepMessage}
+                </div>
+                <p className="text-[11px] text-white/70 mb-4 leading-snug">
+                  {downloadModal.error || "You can download the verified master reel directly below:"}
+                </p>
+                {downloadModal.directUrl && (
+                  <a
+                    href={downloadModal.directUrl}
+                    download={downloadModal.filename}
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[12px] flex items-center justify-center gap-2 shadow-lg transition cursor-pointer mb-2"
+                  >
+                    <Download size={15} />
+                    <span>Download Master Video Directly</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDownloadModal(null)}
+                  className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 text-[11px] font-semibold transition cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1429,8 +1819,62 @@ export default function TalkingHeadExplainerStage({
               </button>
             </div>
 
-            {/* Content Section: 1. Position & 2. Size Stepper & 3. Style Picker with Live Previews */}
+            {/* Content Section: Accent Color, Position, Size Stepper & Style Picker */}
             <div className="flex flex-col gap-3 py-2.5 flex-1 overflow-y-auto pr-0.5 scrollbar-thin">
+              {/* Theme Color & Visibility Row */}
+              <div className="bg-[#151824] border border-[#262C3E] rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Palette size={12} className="text-white/70 shrink-0" />
+                  <span className="text-[10px] font-mono font-bold uppercase text-white/80">
+                    Accent
+                  </span>
+                  <div className="flex items-center gap-1.5 ml-1">
+                    {(
+                      [
+                        ["editorial_warm", "#E4491B", "Warm Orange"],
+                        ["midnight_neon", "#FF5520", "Neon Flame"],
+                        ["cyber_blue", "#38BDF8", "Cyber Blue"],
+                        ["emerald_growth", "#10B981", "Emerald Growth"],
+                        ["royal_violet", "#A855F7", "Royal Violet"],
+                      ] as const
+                    ).map(([id, hex, label]) => {
+                      const isSel = palette.id === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setPaletteChoice(id)}
+                          className={`w-4.5 h-4.5 rounded-full transition-all transform cursor-pointer flex items-center justify-center ${
+                            isSel
+                              ? "scale-125 ring-2 ring-white shadow-lg"
+                              : "opacity-75 hover:opacity-100 hover:scale-110"
+                          }`}
+                          style={{ backgroundColor: hex }}
+                          title={label}
+                        >
+                          {isSel && (
+                            <Check size={8} className="text-white drop-shadow stroke-[3]" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setHideCaptions(!hideCaptions)}
+                  className={`px-2 py-1 rounded-lg text-[9.5px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                    hideCaptions
+                      ? "bg-rose-500/80 text-white"
+                      : "bg-white/10 hover:bg-white/20 text-white"
+                  }`}
+                >
+                  {hideCaptions ? <EyeOff size={11} /> : <Eye size={11} />}
+                  <span>{hideCaptions ? "Hidden" : "Visible"}</span>
+                </button>
+              </div>
+
               {/* Position Row */}
               <div className="bg-[#151824] border border-[#262C3E] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
                 <div className="flex items-center justify-between">
@@ -1663,10 +2107,10 @@ export default function TalkingHeadExplainerStage({
       )}
 
       {/* =====================================================================
-          3. EXTERNAL SCENE TIMELINE SCRUBBER (Placed directly below 9:16 screen)
+          3. EXTERNAL SCENE TIMELINE SCRUBBER
          ===================================================================== */}
       <div className="w-full bg-[#12141C] border border-white/15 rounded-2xl p-2.5 flex flex-col gap-1.5 shadow-md text-white">
-        <div className="flex items-center justify-between px-1">
+        <div className="flex items-center justify-between px-1 gap-2">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400" />
             <span className="mono text-[10px] font-extrabold uppercase text-amber-300 tracking-wider">
@@ -1676,15 +2120,28 @@ export default function TalkingHeadExplainerStage({
               ({activeSceneIndex + 1}/{activeScenes.length})
             </span>
           </div>
-          <span className="mono text-[8px] text-white/40">
-            Click scene to seek & edit
-          </span>
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-thin">
           {activeScenes.map((sc, idx) => {
             const isActive = idx === activeSceneIndex;
             const durSec = Math.max(0.5, sc.end - sc.start).toFixed(1);
+            const shotBadge = isCutoutTemplate
+              ? sc.shotType === "sam_cutout" || sc.shotType === "depth_cutout"
+                ? "CUTOUT"
+                : sc.shotType === "fullscreen_animation"
+                ? "STORY ANIM"
+                : "SPEAKER"
+              : sc.shotType === "fullscreen_animation" || sc.shotType === "SPLIT"
+              ? "STORY ANIM"
+              : "SPEAKER";
+            const shotColor =
+              shotBadge === "CUTOUT"
+                ? "bg-[#E4491B]/30 text-[#FFE600] border-[#E4491B]/60"
+                : shotBadge === "STORY ANIM"
+                ? "bg-emerald-500/25 text-emerald-300 border-emerald-400/50"
+                : "bg-white/10 text-white/75 border-white/20";
+
             return (
               <div
                 key={sc.id || idx}
@@ -1695,7 +2152,7 @@ export default function TalkingHeadExplainerStage({
                 }`}
                 onClick={() => handleSeekScene(idx)}
               >
-                <div className="flex flex-col text-left">
+                <div className="flex flex-col text-left gap-0.5">
                   <div className="flex items-center gap-1">
                     <span className="mono text-[9px] font-black text-amber-400">
                       S{idx + 1}
@@ -1703,24 +2160,32 @@ export default function TalkingHeadExplainerStage({
                     <span className="mono text-[8px] text-white/60">
                       {durSec}s
                     </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const order: SceneSegment["shotType"][] = isCutoutTemplate
+                          ? ["sam_cutout", "fullscreen_animation", "fullscreen_speaker"]
+                          : ["fullscreen_animation", "fullscreen_speaker"];
+                        const curIdx = order.indexOf(sc.shotType);
+                        const nextShot = order[(curIdx + 1) % order.length];
+                        setUserScenes((prev) => (prev.length > 0 ? prev : activeScenes).map((item, sIdx) =>
+                          sIdx === idx
+                            ? { ...item, shotType: nextShot, animationLeadInSec: nextShot === "sam_cutout" ? 0.8 : undefined }
+                            : item
+                        ));
+                      }}
+                      className={`px-1.5 py-0.2 rounded mono text-[7.5px] font-extrabold border transition cursor-pointer ${shotColor}`}
+                      title="Switch this scene between face and animation"
+                    >
+                      {shotBadge}
+                    </button>
                   </div>
-                  <span className="text-[9px] font-bold truncate max-w-[85px]">
+                  <span className="text-[9px] font-bold truncate max-w-[105px]">
                     {sc.headlineText || `Scene ${idx + 1}`}
                   </span>
                 </div>
 
-                {/* Pin Recreate button per scene */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRecreateModalSceneIdx(idx);
-                  }}
-                  className="p-1 rounded-md bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black transition cursor-pointer"
-                  title={`Pin & Recreate Scene ${idx + 1}`}
-                >
-                  <Sparkles size={11} />
-                </button>
               </div>
             );
           })}
@@ -1795,101 +2260,7 @@ export default function TalkingHeadExplainerStage({
         </div>
       )}
 
-      {/* =====================================================================
-          9. PIN & RECREATE SCENE MODAL
-         ===================================================================== */}
-      {recreateModalSceneIdx !== null && (
-        <div className="absolute inset-0 z-60 bg-black/85 backdrop-blur-sm p-4 flex flex-col justify-center animate-fade-in">
-          <div className="bg-[#14161F] border border-amber-400/40 rounded-2xl p-4 shadow-2xl flex flex-col gap-3 text-white">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Sparkles size={14} className="text-amber-400" />
-                <span className="text-[11px] font-mono font-bold text-amber-400 uppercase">
-                  Pin & Recreate Scene {recreateModalSceneIdx + 1}
-                </span>
-              </div>
-              {!isRecreatingScene && (
-                <button
-                  type="button"
-                  onClick={() => setRecreateModalSceneIdx(null)}
-                  className="text-white/60 hover:text-white"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
 
-            <div className="text-[10px] text-white/70">
-              Target timestamps:{" "}
-              <span className="mono font-bold text-white">
-                {activeScenes[recreateModalSceneIdx]?.start.toFixed(1)}s –{" "}
-                {activeScenes[recreateModalSceneIdx]?.end.toFixed(1)}s
-              </span>
-              . All other scenes will remain untouched.
-            </div>
-
-            {/* Quick preset prompt chips */}
-            <div className="flex flex-wrap gap-1">
-              {[
-                "⚡ Kinetic pop typography & energetic motion",
-                "🎨 Full-screen animated procedural b-roll",
-                "🔍 Camera zoom 1.25x punch-in on speaker",
-                "🧼 Minimal clean badges, clear face view",
-                "🔥 Hormozi high-contrast captions & badges",
-              ].map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => setRecreateInstruction(chip)}
-                  className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-white/90 text-[9px] text-left transition"
-                >
-                  {chip}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-white/70 font-bold uppercase">
-                Custom Instruction for Scene {recreateModalSceneIdx + 1}
-              </label>
-              <textarea
-                rows={2}
-                value={recreateInstruction}
-                onChange={(e) => setRecreateInstruction(e.target.value)}
-                placeholder="e.g. Focus on the metric with glowing green badges..."
-                className="bg-black/60 border border-white/20 rounded-lg p-2 text-[11px] text-white outline-none focus:border-amber-400 resize-none"
-              />
-            </div>
-
-            {isRecreatingScene ? (
-              <div className="flex items-center justify-center gap-2 py-2 bg-amber-400/10 border border-amber-400/30 rounded-lg">
-                <Loader2 size={14} className="animate-spin text-amber-400" />
-                <span className="text-[10px] text-amber-300 font-bold">
-                  {recreateStatusMessage || "Generating scene variant..."}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setRecreateModalSceneIdx(null)}
-                  className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTriggerRecreate}
-                  className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black text-[11px] font-extrabold flex items-center gap-1 shadow-md cursor-pointer"
-                >
-                  <Sparkles size={12} />
-                  <span>Start Recreating</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

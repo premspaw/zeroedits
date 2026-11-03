@@ -10,7 +10,8 @@ export type ProceduralStyleId =
   | "paper-cut-parallax"
   | "particle-galaxy"
   | "kinetic-typography"
-  | "ink-wash";
+  | "ink-wash"
+  | "clay-3d-world";
 
 export type ProceduralMoodPreset =
   | "calm"
@@ -166,6 +167,16 @@ export const PROCEDURAL_STYLE_CATALOG: StyleCatalogItem[] = [
     description: "Rice-paper ink diffusion, misty brush mountains, swaying bamboo reeds, boat & falling petals",
     defaultElements: { birds: 7, petals: 36, lake: true, boat: true, trees: 8 },
     knobs: ["timeOfDay", "cloudDensity", "wind", "cameraDrift", "intensity"],
+  },
+  {
+    id: "clay-3d-world",
+    name: "Clay 3D Stop-Motion",
+    moodLabel: "Tactile Plasticine",
+    swatch: "linear-gradient(135deg, #FBE8D3 0%, #F4A261 50%, #E76F51 100%)",
+    accent: "#E76F51",
+    description: "Handmade clay 3D characters with expressive faces, squash & stretch bounce, warm peach & amber palette, and tactile stop-motion grain",
+    defaultElements: { birds: 0, fireflies: 20, lake: false, stars: 0, trees: 4, traveler: false },
+    knobs: ["intensity", "cameraDrift", "colorMood"],
   },
 ];
 

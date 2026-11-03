@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Pip, { PIP_MOOD_META } from "@/components/Pip";
 import { buildSceneDialoguePlan, type WordItem } from "@/components/TalkingHeadExplainerStage";
+import { inferStoryVisualArchetype } from "@/lib/pipeline-b/explainer-canvas-renderer";
 import {
   AlertTriangle,
   ArrowRight,
@@ -63,8 +64,9 @@ interface WonderStoryboardProps {
     sceneIndex: number,
     instruction: string,
     customStart?: number,
-    customEnd?: number
-  ) => Promise<void>;
+    customEnd?: number,
+    visualStyle?: string
+  ) => Promise<any> | any;
   unifiedMode?: boolean;
 }
 
@@ -123,6 +125,9 @@ export default function WonderStoryboard({
   const [recreateStartSec, setRecreateStartSec] = useState("");
   const [recreateEndSec, setRecreateEndSec] = useState("");
   const [isRecreatingScene, setIsRecreatingScene] = useState(false);
+  const [recreateError, setRecreateError] = useState("");
+  const [sceneSuggestions, setSceneSuggestions] = useState<string[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   const [editingCutIdx, setEditingCutIdx] = useState<number | null>(null);
   const [cutStartInput, setCutStartInput] = useState("");
@@ -148,6 +153,46 @@ export default function WonderStoryboard({
 
   const activeIndex = Math.min(selectedScene, Math.max(0, beats.length - 1));
   const activeScene = beats[activeIndex];
+  useEffect(() => {
+    if (recreateOpenForScene !== activeIndex || !activeScene) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    setIsLoadingSuggestions(true);
+    setRecreateError("");
+    setSceneSuggestions([]);
+    fetch("/api/recreate-scene", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        action: "suggestions",
+        mode: isPipelineB ? "pipeline-b" : pipeline || "pipeline-a",
+        runId: pipelineBRunId,
+        sceneIndex: activeIndex,
+        currentBeat: activeScene,
+        storyboard,
+        editPlan,
+      }),
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Wonder could not suggest ideas for this scene.");
+        if (!cancelled) setSceneSuggestions(data.suggestions || []);
+      })
+      .catch((err: any) => {
+        if (!cancelled && err?.name !== "AbortError") {
+          setRecreateError(err?.message || "Wonder could not suggest ideas for this scene.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSuggestions(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [recreateOpenForScene, activeIndex, activeScene, isPipelineB, pipeline, pipelineBRunId, storyboard, editPlan]);
+
   const concept = suppliedText(storyboard?.globalDirection?.concept);
   const visualStyle = suppliedText(storyboard?.globalDirection?.visualStyle);
   const isBuilding = status === "rendering";
@@ -166,6 +211,31 @@ export default function WonderStoryboard({
   const totalCutDuration =
     editPlan?.cutDuration ??
     cuts.reduce((acc: number, c: any) => acc + Math.max(0, (c.end || 0) - (c.start || 0)), 0);
+
+  const regenerateSelectedScene = async (instruction: string) => {
+    if (!onRecreateScene) return;
+    setIsRecreatingScene(true);
+    setRecreateError("");
+    try {
+      const start = parseFloat(recreateStartSec);
+      const end = parseFloat(recreateEndSec);
+      const result = await onRecreateScene(
+        activeIndex,
+        instruction,
+        Number.isFinite(start) ? start : undefined,
+        Number.isFinite(end) ? end : undefined,
+        "auto"
+      );
+      if (result?.error) throw new Error(result.error);
+      setSceneSuggestions([]);
+      setRecreateOpenForScene(null);
+      setRecreatePrompt("");
+    } catch (err: any) {
+      setRecreateError(err?.message || "Wonder could not recreate this scene.");
+    } finally {
+      setIsRecreatingScene(false);
+    }
+  };
 
   return (
     <section
@@ -957,7 +1027,7 @@ export default function WonderStoryboard({
             })}
           </div>
 
-          <div className="px-3 pb-3 sm:px-3.5 sm:pb-3.5">
+          <div className="px-3 pt-2 pb-3 sm:px-3.5 sm:pb-3.5">
             <div className="flex items-center justify-between pb-2 text-[10.5px] font-semibold text-[#E4491B]">
               <button
                 type="button"
@@ -1083,56 +1153,74 @@ export default function WonderStoryboard({
                       </div>
                     </div>
 
-                    {/* Quick Suggestion Chips */}
-                    <div className="flex flex-wrap items-center gap-1">
-                      {(isPipelineB
-                        ? [
-                            "Switch to Full-Screen Animation Cutaway",
-                            "Switch to Full-Screen Speaker Face",
-                            "Add comparison chart visual",
-                            "Zoom in 1.15x on speaker",
-                          ]
-                        : [
-                            "Fix character consistency & pose",
-                            "Add dramatic zoom & lightning VFX",
-                            "Close-up emotional anime shot",
-                            "Make scene more vibrant & dynamic",
-                          ]
-                      ).map((chip) => (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => setRecreatePrompt(chip)}
-                          className="rounded-full border border-[#D5D2C8] bg-white hover:border-[#E4491B] hover:text-[#E4491B] px-2 py-0.5 text-[9.5px] font-semibold text-[#52504A] transition cursor-pointer"
-                        >
-                          {chip}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] text-[#52504A]">Wonder suggests ideas for this scene. Select one to generate it in the preview.</p>
+                      <button
+                        type="button"
+                        disabled={disabled || isLoadingSuggestions || isRecreatingScene}
+                        onClick={async () => {
+                          setIsLoadingSuggestions(true);
+                          setRecreateError("");
+                          setSceneSuggestions([]);
+                          try {
+                            const response = await fetch("/api/recreate-scene", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                action: "suggestions",
+                                mode: isPipelineB ? "pipeline-b" : pipeline || "pipeline-a",
+                                runId: pipelineBRunId,
+                                sceneIndex: activeIndex,
+                                currentBeat: activeScene,
+                                storyboard,
+                                editPlan,
+                                userInstruction: recreatePrompt.trim(),
+                              }),
+                            });
+                            const data = await response.json();
+                            if (!response.ok || !data.success) throw new Error(data.error || "Wonder could not suggest ideas for this scene.");
+                            setSceneSuggestions(data.suggestions || []);
+                          } catch (err: any) {
+                            setRecreateError(err?.message || "Wonder could not suggest ideas for this scene.");
+                          } finally {
+                            setIsLoadingSuggestions(false);
+                          }
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#141414] bg-[#F7F5EF] px-2.5 py-1 mono text-[9px] font-bold text-[#141414] hover:bg-[#E4491B] hover:text-white disabled:opacity-50"
+                      >
+                        {isLoadingSuggestions ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                        {isLoadingSuggestions ? "Thinking…" : "Get AI suggestions"}
+                      </button>
                     </div>
+                    {sceneSuggestions.length > 0 && (
+                      <div className="grid gap-1.5 sm:grid-cols-2">
+                        {sceneSuggestions.map((suggestion, suggestionIndex) => (
+                          <button
+                            key={`${suggestionIndex}-${suggestion}`}
+                            type="button"
+                            disabled={disabled || isRecreatingScene}
+                            onClick={() => {
+                              setRecreatePrompt(suggestion);
+                              void regenerateSelectedScene(suggestion);
+                            }}
+                            title="Generate this animation and update the scene preview"
+                            className={`rounded-lg border px-2.5 py-2 text-left text-[10px] leading-snug transition ${recreatePrompt === suggestion ? "border-[#E4491B] bg-[#FCE8DF] text-[#141414]" : "border-[#D5D2C8] bg-white text-[#52504A] hover:border-[#E4491B] hover:text-[#141414]"}`}
+                          >
+                            <span className="mr-1 font-black text-[#E4491B]">{suggestionIndex + 1}.</span>{suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={recreatePrompt}
                         onChange={(e) => setRecreatePrompt(e.target.value)}
-                        onKeyDown={async (e) => {
+                        onKeyDown={(e) => {
                           if (e.key === "Enter" && onRecreateScene && !isRecreatingScene) {
                             e.preventDefault();
-                            setIsRecreatingScene(true);
-                            try {
-                              const sNum = parseFloat(recreateStartSec);
-                              const eNum = parseFloat(recreateEndSec);
-                              await onRecreateScene(
-                                activeIndex,
-                                recreatePrompt.trim(),
-                                Number.isFinite(sNum) ? sNum : undefined,
-                                Number.isFinite(eNum) ? eNum : undefined
-                              );
-                              setRecreateOpenForScene(null);
-                              setRecreatePrompt("");
-                            } finally {
-                              setIsRecreatingScene(false);
-                            }
+                            void regenerateSelectedScene(recreatePrompt.trim());
                           }
                         }}
                         placeholder={`What should Zee change or recreate in Scene ${activeIndex + 1} (${sceneTiming(activeScene)})?`}
@@ -1141,23 +1229,9 @@ export default function WonderStoryboard({
                       <button
                         type="button"
                         disabled={isRecreatingScene || disabled}
-                        onClick={async () => {
+                        onClick={() => {
                           if (onRecreateScene) {
-                            setIsRecreatingScene(true);
-                            try {
-                              const sNum = parseFloat(recreateStartSec);
-                              const eNum = parseFloat(recreateEndSec);
-                              await onRecreateScene(
-                                activeIndex,
-                                recreatePrompt.trim(),
-                                Number.isFinite(sNum) ? sNum : undefined,
-                                Number.isFinite(eNum) ? eNum : undefined
-                              );
-                              setRecreateOpenForScene(null);
-                              setRecreatePrompt("");
-                            } finally {
-                              setIsRecreatingScene(false);
-                            }
+                            void regenerateSelectedScene(recreatePrompt.trim());
                           } else if (onEdit) {
                             onEdit(activeIndex + 1);
                           }
@@ -1178,6 +1252,12 @@ export default function WonderStoryboard({
                       </button>
                     </div>
                   </div>
+                )}
+
+                {recreateError && recreateOpenForScene === activeIndex && (
+                  <p role="alert" className="mt-2 rounded-lg border border-red-300 bg-red-50 px-2.5 py-2 text-[10px] font-medium text-red-800">
+                    {recreateError}
+                  </p>
                 )}
 
                 <h4 className="mt-2 text-[10px] font-bold uppercase tracking-widest text-[#E4491B]">
@@ -1223,11 +1303,18 @@ export default function WonderStoryboard({
                     sStart,
                     sEnd
                   );
+                  const storyArch = inferStoryVisualArchetype(
+                    script || activeScene?.label || "",
+                    visual || "",
+                    syncPlan.headlineText,
+                    ""
+                  );
                   const isEdgeScene =
                     activeIndex === 0 || (activeIndex === beats.length - 1 && beats.length >= 3);
                   const isCutaway =
                     !isEdgeScene &&
-                    (syncPlan.visualKind === "contrast_comparison" ||
+                    (Boolean((visual || "").toLowerCase().includes("broll takeover")) ||
+                      syncPlan.visualKind === "contrast_comparison" ||
                       syncPlan.visualKind === "step_stack" ||
                       activeIndex % 2 === 1);
 
@@ -1238,12 +1325,12 @@ export default function WonderStoryboard({
                           <Sparkles size={11} />
                           <span>
                             {isCutaway
-                              ? "Full-Screen Story Animation Cutaway"
-                              : "Full-Screen Speaker + Lower-Face Floating Animation"}
+                              ? "100% Full-Screen Story Visual Animation"
+                              : "A-Roll Speaker + Story Pop-Up Motion Graphic"}
                           </span>
                         </span>
                         <span className="mono text-[8px] px-2 py-0.5 rounded-full bg-[#141414] text-white font-semibold">
-                          {syncPlan.visualKind.replace(/_/g, " ").toUpperCase()}
+                          {storyArch.replace(/_/g, " ").toUpperCase()}
                         </span>
                       </div>
 

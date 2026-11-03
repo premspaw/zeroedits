@@ -42,6 +42,27 @@ export interface AssistantDigitalAsset {
   tasteConnection: string;
 }
 
+export interface WhatsAppScriptBeat {
+  id: number;
+  label: "HOOK" | "TRANSFORM" | "MAGIC" | "PAYOFF" | string;
+  range: string;
+  text: string;
+  visual: string;
+  motion: string;
+  voice: string;
+  coaching: string;
+  durationSec: number;
+}
+
+export interface WhatsAppChatTurn {
+  id: string;
+  role: "user" | "zee_bot";
+  type: "voice" | "text";
+  text: string;
+  durationSec?: number;
+  timestamp: string;
+}
+
 export interface MemoryBankItem {
   id: string;
   category: LifeCategory;
@@ -53,9 +74,20 @@ export interface MemoryBankItem {
   tags: string[];
   variableKey: string;
   reelHookIdea: string;
-  source: "voice_mic" | "text_mic" | "text_chat" | "account_sync" | "gallery_vision";
+  source:
+    | "voice_mic"
+    | "text_mic"
+    | "text_chat"
+    | "account_sync"
+    | "gallery_vision"
+    | "whatsapp_voice"
+    | "whatsapp_chat";
   audioUrl?: string;
   metaPowered?: boolean;
+  userPhone?: string;
+  subSegment?: string; // e.g. "Breakup & Healing", "Startup Pitch", "Family Dinner", "Founder Burnout"
+  scriptBeats?: WhatsAppScriptBeat[];
+  whatsappThread?: WhatsAppChatTurn[];
   // Editorial Studio & Digital Assets (Quote, Book, Business Ideas, Zee Personal Assistant)
   durationLabel?: string;
   waveform?: number[];
@@ -281,7 +313,7 @@ export const INITIAL_ZEE_BRAIN: ZeeBrainState = {
     readingPattern: "Deep thinker — absorbs visual essays, architecture notes & high-signal builder logs",
     preferredFormat: "storyExplainer",
     signatureHookStyle: "Lived human moment → Unexpected creative truth in 2.5 seconds",
-    visualTaste: "Tactile Paper Studio (#FAF8F3), expressive typography, authentic workplace & travel cutaways",
+    visualTaste: "Tactile Zeroedits (#FAF8F3), expressive typography, authentic workplace & travel cutaways",
     coreValues: [
       "Soulful originality over autopilot templates",
       "Deep workplace mastery & creative flow",
@@ -915,7 +947,7 @@ export const INITIAL_ZEE_BRAIN: ZeeBrainState = {
     "user.readingPattern": "Deep thinker — absorbs visual essays, architecture notes & builder logs",
     "user.preferredFormat": "storyExplainer",
     "user.hookPattern": "Lived human moment → Unexpected creative truth in 2.5 seconds",
-    "user.visualTaste": "Tactile Paper Studio (#FAF8F3), expressive typography, workplace & travel cutaways",
+    "user.visualTaste": "Tactile Zeroedits (#FAF8F3), expressive typography, workplace & travel cutaways",
     "user.todayInsight": "Originality has a pulse — audiences feel the warmth of someone speaking from lived truth.",
     "user.personalLife": "Every morning starts with pour-over coffee and three raw lines in a physical notebook.",
     "user.workplaceStory": "In the workplace today, we turned the entire creative workflow into a single living digital brain.",
@@ -1203,12 +1235,129 @@ export function buildDigitalAssetsForItem(item: {
   return { quoteAsset, bookAsset, businessAsset, assistantAsset };
 }
 
+export function buildScriptBeatsForStory(
+  title: string,
+  story: string,
+  category: LifeCategory,
+  reelHookIdea?: string
+): WhatsAppScriptBeat[] {
+  const cleanSentences = story
+    .split(/[.!?]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const s1 =
+    reelHookIdea ||
+    cleanSentences[0] ||
+    `Why did nobody warn me about ${title.toLowerCase()}?`;
+  const s2 =
+    cleanSentences[1] ||
+    `I thought I had it under control, until that exact moment forced me to look at the truth.`;
+  const s3 =
+    cleanSentences[2] ||
+    `Instead of hiding it or running on autopilot, I leaned into what was actually real.`;
+
+  const categoryCta =
+    category === "work"
+      ? "Comment BUILD and I'll send you my exact founder workflow."
+      : category === "relationships"
+      ? "If you've ever had a 2 AM realization like this, save this for tonight."
+      : category === "family"
+      ? "Call home tonight before you open another tab."
+      : category === "travel"
+      ? "Step away from the screen for 48 hours—your clarity is waiting outside."
+      : "Protect what feels real. Drop a 🔥 if this hit home.";
+
+  return [
+    {
+      id: 1,
+      label: "HOOK",
+      range: "0–3s",
+      text: s1.endsWith(".") || s1.endsWith("?") ? s1 : `${s1}.`,
+      visual: `Tactile paper-cut reveal of "${title}" — raw close-up with WhatsApp voice waveform stamp.`,
+      motion: "whip-pan + paper tear pop",
+      voice: "unfiltered, immediate — like a 2AM voice note",
+      coaching: "Start right on the first syllable, zero pause.",
+      durationSec: 3,
+    },
+    {
+      id: 2,
+      label: "TRANSFORM",
+      range: "3–7s",
+      text: s2.endsWith(".") ? s2 : `${s2}.`,
+      visual: `Split paper collage: before vs the turning point in ${category.toUpperCase()}.`,
+      motion: "paper slide left + ink bleed",
+      voice: "honest, confiding",
+      coaching: "Drop your shoulders and speak like you're texting a close friend.",
+      durationSec: 4,
+    },
+    {
+      id: 3,
+      label: "MAGIC",
+      range: "7–11s",
+      text: s3.endsWith(".") ? s3 : `${s3}.`,
+      visual: "Handwritten note morphs into kinetic typography + B-roll proof from your Gallery Wallet.",
+      motion: "snap zoom + highlight burst",
+      voice: "clear, grounded conviction",
+      coaching: "Emphasize the turning word so captions pop on beat.",
+      durationSec: 4,
+    },
+    {
+      id: 4,
+      label: "PAYOFF",
+      range: "11–15s",
+      text: categoryCta,
+      visual: "Warm studio sign-off card with taped paper CTA badge.",
+      motion: "dolly-in + subtle card tilt",
+      voice: "warm, direct sign-off",
+      coaching: "Hold eye contact for half a beat at the end.",
+      durationSec: 4,
+    },
+  ];
+}
+
+export function inferSubSegment(
+  story: string,
+  category: LifeCategory,
+  explicitSubSegment?: string
+): string {
+  if (explicitSubSegment) return explicitSubSegment;
+  const lower = story.toLowerCase();
+  if (/(breakup|ex\b|heartbreak|walked away|goodbye|healing|let go|broke up)/i.test(lower)) {
+    return "Breakup & Healing";
+  }
+  if (/(2am|midnight|love|partner|trust|date|vulnerable|call)/i.test(lower) && category === "relationships") {
+    return "2AM Bonds & Love";
+  }
+  if (/(client|pitch|revenue|investor|pricing|deal|b2b|sales)/i.test(lower)) {
+    return "Business & Client Pitch";
+  }
+  if (/(startup|founder|product|ai\b|ship|code|launch|sprint)/i.test(lower)) {
+    return "Founder & Startup Build";
+  }
+  if (/(mom|dad|parents|dinner|home|sister|brother|childhood)/i.test(lower)) {
+    return "Family & Roots";
+  }
+  if (/(gokarna|kyoto|beach|mountain|flight|trip|solo travel)/i.test(lower)) {
+    return "Travel & Horizons";
+  }
+  if (category === "work") return "Business & Strategy";
+  if (category === "family") return "Family & Home";
+  if (category === "relationships") return "Relationships & Bonds";
+  if (category === "travel") return "Travel & Horizons";
+  if (category === "personal") return "Personal Life & Habits";
+  return "Core Spark & Insight";
+}
+
 export function analyzeUserStoryWithZee(
   rawText: string,
   preferredCategory?: LifeCategory,
   source: MemoryBankItem["source"] = "voice_mic",
   metaAnalysis?: {
     category?: LifeCategory;
+    subSegment?: string;
+    userPhone?: string;
+    scriptBeats?: WhatsAppScriptBeat[];
+    whatsappThread?: WhatsAppChatTurn[];
     title?: string;
     story?: string;
     zeeAnalysis?: string;
@@ -1237,15 +1386,15 @@ export function analyzeUserStoryWithZee(
       : preferredCategory || "insight";
 
   if (!preferredCategory && !metaAnalysis?.category) {
-    if (/(trip|travel|flight|mountain|beach|city|kyoto|hotel|vacation|road|explore|horizon)/i.test(lower)) {
-      category = "travel";
-    } else if (/(work|office|code|project|client|startup|team|build|ship|desk|meeting|career|workplace|studio)/i.test(lower)) {
-      category = "work";
+    if (/(breakup|heartbreak|ex\b|partner|relationship|love|trust|people|conversation|bond|connection|2am|dating)/i.test(lower)) {
+      category = "relationships";
     } else if (/(mom|dad|parent|family|home|brother|sister|dinner|childhood|roots)/i.test(lower)) {
       category = "family";
-    } else if (/(friend|partner|relationship|love|trust|people|conversation|bond|connection)/i.test(lower)) {
-      category = "relationships";
-    } else if (/(morning|coffee|gym|habit|routine|book|read|sleep|peace|personal|weekend)/i.test(lower)) {
+    } else if (/(work|business|office|code|project|client|startup|founder|revenue|pitch|team|build|ship|desk|meeting|career|workplace|studio)/i.test(lower)) {
+      category = "work";
+    } else if (/(trip|travel|flight|mountain|beach|city|kyoto|gokarna|hotel|vacation|road|explore|horizon)/i.test(lower)) {
+      category = "travel";
+    } else if (/(morning|coffee|chai|gym|habit|routine|book|read|sleep|peace|personal|weekend)/i.test(lower)) {
       category = "personal";
     } else {
       category = "insight";
@@ -1262,7 +1411,9 @@ export function analyzeUserStoryWithZee(
 
   let emotionTone = metaAnalysis?.emotionTone || "Warm & Electric";
   if (!metaAnalysis?.emotionTone) {
-    if (/(excited|built|shipped|win|love|amazing|breakthrough|fast)/i.test(lower)) {
+    if (/(breakup|heartbreak|hurt|walked away|2am|vulnerable)/i.test(lower)) {
+      emotionTone = "Raw & Vulnerable";
+    } else if (/(excited|built|shipped|win|love|amazing|breakthrough|fast)/i.test(lower)) {
       emotionTone = "High-Voltage Craft";
     } else if (/(grateful|family|home|peace|quiet|calm|thankful)/i.test(lower)) {
       emotionTone = "Soulful & Grounded";
@@ -1270,6 +1421,8 @@ export function analyzeUserStoryWithZee(
       emotionTone = "Raw & Unfiltered";
     }
   }
+
+  const subSegment = inferSubSegment(clean, category, metaAnalysis?.subSegment);
 
   const stopWords = new Set([
     "the", "and", "for", "that", "this", "with", "from", "have", "was", "were",
@@ -1284,6 +1437,7 @@ export function analyzeUserStoryWithZee(
       ? metaAnalysis.tags.slice(0, 4)
       : Array.from(
           new Set([
+            subSegment.split(" ")[0],
             meta.shortLabel,
             ...words.slice(0, 3).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()),
           ])
@@ -1291,20 +1445,20 @@ export function analyzeUserStoryWithZee(
 
   const zeeAnalysis =
     metaAnalysis?.zeeAnalysis ||
-    `I locked this ${meta.label.toLowerCase()} into your Digital Brain, Prem (${emotionTone.toLowerCase()}). Your upcoming scripts and B-roll cuts will automatically echo this exact perspective.`;
+    `Decoded & segregated into [${subSegment}] (${meta.label} • ${emotionTone.toLowerCase()}). Your 4-beat script and B-roll cues are ready.`;
 
   const reelHookIdea =
     metaAnalysis?.reelHookIdea ||
     (category === "insight"
       ? `Here is the raw truth that hit me today: ${firstSentence}`
       : category === "work"
-      ? `Inside the workplace today, one shift changed everything: ${firstSentence}`
+      ? `Inside the business today, one shift changed everything: ${firstSentence}`
       : category === "travel"
       ? `Stepping into a new horizon taught me this: ${firstSentence}`
       : category === "family"
       ? `One moment at home reminded me what actually matters: ${firstSentence}`
       : category === "relationships"
-      ? `The most honest lesson about human bonds I've lived lately: ${firstSentence}`
+      ? `The most honest lesson about love & letting go I've lived lately: ${firstSentence}`
       : `A small personal rhythm that rewired my day: ${firstSentence}`);
 
   const generatedAssets = buildDigitalAssetsForItem({
@@ -1323,6 +1477,11 @@ export function analyzeUserStoryWithZee(
     return 30 + (seed % 62);
   });
 
+  const scriptBeats =
+    Array.isArray(metaAnalysis?.scriptBeats) && metaAnalysis.scriptBeats.length > 0
+      ? metaAnalysis.scriptBeats
+      : buildScriptBeatsForStory(title, clean, category, reelHookIdea);
+
   const memory: MemoryBankItem = {
     id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     category,
@@ -1337,7 +1496,11 @@ export function analyzeUserStoryWithZee(
     source,
     audioUrl,
     metaPowered: Boolean(metaAnalysis),
-    durationLabel: metaAnalysis?.durationLabel || "2:00",
+    userPhone: metaAnalysis?.userPhone,
+    subSegment,
+    scriptBeats,
+    whatsappThread: metaAnalysis?.whatsappThread,
+    durationLabel: metaAnalysis?.durationLabel || "1:48",
     waveform: generatedWaveform,
     quoteAsset: generatedAssets.quoteAsset,
     bookAsset: generatedAssets.bookAsset,
@@ -1347,7 +1510,7 @@ export function analyzeUserStoryWithZee(
 
   return {
     memory,
-    extractedTrait: `Lives & builds through ${meta.label.toLowerCase()} (${emotionTone})`,
+    extractedTrait: `Lives & builds through ${subSegment.toLowerCase()} (${emotionTone})`,
     voiceCadenceNote: metaAnalysis?.voiceCadenceNote,
   };
 }
@@ -1591,7 +1754,7 @@ export function useZeeBrain() {
           captionStyle = "JetBrains Mono Neon Glow";
         } else if (/(paper|minimal|note|sketch|warm|beige|book)/i.test(lower)) {
           detectedFormat = "paperCard";
-          creatorStyle = "Warm Paper Studio Essayist";
+          creatorStyle = "Warm Zeroedits Essayist";
           hookPattern = "Torn paper card reveal + calm conversational truth";
           pacingBpm = "142 WPM • Thoughtful editorial rhythm";
           captionStyle = "Instrument Serif + Torn Paper Card (#FAF8F3)";

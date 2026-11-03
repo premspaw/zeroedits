@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readModelResponse } from "@/lib/model-response";
 
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 const SPARK_1_3_MASTER_SYSTEM_PROMPT = `# SYSTEM PROMPT — META MUSE SPARK 1.3: UNIVERSAL ANIMATION ENGINEER
 
@@ -413,10 +413,19 @@ When generating motion graphics for short-form video reels, shorts, or talking-h
      * AI/Systems: Pulsating neural network nodes with live data packet animations.
      * General/Media: Glowing circular HUD meters and wave visualizers.`;
 
+const SPARK_SINGLE_SCENE_SYSTEM_PROMPT = `You are Meta Muse Spark 1.3, a creative-coding motion designer. Implement only the single selected scene described in the request as a deterministic React/TSX animation overlay for an existing talking-head video.
+
+The component receives currentTime in seconds, duration, frame, fps, width and height. Treat currentTime as local to this scene, from 0 through duration. Generate the scene's actual visual metaphor and motion. Do not infer, summarize, or animate the rest of the video's story.
+
+This is a transparent overlay above the existing speaker video. Keep the root and all surrounding space fully transparent; draw no background, full-frame wash, or video. This preview is for visual animation only. Do not render subtitles, captions, karaoke/kinetic word highlighting, transcript text, headlines, title cards, scene labels, timelines, progress bars, loading/thinking indicators, editor controls, or generic reel UI. Keep every graphic clear of the speaker's face. Do not add text unless it is an essential label physically belonging to the depicted object. Do not invent dialogue or unrelated story beats.
+
+Return one complete default-exported TSX component. Every visible element must be deterministic from currentTime and confined to the scene duration. Use React, SVG, CSS, and existing available libraries only. Do not use network requests, internal timers, or uncontrolled looping animations.`;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
+    const isPipelineBScene = body.mode === "pipeline_b_scene";
+    let {
       storyboard,
       beat,
       beats: providedBeats,
@@ -425,6 +434,63 @@ export async function POST(req: NextRequest) {
       duration: totalDuration,
       topic,
     } = body;
+
+    if (body.mode === "pipeline_b_scene") {
+      const scene = body.scene;
+      if (!scene || typeof scene !== "object") {
+        return NextResponse.json({ success: false, error: "Spark needs the regenerated scene direction." }, { status: 400 });
+      }
+      const start = Number(scene.start) || 0;
+      const end = Math.max(start + 0.5, Number(scene.end) || start + 3);
+      const sceneDuration = end - start;
+      const sceneStoryboard = {
+        duration: sceneDuration,
+        totalWords: String(scene.spokenReference || "").trim().split(/\s+/).filter(Boolean).length,
+        numBeats: 1,
+        aspectRatio: "9:16",
+        formatUsed: "storyExplainer",
+        styleHint: String(scene.visualRecipe?.style || "procedural"),
+        globalDirection: {
+          concept: String(scene.spokenReference || scene.headlineText || "Scene animation"),
+          visualStyle: String(scene.visualRecipe?.style || "bright high-contrast story illustration"),
+          motionLanguage: "Scene-specific, readable pop-out animation with layered depth and strong silhouette",
+          continuityRules: "Animate only this scene; no generic phone unless the spoken dialogue names one.",
+        },
+        theme: body.theme || { bg: "#FFF7E9", ink: "#172033", accent: "#E8473F", secondary: "#2563EB" },
+        renderNotes: { recommendedTechniques: ["framer-motion", "svg", "inline-styles"], requiredAssets: [], complexity: "high", warnings: [] },
+        beats: [{
+          id: scene.id || "scene-1",
+          role: scene.headlineText || "Scene",
+          start: 0,
+          end: sceneDuration,
+          duration: sceneDuration,
+          text: scene.spokenReference || "",
+          script: scene.spokenReference || "",
+          voiceover: scene.spokenReference || "",
+          visualDesc: scene.visualRecipe?.metaphor || scene.motionIntent || "",
+          motion: scene.motionIntent || "",
+          camera: `${scene.visualRecipe?.style || "procedural"}; camera zoom ${scene.cameraZoom || 1}`,
+          layout: "Full-frame 9:16 scene cutaway",
+          transition: "Pop in, then resolve back to the speaker",
+          sound: "Optional subtle scene-matched pop sound cue",
+          elements: (scene.visualRecipe?.objects || []).map((object: any) => object.label).filter(Boolean),
+          animationCues: (scene.visualRecipe?.objects || []).map((object: any, index: number) => ({
+            time: Math.min(sceneDuration, 0.25 + index * 0.35),
+            action: `${object.motion || "reveal"} ${object.label || "scene object"} at ${object.position || "center"}`,
+          })),
+        }],
+      };
+      body.storyboard = sceneStoryboard;
+      body.beats = sceneStoryboard.beats;
+      body.duration = sceneDuration;
+      body.topic = sceneStoryboard.globalDirection.concept;
+      body.format = "storyExplainer";
+      storyboard = sceneStoryboard;
+      providedBeats = sceneStoryboard.beats;
+      totalDuration = end - start;
+      topic = sceneStoryboard.globalDirection.concept;
+      format = "storyExplainer";
+    }
 
     const apiKey =
       process.env.MODEL_API_KEY ||
@@ -460,6 +526,7 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
             Accept: "text/event-stream",
           },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(body.mode === "pipeline_b_scene" ? 150_000 : 170_000),
         });
 
         let generatedSvg = await readModelResponse(response);
@@ -548,6 +615,16 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
         fontDisplay: "Inter",
         font: "Inter",
       },
+      clay3d: {
+        bg: "#FBE8D3",
+        paper: "#FFFDF7",
+        ink: "#1E1E1E",
+        accent: "#E76F51",
+        secondary: "#F4A261",
+        effect: "tactile clay 3D stop-motion, plasticine modeling clay characters, squash-and-stretch bounce physics, visible thumbprints, soft studio three-point lighting, warm peach/amber/coral palette (#FBE8D3, #F4A261, #E76F51), chunky cream titles with active word in coral pill capsule, and physical clay counters/meters",
+        fontDisplay: "Montserrat",
+        font: "Montserrat, Poppins",
+      },
     };
 
     const theme =
@@ -599,10 +676,10 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
           ];
 
       return {
-        id: b.id ?? i + 1,
+        id: body.mode === "pipeline_b_scene" ? 1 : b.id ?? i + 1,
         role: b.role || `BEAT 0${i + 1}`,
-        start: bStart,
-        end: bEnd,
+        start: body.mode === "pipeline_b_scene" ? 0 : bStart,
+        end: body.mode === "pipeline_b_scene" ? totalVideoDuration : bEnd,
         duration: bDur > 0 ? bDur : sliceDur,
         durNum: bDur > 0 ? bDur : sliceDur,
         text: String(b.text ?? b.script ?? "").replace(/"/g, '\\"'),
@@ -619,7 +696,7 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
         elements: Array.isArray(b.elements) ? b.elements : ["Subject", "Accent"],
         animationCues,
         renderNotes: String(b.renderNotes || "Executable with Framer Motion spring physics"),
-        badge: `${b.role || "BEAT"} • 0${i + 1}`,
+        badge: isPipelineBScene ? "" : `${b.role || "BEAT"} • 0${i + 1}`,
         color:
           i === 0
             ? theme.accent
@@ -693,7 +770,14 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
       input: [
         {
           role: "user",
-          content: `Here is the validated MetaMuseWonderStoryboard JSON from Wonder Muse:
+          content: isPipelineBScene
+            ? `Generate only the selected Pipeline B scene from this JSON. The scene duration is ${totalVideoDuration.toFixed(2)} seconds; currentTime is local to this scene and starts at 0. Use only this scene's dialogue as semantic context, its visualDesc and motion as direction, and its elements as the objects to animate. Do not expand it into a summary of the whole video.
+
+Selected scene input:
+${JSON.stringify(sparkInput, null, 2)}
+
+Create a visually complete scene animation only. No subtitles, captions, karaoke or kinetic dialogue, transcript, headlines, title/scene cards, timeline rails, progress bars, thinking/loading indicator, or editor UI. No unrelated beats. Return only raw executable TSX with one default-exported component.`
+            : `Here is the validated MetaMuseWonderStoryboard JSON from Wonder Muse:
 ${JSON.stringify(sparkInput, null, 2)}
 
 Implement the complete, executable, self-contained animated React TSX component according to your Master System Prompt.
@@ -702,14 +786,14 @@ Return ONLY the raw executable TSX source code starting with imports and default
         },
       ],
       stream: true,
-      temperature: 1,
-      max_output_tokens: 161187,
+      temperature: isPipelineBScene ? 0.75 : 1,
+      max_output_tokens: isPipelineBScene ? 24000 : 161187,
       top_p: 1,
       reasoning: {
-        effort: "xhigh",
+        effort: isPipelineBScene ? "medium" : "xhigh",
       },
-      instructions: SPARK_1_3_MASTER_SYSTEM_PROMPT,
-      tools: [
+      instructions: isPipelineBScene ? SPARK_SINGLE_SCENE_SYSTEM_PROMPT : SPARK_1_3_MASTER_SYSTEM_PROMPT,
+      tools: isPipelineBScene ? [] : [
         {
           type: "web_search",
           search_context_size: "high",
@@ -766,7 +850,7 @@ Return ONLY the raw executable TSX source code starting with imports and default
       data: {
         code: generatedCode,
         modelUsed: "muse-spark-1.3",
-        isStitchedFullReel: true,
+        isStitchedFullReel: !isPipelineBScene,
         beatsCount: numBeats,
         totalDuration: totalVideoDuration,
       },

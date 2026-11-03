@@ -9,6 +9,7 @@ import {
   FileText,
   Copy,
   Check,
+  CheckCircle2,
   Clapperboard,
   Scissors,
   Upload,
@@ -37,12 +38,19 @@ import {
   Video,
   BookOpen,
   RefreshCw,
+  FolderOpen,
+  Film,
 } from "lucide-react";
 import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
 import StoryBankView from "@/components/StoryBankView";
 import TalkingHeadExplainerStage from "@/components/TalkingHeadExplainerStage";
+import {
+  extractGalleryTagsFromName,
+  DEFAULT_CREATIVE_GALLERY_PACK,
+  type GalleryClipItem,
+} from "@/lib/pipeline-b/explainer-canvas-renderer";
 import CinematicStoryStage from "@/components/CinematicStoryStage";
 import ProceduralStage from "@/components/ProceduralStage";
 import {
@@ -77,7 +85,8 @@ type FormatType =
   | "minimal"
   | "cutout"
   | "anime"
-  | "glass";
+  | "glass"
+  | "clay3d";
 type TimingType = "5s" | "10s" | "15s" | "20s" | "30s";
 type VoiceType =
   | "EN-IN"
@@ -199,7 +208,7 @@ const TEMPLATES: Record<string, ThemeConfig> = {
     bg: "#0E101A",
     paper: "#FAF7F0",
     accent: "#E4491B",
-    effect: "Full-frame speaker face value alternating with 100% full-screen clean visual animation cutaways & continuous captions",
+    effect: "Yapping Style: High face-value talking-head edit with dynamic script-driven pop-up motions around the speaker and short 3s full-screen visual bursts",
     font: "Montserrat",
   },
   paperCard: {
@@ -224,11 +233,11 @@ const TEMPLATES: Record<string, ThemeConfig> = {
     font: "Inter",
   },
   cutout: {
-    bg: "#F5F1E8",
+    bg: "#0E101A",
     paper: "#FFFFFF",
-    accent: "#E63946",
-    effect: "person cutout with SAM 3.1 transparent, floating on beige board",
-    font: "Instrument Serif",
+    accent: "#E4491B",
+    effect: "ZAI Cutout Pipeline: Autonomous codebase story animations (HTML5/CSS3/JS/SVG/Canvas) run first, layered with SAM 3.1 speaker cutouts, 3-layer behind-the-head depth typography, and zero static AI images",
+    font: "Montserrat",
   },
   anime: {
     bg: "#181824",
@@ -244,6 +253,13 @@ const TEMPLATES: Record<string, ThemeConfig> = {
     effect: "glassmorphism blur, frosted cards",
     font: "Inter",
   },
+  clay3d: {
+    bg: "#FBE8D3",
+    paper: "#FFFDF7",
+    accent: "#E76F51",
+    effect: "Selected visual direction: tactile Clay 3D stop-motion animation with handmade plasticine modeling clay characters, physical small-world diorama, squash-and-stretch bounce physics, visible thumbprints, soft studio three-point lighting, warm peach/amber/coral palette (#FBE8D3, #F4A261, #E76F51, #FFFDF7), chunky cream titles with active word in coral pill capsule, and physical clay counters/meters. Wonder must invent an everyday hero object with bead eyes and clay personality matching the user's exact topic/script/audio, planning scene-by-scene stop-motion at 12 fps with Remotion physical text & counters.",
+    font: "Montserrat",
+  },
 };
 
 const FORMAT_OPTIONS: {
@@ -257,6 +273,12 @@ const FORMAT_OPTIONS: {
     label: "Auto (AI Decides)",
     swatch: "linear-gradient(135deg, #E4491B 0%, #00D9FF 100%)",
     desc: "AI decides theme & style",
+  },
+  {
+    id: "clay3d",
+    label: "Clay 3D",
+    swatch: "linear-gradient(135deg, #FBE8D3 0%, #F4A261 50%, #E76F51 100%)",
+    desc: "Plasticine stop-motion, tactile characters, squash & stretch",
   },
   {
     id: "procedural",
@@ -297,8 +319,8 @@ const FORMAT_OPTIONS: {
   {
     id: "cutout",
     label: "Cutout",
-    swatch: "#F5F1E8",
-    desc: "SAM 3.1 floating cutout",
+    swatch: "linear-gradient(135deg, #E4491B 0%, #FFE600 50%, #00D9FF 100%)",
+    desc: "Codebase story animations + SAM 3.1 speaker cutout (Zero AI images)",
   },
   {
     id: "anime",
@@ -315,22 +337,40 @@ const FORMAT_OPTIONS: {
 ];
 
 const AUTO_EDIT_TEMPLATE_OPTIONS: {
-  id: "storyExplainer" | "auto";
+  id: "cutout" | "storyExplainer" | "auto" | "clay3d" | "gallery";
   label: string;
   swatch: string;
   desc: string;
 }[] = [
   {
     id: "storyExplainer",
-    label: "Story Explainer",
+    label: "Yapping Style",
     swatch: "linear-gradient(135deg, #14182B 0%, #E4491B 50%, #FFE600 100%)",
-    desc: "Full face speaker + clean full-screen animation cutaways",
+    desc: "High face-value yapping edit + script-driven pop-up motions & short 3s visual bursts",
   },
   {
     id: "auto",
     label: "Auto (AI Decides)",
     swatch: "linear-gradient(135deg, #E4491B 0%, #00D9FF 100%)",
-    desc: "AI cuts between speaker face & clean full-screen visuals",
+    desc: "AI Master Editor: high face-value yapping flow + dynamic script pop-ups & 3s cutaways",
+  },
+  {
+    id: "gallery",
+    label: "Connect Gallery (Personal B-Roll)",
+    swatch: "linear-gradient(135deg, #10B981 0%, #E4491B 50%, #F59E0B 100%)",
+    desc: "Scans your connected gallery folder & inserts matching videos/photos as B-roll",
+  },
+  {
+    id: "clay3d",
+    label: "Clay 3D Explainer",
+    swatch: "linear-gradient(135deg, #FBE8D3 0%, #F4A261 50%, #E76F51 100%)",
+    desc: "Handmade clay 3D characters, squash & stretch bounce, warm coral/amber palette",
+  },
+  {
+    id: "cutout",
+    label: "Cutout (SAM 3.1 + Code Animation)",
+    swatch: "linear-gradient(135deg, #E4491B 0%, #FFE600 50%, #00D9FF 100%)",
+    desc: "Codebase story animations run first, layered with SAM 3.1 speaker cutouts & zero AI images",
   },
 ];
 
@@ -502,7 +542,7 @@ const SHOWCASE_REELS: ChatMessageItem[] = [
     id: "reel-1",
     role: "assistant",
     topic: "Now Edit Reels with AI",
-    text: "Paper Studio ready. 6 studio scenes planned with movable paper cards — 9:16, script-locked, ready for export.",
+    text: "Zeroedits ready. 6 studio scenes planned with movable paper cards — 9:16, script-locked, ready for export.",
     beats: generateBeats("Now Edit Reels with AI", "15s"),
     format: "paperCard",
     timing: "15s",
@@ -572,6 +612,7 @@ function PreviewCard({
   onError,
   onExportMP4,
   onRecreateScene,
+  galleryClips = [],
 }: {
   format: FormatType | string;
   beats: Beat[];
@@ -599,7 +640,8 @@ function PreviewCard({
   onReady?: () => void;
   onError?: (message: string) => void;
   onExportMP4?: () => void;
-  onRecreateScene?: (sceneIndex: number, instruction: string) => Promise<void> | void;
+  onRecreateScene?: (sceneIndex: number, instruction: string, visualStyle?: string) => Promise<any> | any;
+  galleryClips?: GalleryClipItem[];
 }) {
   const beatsDuration = beats.reduce(
     (m, b) => Math.max(m, typeof b.end === "number" ? b.end : 0),
@@ -797,9 +839,12 @@ function PreviewCard({
         finalVideoUrl={finalDownloadUrl}
         runId={editPlan?.runId || editPlan?.planId}
         editPlan={editPlan}
+        sparkCode={sparkCode}
         beats={beats}
         topic={topic}
         compact={compact}
+        galleryClips={galleryClips}
+        onExportMP4={onExportMP4}
         onRecreateScene={onRecreateScene}
       />
     );
@@ -1362,7 +1407,7 @@ async function readGenerationResponse(response: Response, stage: string) {
 export default function ProperMobileResponsiveChat() {
   const { recordPageActivity } = useZeeBrain();
   const [format, setFormat] = useState<FormatType>("auto");
-  const [autoEditTemplate, setAutoEditTemplate] = useState<"storyExplainer" | "auto">("storyExplainer");
+  const [autoEditTemplate, setAutoEditTemplate] = useState<"cutout" | "storyExplainer" | "auto" | "clay3d" | "gallery">("storyExplainer");
   const [timing, setTiming] = useState<TimingType>("15s");
   const [voice, setVoice] = useState<VoiceType>("EN-IN");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -1388,6 +1433,50 @@ export default function ProperMobileResponsiveChat() {
   const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
   const referenceImageFileRef = useRef<File | null>(null);
   const referenceImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [galleryClips, setGalleryClips] = useState<GalleryClipItem[]>([]);
+  const [galleryFolderName, setGalleryFolderName] = useState<string | null>(null);
+  const galleryFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryFilesInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleConnectGalleryFiles = useCallback((fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const items: GalleryClipItem[] = [];
+    let detectedFolder: string | null = null;
+
+    Array.from(fileList).forEach((file, idx) => {
+      const relPath = (file as any).webkitRelativePath || "";
+      if (relPath && !detectedFolder) {
+        const parts = relPath.split("/");
+        if (parts.length > 1) detectedFolder = parts[0];
+      }
+      const isVideo =
+        file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name);
+      const isImage =
+        file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|avif)$/i.test(file.name);
+      if (!isVideo && !isImage) return;
+
+      const subFolder = relPath ? relPath.split("/").slice(0, -1).join(" ") : "";
+      const tags = extractGalleryTagsFromName(file.name, subFolder);
+      const rawUrl = URL.createObjectURL(file);
+      items.push({
+        id: `gal-${Date.now()}-${idx}-${file.name.replace(/[^a-zA-Z0-9]/g, "")}`,
+        name: file.name,
+        folderName: detectedFolder || undefined,
+        url: isVideo ? `${rawUrl}#gallery-video` : rawUrl,
+        kind: isVideo ? "video" : "image",
+        tags,
+      });
+    });
+
+    if (items.length > 0) {
+      setGalleryClips((prev) => [...prev, ...items]);
+      if (detectedFolder) {
+        setGalleryFolderName(detectedFolder);
+      } else if (!galleryFolderName) {
+        setGalleryFolderName("Personal Gallery");
+      }
+    }
+  }, [galleryFolderName]);
   const [input, setInput] = useState("");
   const [isInternetEnabled, setIsInternetEnabled] = useState(false);
   const [reviewCutsFirst, setReviewCutsFirst] = useState(false);
@@ -1414,6 +1503,13 @@ export default function ProperMobileResponsiveChat() {
         setActiveHeaderTab(targetTab);
       }
     }
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener("pageshow", handlePageShow);
+
     try {
       const saved = localStorage.getItem("paper_studio_reels_v4");
       const savedSelectedId = localStorage.getItem("paper_studio_selected_reel_v1");
@@ -1424,6 +1520,7 @@ export default function ProperMobileResponsiveChat() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           const cleaned = parsed.filter((m: any) => !m?.typing);
           const repaired = cleaned.map((m: any) => {
+            const cleanedText = typeof m?.text === "string" ? m.text.replace(/Paper Studio/gi, "Zeroedits") : m?.text;
             const stuck =
               (m?.generationStatus === "storyboarding" ||
                 m?.generationStatus === "rendering") &&
@@ -1435,10 +1532,10 @@ export default function ProperMobileResponsiveChat() {
                   ...m,
                   typing: false,
                   generationStatus: "error",
-                  text: m?.text || "This generation was interrupted. Press Generate to try again.",
+                  text: cleanedText || "This generation was interrupted. Press Generate to try again.",
                   generationError: "Interrupted before any scenes were planned. Your other reels are untouched.",
                 }
-              : m;
+              : { ...m, text: cleanedText };
           });
           if (repaired.length > 0) {
             skipNextMessageScrollRef.current = true;
@@ -1448,6 +1545,44 @@ export default function ProperMobileResponsiveChat() {
             setSelectedMessageId(
               stillThere ? preferredId : repaired[0]?.id || "reel-1"
             );
+
+            // Auto-recover any Pipeline B message whose run completed on disk while the browser refreshed
+            repaired.forEach((m: any) => {
+              if (m?.pipelineBRunId && (!m?.videoUrl || m?.generationStatus === "error" || m?.generationStatus === "rendering")) {
+                fetch(`/api/pipeline-b/status/${m.pipelineBRunId}`)
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((data) => {
+                    const st = data?.state;
+                    if (st && (st.status === "completed" || st.currentStage === "PREVIEW_READY") && st.editPlan) {
+                      if (st.editPlan.samBox) {
+                        delete st.editPlan.samBox.frameMasks;
+                      }
+                      const rId = st.runId || m.pipelineBRunId;
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === m.id
+                            ? {
+                                ...msg,
+                                generationStatus: "ready",
+                                generationError: undefined,
+                                pipeline: "pipeline-b",
+                                pipelineBRunId: rId,
+                                videoUrl: `/api/pipeline-b/media/${rId}/clean`,
+                                finalDownloadUrl: `/api/pipeline-b/media/${rId}/final`,
+                                editPlan: st.editPlan,
+                                text:
+                                  msg.text && !msg.text.includes("interrupted")
+                                    ? msg.text
+                                    : "✨ Wonder AI Director complete! Your edited reel is ready in the preview area.",
+                              }
+                            : msg
+                        )
+                      );
+                    }
+                  })
+                  .catch(() => {});
+              }
+            });
           }
         }
       }
@@ -1456,6 +1591,7 @@ export default function ProperMobileResponsiveChat() {
     } finally {
       hasHydratedHistoryRef.current = true;
     }
+    return () => window.removeEventListener("pageshow", handlePageShow);
   }, []);
 
   useEffect(() => {
@@ -1471,7 +1607,22 @@ export default function ProperMobileResponsiveChat() {
     if (!hasHydratedHistoryRef.current) return;
     try {
       if (messages && messages.length > 0) {
-        localStorage.setItem("paper_studio_reels_v4", JSON.stringify(messages));
+        const lightweightMessages = messages.map((m: any) => {
+          if (m?.editPlan?.samBox?.frameMasks) {
+            return {
+              ...m,
+              editPlan: {
+                ...m.editPlan,
+                samBox: {
+                  ...m.editPlan.samBox,
+                  frameMasks: undefined,
+                },
+              },
+            };
+          }
+          return m;
+        });
+        localStorage.setItem("paper_studio_reels_v4", JSON.stringify(lightweightMessages));
       }
     } catch (e) {
       console.warn("Could not save reels to localStorage", e);
@@ -1491,6 +1642,9 @@ export default function ProperMobileResponsiveChat() {
 
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [codeModalContent, setCodeModalContent] = useState("");
+  const [regeneratedSceneCode, setRegeneratedSceneCode] = useState("");
+  const [regeneratedSceneDuration, setRegeneratedSceneDuration] = useState(0);
+  const [regeneratedSceneStart, setRegeneratedSceneStart] = useState(0);
   const [codeModalBeat, setCodeModalBeat] = useState<Beat | null>(null);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [isCodeCopied, setIsCodeCopied] = useState(false);
@@ -1501,6 +1655,59 @@ export default function ProperMobileResponsiveChat() {
   const [modalElapsed, setModalElapsed] = useState(0);
   const [isModalPlaying, setIsModalPlaying] = useState(true);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [activeDownloadNotification, setActiveDownloadNotification] = useState<{
+    isOpen: boolean;
+    status: "downloading" | "ready" | "error";
+    filename: string;
+    downloadUrl: string;
+    message?: string;
+  } | null>(null);
+
+  const triggerUserDownload = useCallback((url: string, filename: string, title?: string) => {
+    setActiveDownloadNotification({
+      isOpen: true,
+      status: "downloading",
+      filename,
+      downloadUrl: url,
+      message: title ? `Preparing ${title}...` : "Starting MP4 download...",
+    });
+
+    // Invisible iframe triggers native browser download without opening blank windows or losing focus
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        try { document.body.removeChild(iframe); } catch {}
+      }, 60000);
+    } catch {}
+
+    // Fallback anchor click
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { document.body.removeChild(a); } catch {}
+      }, 1000);
+    } catch {}
+
+    setTimeout(() => {
+      setActiveDownloadNotification((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "ready",
+              message: "Download started! If not saved automatically, click below to save:",
+            }
+          : null
+      );
+    }, 1500);
+  }, []);
   const [expandedPromptIds, setExpandedPromptIds] = useState<Record<string, boolean>>({});
   const togglePrompt = (id: string) => {
     setExpandedPromptIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1861,6 +2068,7 @@ export default function ProperMobileResponsiveChat() {
         pipelineBRunId: runId,
         videoUrl: cleanVideoUrl,
         finalDownloadUrl: finalVideoUrl,
+        sparkCode: data.motionCode || "",
         beats: beats.length > 0 ? beats : message.beats,
         editPlan: state.editPlan,
         text: `✨ Wonder AI cuts executed & Spark 1.3 motion reel completed! Trimmed ${state?.editPlan?.cutSilenceDuration || 0}s. Clean video composited with 60fps kinetic graphics.`,
@@ -1884,7 +2092,8 @@ export default function ProperMobileResponsiveChat() {
     sceneIndex: number,
     instruction: string,
     customStart?: number,
-    customEnd?: number
+    customEnd?: number,
+    visualStyle = "auto"
   ) => {
     if (!targetMessage) return;
     setSelectedMessageId(targetMessage.id);
@@ -1911,6 +2120,7 @@ export default function ProperMobileResponsiveChat() {
             targetMessage.editPlan?.runId,
           sceneIndex,
           userInstruction: instruction,
+          visualStyle,
           customStart,
           customEnd,
           currentBeat,
@@ -1947,15 +2157,25 @@ export default function ProperMobileResponsiveChat() {
         );
         updateMessage(targetMessage.id, {
           beats: nextBeats,
-          sparkCode: data.updatedMotionCode || targetMessage.sparkCode,
+          sparkCode: targetMessage.sparkCode,
           editPlan: targetMessage.editPlan
             ? {
                 ...targetMessage.editPlan,
                 visualSegments: nextVisualSegments,
               }
-            : targetMessage.editPlan,
+            : data.updatedEditPlan || targetMessage.editPlan,
           text: `✨ Recreated Auto-Edit Scene ${sceneIndex + 1} (${data.updatedVisualSegment.start}s–${data.updatedVisualSegment.end}s)!`,
         });
+        if (data.updatedMotionCode) {
+          setCodeModalContent(data.updatedMotionCode);
+          setRegeneratedSceneCode(data.updatedMotionCode);
+          setRegeneratedSceneDuration(Math.max(0.5, data.updatedVisualSegment.end - data.updatedVisualSegment.start));
+          setRegeneratedSceneStart(Math.max(0, data.updatedVisualSegment.start));
+          setIsFullReelMode(false);
+          setCodeModalBeat(nextBeats[sceneIndex]);
+          setIsCodeModalOpen(true);
+        }
+        return data;
       } else {
         const nextStoryboard = targetMessage.storyboard
           ? {
@@ -1978,6 +2198,7 @@ export default function ProperMobileResponsiveChat() {
       }
     } catch (err: any) {
       console.error("Failed to recreate single scene:", err);
+      return { error: err?.message || "Failed to recreate this scene." };
     } finally {
       setIsGenerating(false);
       setGeneratingStep("");
@@ -2233,11 +2454,41 @@ export default function ProperMobileResponsiveChat() {
               } else if (curStage === "CLEAN_VIDEO_CREATED") {
                 setGeneratingStep("Putting your edit together");
               } else if (curStage === "VISUAL_PLAN_CREATED") {
-                setGeneratingStep("Creating your images");
+                setGeneratingStep(
+                  autoEditTemplate !== "cutout"
+                    ? "Directing Spark 1.3 story animations & A-Roll/B-Roll edit"
+                    : "Directing codebase story animations & SAM 3.1 cutouts"
+                );
+              } else if (curStage === "ASSETS_RESOLVED") {
+                setGeneratingStep(
+                  autoEditTemplate !== "cutout"
+                    ? "Preparing A-Roll and B-Roll scenes"
+                    : "Segmenting speaker cutout with SAM 3.1"
+                );
               } else if (curStage === "MOTION_GENERATED") {
-                setGeneratingStep("Adding motion to your video");
+                setGeneratingStep("Coding story animations to your timeline");
               } else if (curStage === "PREVIEW_READY") {
-                setGeneratingStep("Your video is ready!");
+                if (statusData?.state?.status === "completed") {
+                  setGeneratingStep("Your video is ready!");
+                  const st = statusData.state;
+                  const rId = st.runId || clientRunId;
+                  if (st.editPlan) {
+                    if (st.editPlan.samBox) {
+                      delete st.editPlan.samBox.frameMasks;
+                    }
+                    updateMessage(botMsgId, {
+                      generationStatus: "ready",
+                      generationError: undefined,
+                      pipeline: "pipeline-b",
+                      pipelineBRunId: rId,
+                      videoUrl: `/api/pipeline-b/media/${rId}/clean`,
+                      finalDownloadUrl: `/api/pipeline-b/media/${rId}/final`,
+                      editPlan: st.editPlan,
+                    });
+                  }
+                } else {
+                  setGeneratingStep("Finalizing your video preview...");
+                }
               }
             }
           } catch {
@@ -2646,6 +2897,27 @@ export default function ProperMobileResponsiveChat() {
 
   const handleSelectPrompt = (prompt: string) => {
     setInput(prompt);
+    const lower = prompt.toLowerCase();
+    if (lower.includes("edit reels with ai") || lower.includes("auto-edit") || lower.includes("talking-head")) {
+      setStudioMode("autoEdit");
+    } else if (lower.includes("anime")) {
+      setStudioMode("create");
+      setFormat("anime");
+    } else if (lower.includes("clay")) {
+      setStudioMode("create");
+      setFormat("clay3d");
+    } else if (lower.includes("paper")) {
+      setStudioMode("create");
+      setFormat("paperCard");
+    }
+    const matchingShowcase = messages.find(
+      (m) => m.role === "assistant" && (m.topic || "").toLowerCase() === lower
+    );
+    if (matchingShowcase) {
+      setSelectedMessageId(matchingShowcase.id);
+      setActiveBeat(0);
+      setIsPlaying(true);
+    }
     setIsMobileDrawerOpen(false);
     textareaRef.current?.focus();
   };
@@ -2654,6 +2926,19 @@ export default function ProperMobileResponsiveChat() {
     const targetMessage = message || activeMessage;
     if (!targetMessage || isGenerating || isGeneratingCode) return;
     setSelectedMessageId(targetMessage.id);
+
+    // For Pipeline B talking-head videos, play directly in the unified 9:16 preview player immediately
+    if (
+      targetMessage.pipeline === "pipeline-b" ||
+      targetMessage.videoUrl ||
+      targetMessage.finalDownloadUrl
+    ) {
+      setIsMobilePreviewOpen(true);
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("restart-pipeline-b"));
+      }, 60);
+      return;
+    }
 
     setIsFullReelMode(true);
     setModalActiveBeatIndex(targetBeatIndex);
@@ -2665,13 +2950,7 @@ export default function ProperMobileResponsiveChat() {
     setModalTab("preview");
     setReplayKey((k) => k + 1);
 
-    // If this message has an Audio Story or Pipeline B video, open the live stage immediately!
-    if (
-      targetMessage.audioStory ||
-      targetMessage.pipeline === "pipeline-b" ||
-      targetMessage.videoUrl ||
-      targetMessage.finalDownloadUrl
-    ) {
+    if (targetMessage.audioStory) {
       setIsGeneratingCode(false);
       return;
     }
@@ -2795,10 +3074,10 @@ export default function ProperMobileResponsiveChat() {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#E4491B] via-[#E4491B] to-[#E4491B] text-white grid place-items-center serif text-[18px] leading-none shadow-sm shadow-[#E4491B]/25 select-none">
-                  P
+                  Z
                 </div>
                 <span className="serif text-[20px] tracking-tight font-medium">
-                  PAPER STUDIO
+                  ZEROEDITS
                 </span>
               </div>
               <button
@@ -2986,14 +3265,36 @@ export default function ProperMobileResponsiveChat() {
           onDownloadMp4={() => {
             if (activeMessage?.audioStory) {
               if (activeMessage.audioStory.finalVideoUrl) {
-                window.location.href = `${activeMessage.audioStory.finalVideoUrl}&download=1`;
+                triggerUserDownload(
+                  `${activeMessage.audioStory.finalVideoUrl}&download=1`,
+                  `${(activeMessage.audioStory.title || "Story_Reel").replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`,
+                  activeMessage.audioStory.title
+                );
               } else {
                 setActiveHeaderTab("edit");
                 setTimeout(() => {
                   window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
                 }, 300);
               }
-            } else if (activeMessage?.videoUrl || activeMessage?.finalDownloadUrl) {
+            } else if (activeMessage?.videoUrl || activeMessage?.finalDownloadUrl || activeMessage?.pipelineBRunId) {
+              const rid = activeMessage?.pipelineBRunId || activeMessage?.editPlan?.runId;
+              const directUrl = activeMessage?.finalDownloadUrl
+                ? `${activeMessage.finalDownloadUrl}${activeMessage.finalDownloadUrl.includes("?") ? "&" : "?"}download=1`
+                : rid
+                ? `/api/pipeline-b/media/${rid}/final?download=1`
+                : activeMessage?.videoUrl
+                ? `${activeMessage.videoUrl}${activeMessage.videoUrl.includes("?") ? "&" : "?"}download=1`
+                : null;
+              const cleanTopic = (activeMessage?.topic || activeMessage?.text || "Zee_Reel")
+                .replace(/[^a-zA-Z0-9_-]/g, "_")
+                .slice(0, 36)
+                .replace(/_+/g, "_")
+                .replace(/^_|_$/g, "");
+              const filename = `${cleanTopic || "Zee_Reel"}_1080x1920.mp4`;
+
+              void directUrl;
+              void filename;
+              // Only the on-screen template renderer exports; never the server FFmpeg render.
               window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
             } else {
               setIsExportModalOpen(true);
@@ -3083,33 +3384,186 @@ export default function ProperMobileResponsiveChat() {
               })}
           </div>
 
-          {/* Quick Ideas Section */}
-          <div className="mt-4 pt-3 border-t border-[#D5D2C8]/70">
-            <div className="mono text-[10px] uppercase tracking-wider text-[#6B6A64] font-semibold mb-2 px-1">
-              Quick Prompt Ideas
+          {/* Quick Ideas Section (2 Quick Prompts) */}
+          <div className="mt-3 pt-2.5 border-t border-[#D5D2C8]/70">
+            <div className="flex items-center justify-between mb-1.5 px-1">
+              <span className="mono text-[10px] uppercase tracking-wider text-[#6B6A64] font-semibold">
+                Quick Prompts
+              </span>
+              <span className="mono text-[9px] text-[#E4491B] font-bold">
+                Tap to load
+              </span>
             </div>
             <div className="space-y-1.5">
-              {PROMPT_SUGGESTIONS.slice(0, 2).map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => handleSelectPrompt(prompt)}
-                  className="w-full text-left px-2.5 py-1.5 rounded-xl bg-[#ECEAE3] border border-transparent hover:border-[#D5D2C8] hover:bg-[#EAE7DF] transition text-[12px] text-[#444] line-clamp-1 flex items-center justify-between"
-                >
-                  <span className="truncate">{prompt}</span>
-                  <Sparkles size={11} className="text-[#E4491B] shrink-0 ml-1 opacity-70" />
-                </button>
-              ))}
+              {PROMPT_SUGGESTIONS.slice(0, 2).map((prompt) => {
+                const isSelectedPrompt = input.trim().toLowerCase() === prompt.toLowerCase();
+                return (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => handleSelectPrompt(prompt)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-xl border transition text-[12px] line-clamp-1 flex items-center justify-between ${
+                      isSelectedPrompt
+                        ? "bg-[#F6D9CC] border-[#141414] text-[#141414] font-bold shadow-[2px_2px_0px_#141414]"
+                        : "bg-[#FFFFFF] border-[#D5D2C8] hover:border-[#141414] hover:bg-[#FAF6EC] text-[#141414]"
+                    }`}
+                  >
+                    <span className="truncate">{prompt}</span>
+                    <Sparkles size={11} className="text-[#E4491B] shrink-0 ml-1" />
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="mt-auto pt-4">
-            <div className="rounded-[18px] bg-gradient-to-br from-[#E4491B] via-[#111113] to-[#251711] text-[#FFFFFF] p-3.5 border border-[#E4491B]/20 shadow-md">
-              <div className="serif text-[17px] leading-[1.15] text-[#FFE8DC]">
-                Studio cuts, not slides.
+          {/* Dedicated "Connect Gallery" Auto-Edit Template Card */}
+          <div className="mt-auto pt-3">
+            <input
+              ref={galleryFolderInputRef}
+              type="file"
+              multiple
+              {...({ webkitdirectory: "", directory: "" } as any)}
+              className="hidden"
+              onChange={(e) => {
+                handleConnectGalleryFiles(e.target.files);
+                setStudioMode("autoEdit");
+                setAutoEditTemplate("gallery");
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={galleryFilesInputRef}
+              type="file"
+              accept="video/*,image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                handleConnectGalleryFiles(e.target.files);
+                setStudioMode("autoEdit");
+                setAutoEditTemplate("gallery");
+                e.target.value = "";
+              }}
+            />
+
+            <div
+              className={`rounded-[18px] p-3 border-2 transition ${
+                studioMode === "autoEdit" && autoEditTemplate === "gallery"
+                  ? "bg-[#FFFDF9] border-[#141414] shadow-[3px_3px_0px_#10B981]"
+                  : "bg-[#FFFFFF] border-[#141414] shadow-[3px_3px_0px_#141414]"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="w-6 h-6 rounded-lg bg-[#E4491B] border border-[#141414] grid place-items-center shrink-0 text-white">
+                    <FolderOpen size={12} />
+                  </div>
+                  <div className="truncate">
+                    <div className="text-[12px] font-extrabold leading-tight text-[#141414] truncate">
+                      Connect Gallery Template
+                    </div>
+                  </div>
+                </div>
+                {studioMode === "autoEdit" && autoEditTemplate === "gallery" ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-600/40 mono text-[8.5px] text-emerald-800 font-bold shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    ACTIVE
+                  </span>
+                ) : (
+                  <span className="mono text-[8.5px] px-1.5 py-0.5 rounded-full bg-[#ECEAE3] text-[#6B6A64] font-semibold shrink-0">
+                    TEMPLATE
+                  </span>
+                )}
               </div>
-              <div className="mono text-[10px] text-[#A1A1AA] mt-1.5 leading-[1.4]">
-                Paper physics + 60fps real type. Export as code.
-              </div>
+
+              {studioMode === "autoEdit" && autoEditTemplate === "gallery" ? (
+                <>
+                  <p className="mono text-[9.5px] text-[#6B6A64] mt-1.5 leading-[1.35]">
+                    {galleryClips.length > 0
+                      ? `${galleryFolderName || "Gallery"} (${galleryClips.length} clips) connected. Upload your video below to match B-roll.`
+                      : "Gallery template selected! Connect your folder or clips below, then upload your talking video."}
+                  </p>
+
+                  {galleryClips.length > 0 && (
+                    <div className="mt-2 max-h-[76px] overflow-y-auto space-y-1 pr-0.5">
+                      {galleryClips.map((clip) => (
+                        <div
+                          key={clip.id}
+                          className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-[#F7F5EF] border border-[#D5D2C8] text-[10px]"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Film size={10} className="text-[#E4491B] shrink-0" />
+                            <span className="font-semibold text-[#141414] truncate">
+                              {clip.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {clip.tags[0] && (
+                              <span className="px-1 py-0.2 rounded bg-[#F6D9CC] text-[#E4491B] mono text-[8px] font-bold uppercase">
+                                #{clip.tags[0]}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setGalleryClips((prev) => prev.filter((c) => c.id !== clip.id))
+                              }
+                              className="text-[#6B6A64] hover:text-rose-600 p-0.5"
+                              title="Remove clip"
+                            >
+                              <X size={9} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => galleryFolderInputRef.current?.click()}
+                      className="flex-1 py-1.5 px-2 rounded-xl border-2 border-[#141414] bg-[#141414] hover:bg-[#292524] text-white mono text-[9.5px] font-bold flex items-center justify-center gap-1 transition active:scale-95"
+                    >
+                      <FolderOpen size={11} className="text-[#E4491B]" />
+                      <span>{galleryClips.length > 0 ? "Folder" : "Connect Folder"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => galleryFilesInputRef.current?.click()}
+                      className="py-1.5 px-2 rounded-xl border-2 border-[#141414] bg-[#F6D9CC] hover:bg-[#E4491B] hover:text-white text-[#141414] mono text-[9.5px] font-bold flex items-center justify-center gap-1 transition active:scale-95"
+                    >
+                      <Plus size={11} />
+                      <span>Clips</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => editFileInputRef.current?.click()}
+                      className="py-1.5 px-2 rounded-xl border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] text-white mono text-[9.5px] font-bold flex items-center justify-center gap-1 transition active:scale-95"
+                      title="Upload talking-head video to edit with this gallery"
+                    >
+                      <Upload size={11} />
+                      <span>Video</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mono text-[9.5px] text-[#6B6A64] mt-1.5 leading-[1.35]">
+                    Only scans your gallery folder & adds B-roll when you choose the Connect Gallery template.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStudioMode("autoEdit");
+                      setAutoEditTemplate("gallery");
+                    }}
+                    className="mt-2 w-full py-1.5 px-2.5 rounded-xl border-2 border-[#141414] bg-[#141414] hover:bg-[#E4491B] text-white mono text-[10px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95"
+                  >
+                    <FolderOpen size={11} className="text-[#FFE814]" />
+                    <span>Use Connect Gallery Template</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </aside>
@@ -3212,7 +3666,7 @@ export default function ProperMobileResponsiveChat() {
                             </div>
                             <div>
                               <div className="mono text-[11px] font-bold tracking-[0.08em] text-[#141414] flex items-center gap-1.5">
-                                <span>ZEE • PAPER STUDIO</span>
+                                <span>ZEE • ZEROEDITS</span>
                                 {isSelectedReel && (
                                   <span className="px-1.5 py-0.2 rounded-full bg-[#F6D9CC] text-[#E4491B] text-[8.5px] uppercase font-semibold">Active In Preview</span>
                                 )}
@@ -3381,10 +3835,25 @@ export default function ProperMobileResponsiveChat() {
                                           variant: "secondary" as const,
                                           onClick: () => {
                                             setSelectedMessageId(message.id);
-                                            handleOpenFullReel(message);
-                                            setTimeout(() => {
-                                              window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
-                                            }, 400);
+                                            const rid = message.pipelineBRunId || message.editPlan?.runId;
+                                            void rid;
+                                            // Always export via the template renderer (same as preview).
+                                            const directUrl: string | null = null;
+
+                                            if (directUrl) {
+                                              const cleanTopic = (message.topic || message.text || "Zee_Reel")
+                                                .replace(/[^a-zA-Z0-9_-]/g, "_")
+                                                .slice(0, 36)
+                                                .replace(/_+/g, "_")
+                                                .replace(/^_|_$/g, "");
+                                              const filename = `${cleanTopic || "Zee_Reel"}_1080x1920.mp4`;
+                                              triggerUserDownload(directUrl, filename, message.topic || message.text);
+                                            } else {
+                                              handleOpenFullReel(message);
+                                              setTimeout(() => {
+                                                window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
+                                              }, 400);
+                                            }
                                           },
                                         },
                                       ]
@@ -3425,15 +3894,38 @@ export default function ProperMobileResponsiveChat() {
                                     onClick: () => {
                                       setSelectedMessageId(message.id);
                                       if (message.audioStory) {
-                                        handleOpenFullReel(message);
-                                        setTimeout(() => {
-                                          window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
-                                        }, 400);
+                                        if (message.audioStory.finalVideoUrl) {
+                                           const filename = `${(message.audioStory.title || "Story_Reel").replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`;
+                                           triggerUserDownload(`${message.audioStory.finalVideoUrl}&download=1`, filename, message.audioStory.title);
+                                         } else {
+                                          handleOpenFullReel(message);
+                                          setTimeout(() => {
+                                            window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
+                                          }, 400);
+                                        }
                                       } else if (message.videoUrl || message.finalDownloadUrl || message.pipelineBRunId) {
-                                        handleOpenFullReel(message);
-                                        setTimeout(() => {
-                                          window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
-                                        }, 400);
+                                        const rid = message.pipelineBRunId || message.editPlan?.runId;
+                                        void rid;
+                                        const directUrl: string | null = null;
+
+                                        if (directUrl) {
+                                          const a = document.createElement("a");
+                                          a.href = directUrl;
+                                          const cleanTopic = (message.topic || message.text || "Zee_Reel")
+                                            .replace(/[^a-zA-Z0-9_-]/g, "_")
+                                            .slice(0, 36)
+                                            .replace(/_+/g, "_")
+                                            .replace(/^_|_$/g, "");
+                                          a.download = `${cleanTopic || "Zee_Reel"}_1080x1920.mp4`;
+                                          document.body.appendChild(a);
+                                          a.click();
+                                          document.body.removeChild(a);
+                                        } else {
+                                          handleOpenFullReel(message);
+                                          setTimeout(() => {
+                                            window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
+                                          }, 400);
+                                        }
                                       } else {
                                         setIsExportModalOpen(true);
                                       }
@@ -3478,13 +3970,14 @@ export default function ProperMobileResponsiveChat() {
                                 error={message.generationError}
                                 timing={message.timing}
                                 onEdit={(scene) => { setSelectedMessageId(message.id); setInput(`Recreate scene ${scene}: `); textareaRef.current?.focus(); }}
-                                onRecreateScene={(sceneIdx, instruction, customStart, customEnd) =>
+                                onRecreateScene={(sceneIdx, instruction, customStart, customEnd, visualStyle) =>
                                   handleRecreateSingleScene(
                                     message,
                                     sceneIdx,
                                     instruction,
                                     customStart,
-                                    customEnd
+                                    customEnd,
+                                    visualStyle || "auto"
                                   )
                                 }
                                 disabled={isGenerating || isGeneratingCode}
@@ -3870,8 +4363,17 @@ export default function ProperMobileResponsiveChat() {
                   {studioMode === "autoEdit" && showEditScript && (
                     <div className="px-3.5 pt-2.5">
                       <div className="rounded-[14px] border-2 border-dashed border-[#141414]/30 bg-[#F6F4EE] p-2.5">
-                        <div className="mono text-[10px] uppercase tracking-widest text-[#6B6A64] font-semibold px-1 pb-1.5">
-                          Pipeline B Script — AI matches speech to this
+                        <div className="flex items-center justify-between px-1 pb-1.5">
+                          <div className="mono text-[10px] uppercase tracking-widest text-[#6B6A64] font-semibold">
+                            Pipeline B Script — AI matches speech to this
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveHeaderTab("script")}
+                            className="mono text-[10px] font-bold text-[#15803D] hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles size={11} /> Browse Script Cards
+                          </button>
                         </div>
                         <textarea
                           value={editScript}
@@ -4078,7 +4580,7 @@ export default function ProperMobileResponsiveChat() {
                         className={`h-7 px-2 sm:px-2.5 rounded-full border-2 flex items-center gap-1 mono text-[10px] sm:text-[11px] font-bold transition active:scale-95 shrink-0 whitespace-nowrap ${
                           activePopover === "format" ||
                           (studioMode === "autoEdit"
-                            ? autoEditTemplate === "storyExplainer"
+                            ? autoEditTemplate !== "auto"
                             : format !== "auto")
                             ? "bg-[#E4491B] text-white border-[#141414] shadow-[1px_1px_0px_#141414]"
                             : "bg-[#FFFFFF] border-[#141414]/30 text-[#141414] hover:border-[#141414]"
@@ -4094,6 +4596,8 @@ export default function ProperMobileResponsiveChat() {
                                 ? "#00D9FF"
                                 : format === "anime"
                                 ? "#FF3366"
+                                : format === "clay3d"
+                                ? "#E76F51"
                                 : format === "minimal"
                                 ? "#111111"
                                 : currentFormat?.swatch || "#FF5520",
@@ -4341,7 +4845,7 @@ export default function ProperMobileResponsiveChat() {
 
               <div className="mt-2.5 flex items-center justify-center gap-2 mono text-[10px] lg:text-[11px] text-[#6B6A64]/80 text-center leading-[1.3] px-4">
                 <span>
-                  AI Studio • Paper format generates fresh 60fps animations each time.
+                  AI Studio • Zeroedits generates fresh 60fps animations each time.
                 </span>
                 <span className="hidden sm:inline w-1 h-1 rounded-full bg-[#EAE7DF]" />
                 <span className="hidden sm:inline">
@@ -4362,29 +4866,31 @@ export default function ProperMobileResponsiveChat() {
         {/* Right Desktop Preview & Timeline */}
         <aside className="hidden lg:flex w-[400px] shrink-0 border-l border-[#D5D2C8] bg-gradient-to-b from-[#FFFDF9] via-[#FAF6EE] to-[#F5EFE6] flex-col items-center sticky top-0 h-screen overflow-y-auto scrollbar-none shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.04)] z-30">
           <div className="py-3 px-2 w-full max-w-[365px] flex flex-col">
-            <div className="flex items-center justify-between mb-4 px-1">
+            <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-1.5 mono text-[11px] uppercase tracking-widest text-[#6B6A64] font-semibold">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#E4491B] animate-pulse" />
                 <span>Live Preview • 9:16</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() =>
-                    setActiveBeat((prev) => Math.max(0, prev - 1))
-                  }
-                  aria-label="Previous beat"
-                  className="w-8 h-8 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] grid place-items-center hover:bg-[#EAE7DF] hover:border-[#E4491B]/40 transition active:scale-95 shadow-xs"
-                >
-                  <RotateCcw size={14} className="text-[#141414]" />
-                </button>
-                <button
-                  onClick={() => setIsPlaying((prev) => !prev)}
-                  aria-label={isPlaying ? "Pause" : "Play"}
-                  className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E4491B] to-[#E4491B] text-white grid place-items-center hover:brightness-125 transition active:scale-95 shadow-xs"
-                >
-                  {isPlaying ? <Pause size={14} /> : <Play size={14} className="text-[#C93D14]" />}
-                </button>
-              </div>
+              {!(activeMessage?.videoUrl || activeMessage?.finalDownloadUrl) && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() =>
+                      setActiveBeat((prev) => Math.max(0, prev - 1))
+                    }
+                    aria-label="Previous beat"
+                    className="w-8 h-8 rounded-full bg-[#F7F5EF] border border-[#D5D2C8] grid place-items-center hover:bg-[#EAE7DF] hover:border-[#E4491B]/40 transition active:scale-95 shadow-xs"
+                  >
+                    <RotateCcw size={14} className="text-[#141414]" />
+                  </button>
+                  <button
+                    onClick={() => setIsPlaying((prev) => !prev)}
+                    aria-label={isPlaying ? "Pause" : "Play"}
+                    className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E4491B] to-[#E4491B] text-white grid place-items-center hover:brightness-125 transition active:scale-95 shadow-xs"
+                  >
+                    {isPlaying ? <Pause size={14} /> : <Play size={14} className="text-[#C93D14]" />}
+                  </button>
+                </div>
+              )}
             </div>
 
             <PreviewCard
@@ -4412,9 +4918,10 @@ export default function ProperMobileResponsiveChat() {
               onReady={handlePreviewReady}
               onError={handlePreviewError}
               onExportMP4={() => setIsExportModalOpen(true)}
-              onRecreateScene={(sceneIdx, instruction) =>
+              galleryClips={activeMessage?.editPlan?.templateId === "gallery" ? galleryClips : []}
+              onRecreateScene={(sceneIdx, instruction, visualStyle) =>
                 activeMessage
-                  ? handleRecreateSingleScene(activeMessage, sceneIdx, instruction)
+                  ? handleRecreateSingleScene(activeMessage, sceneIdx, instruction, undefined, undefined, visualStyle)
                   : Promise.resolve()
               }
             />
@@ -4492,9 +4999,10 @@ export default function ProperMobileResponsiveChat() {
                       onReady={handlePreviewReady}
                       onError={handlePreviewError}
                       onExportMP4={() => setIsExportModalOpen(true)}
-                      onRecreateScene={(sceneIdx, instruction) =>
+                      galleryClips={activeMessage?.editPlan?.templateId === "gallery" ? galleryClips : []}
+                      onRecreateScene={(sceneIdx, instruction, visualStyle) =>
                         activeMessage
-                          ? handleRecreateSingleScene(activeMessage, sceneIdx, instruction)
+                          ? handleRecreateSingleScene(activeMessage, sceneIdx, instruction, undefined, undefined, visualStyle)
                           : Promise.resolve()
                       }
                     />
@@ -4625,12 +5133,34 @@ export default function ProperMobileResponsiveChat() {
                 <button
                   onClick={() => {
                     if (activeMessage?.audioStory) {
-                      window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
+                      if (activeMessage.audioStory.finalVideoUrl) {
+                        const filename = `${(activeMessage.audioStory.title || "Story_Reel").replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`;
+                        triggerUserDownload(`${activeMessage.audioStory.finalVideoUrl}&download=1`, filename, activeMessage.audioStory.title);
+                      } else {
+                        window.dispatchEvent(new CustomEvent("export-audio-story-mp4"));
+                      }
                     } else if (
                       activeMessage?.pipeline === "pipeline-b" ||
                       activeMessage?.videoUrl ||
                       activeMessage?.finalDownloadUrl
                     ) {
+                      const rid = activeMessage?.pipelineBRunId || activeMessage?.editPlan?.runId;
+                      const directUrl = activeMessage?.finalDownloadUrl
+                        ? `${activeMessage.finalDownloadUrl}${activeMessage.finalDownloadUrl.includes("?") ? "&" : "?"}download=1`
+                        : rid
+                        ? `/api/pipeline-b/media/${rid}/final?download=1`
+                        : activeMessage?.videoUrl
+                        ? `${activeMessage.videoUrl}${activeMessage.videoUrl.includes("?") ? "&" : "?"}download=1`
+                        : null;
+                      const cleanTopic = (activeMessage?.topic || activeMessage?.text || "Zee_Reel")
+                        .replace(/[^a-zA-Z0-9_-]/g, "_")
+                        .slice(0, 36)
+                        .replace(/_+/g, "_")
+                        .replace(/^_|_$/g, "");
+                      const filename = `${cleanTopic || "Zee_Reel"}_1080x1920.mp4`;
+
+                      void directUrl;
+                      void filename;
                       window.dispatchEvent(new CustomEvent("export-pipeline-b-mp4"));
                     } else {
                       setIsExportModalOpen(true);
@@ -4704,6 +5234,24 @@ export default function ProperMobileResponsiveChat() {
                     );
                   }
 
+                  if (regeneratedSceneCode) {
+                    return (
+                      <div className="w-full max-w-[360px] flex flex-col items-center">
+                        <SparkLiveRunner
+                          code={regeneratedSceneCode}
+                          duration={regeneratedSceneDuration}
+                          replayKey={replayKey}
+                          theme={activeMessage?.storyboard?.theme || currentTheme}
+                          storyboard={activeMessage?.storyboard}
+                          topic={activeMessage?.beats?.[codeModalBeat?.id ? Number(codeModalBeat.id) - 1 : 0]?.script || activeMessage?.text || input}
+                          showControls={true}
+                          onReady={handlePreviewReady}
+                          onError={handlePreviewError}
+                        />
+                      </div>
+                    );
+                  }
+
                   if (activeMessage?.videoUrl || activeMessage?.finalDownloadUrl) {
                     return (
                       <div className="w-full max-w-[360px] flex flex-col items-center">
@@ -4714,18 +5262,22 @@ export default function ProperMobileResponsiveChat() {
                           editPlan={activeMessage.editPlan}
                           beats={currentBeats}
                           topic={activeMessage.text || input}
+                          galleryClips={activeMessage?.editPlan?.templateId === "gallery" ? galleryClips : []}
+                          onRecreateScene={(sceneIdx, instruction, visualStyle) =>
+                            handleRecreateSingleScene(activeMessage, sceneIdx, instruction, undefined, undefined, visualStyle)
+                          }
                         />
                       </div>
                     );
                   }
 
-                  if (sparkError || (sparkCodeToRun && !sparkCodeToRun.startsWith("// Connecting"))) {
+                  if (regeneratedSceneCode || sparkError || (sparkCodeToRun && !sparkCodeToRun.startsWith("// Connecting"))) {
                     return (
                       <div className="w-full max-w-[360px] flex flex-col items-center">
                         <div className="w-full aspect-[9/16] rounded-[28px] border-2 border-[#D5D2C8] shadow-[0_28px_60px_-16px_rgba(0,0,0,0.35)] overflow-hidden relative bg-[#E4491B]">
                           <SparkLiveRunner
-                            code={sparkCodeToRun || ""}
-                            duration={totalSec}
+                            code={regeneratedSceneCode || sparkCodeToRun || ""}
+                            duration={regeneratedSceneCode ? regeneratedSceneDuration : totalSec}
                             replayKey={replayKey}
                             theme={currentTheme}
                             storyboard={currentStoryboard || activeMessage?.storyboard}
@@ -4973,12 +5525,69 @@ export default function ProperMobileResponsiveChat() {
         duration={Number((activeMessage?.timing || timing).replace("s", "")) || 15}
         timing={activeMessage?.timing || timing}
         theme={currentTheme}
-        topic={activeMessage?.topic || activeMessage?.text || input || "Paper Studio Reel"}
+        topic={activeMessage?.topic || activeMessage?.text || input || "Zeroedits Reel"}
         format={activeMessage?.format || format}
         storyboard={currentStoryboard || activeMessage?.storyboard}
-        sparkCode={codeModalContent || currentSparkCode || activeMessage?.sparkCode || ""}
+        sparkCode={regeneratedSceneCode
+          ? (activeMessage?.sparkCode || currentSparkCode || "")
+          : (codeModalContent || currentSparkCode || activeMessage?.sparkCode || "")}
         voiceTracks={activeMessage?.voiceTracks}
+        regeneratedSceneCode={regeneratedSceneCode}
+        regeneratedSceneDuration={regeneratedSceneDuration}
+        regeneratedSceneStart={regeneratedSceneStart}
+        pipelineBVideoUrl={activeMessage?.videoUrl}
       />
+
+      {/* Floating Download Manager Notification */}
+      {activeDownloadNotification?.isOpen && (
+        <div className="fixed bottom-6 right-6 z-[99999] max-w-sm w-full bg-[#12141C] text-white border-2 border-[#E4491B] rounded-2xl p-4 shadow-[0_15px_50px_rgba(0,0,0,0.85)] animate-fade-in flex flex-col gap-2.5">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center gap-2">
+              {activeDownloadNotification.status === "downloading" ? (
+                <div className="w-5 h-5 rounded-full bg-[#E4491B]/20 grid place-items-center">
+                  <Loader2 size={13} className="animate-spin text-[#E4491B]" />
+                </div>
+              ) : (
+                <div className="w-5 h-5 rounded-full bg-emerald-500/20 grid place-items-center">
+                  <CheckCircle2 size={13} className="text-emerald-400" />
+                </div>
+              )}
+              <span className="mono text-[11px] font-bold tracking-wider uppercase text-white">
+                {activeDownloadNotification.status === "downloading" ? "DOWNLOADING REEL" : "DOWNLOAD READY"}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveDownloadNotification(null)}
+              className="w-6 h-6 rounded-full hover:bg-white/15 grid place-items-center text-white/60 hover:text-white transition cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="text-[12px] space-y-0.5">
+            <p className="font-bold text-white truncate">{activeDownloadNotification.filename}</p>
+            <p className="text-[11px] text-white/70">{activeDownloadNotification.message}</p>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <a
+              href={activeDownloadNotification.downloadUrl}
+              download={activeDownloadNotification.filename}
+              className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white mono text-[11px] font-bold text-center transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+            >
+              <Download size={13} />
+              <span>Save Video (.MP4)</span>
+            </a>
+            <a
+              href={activeDownloadNotification.downloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white mono text-[11px] text-center transition cursor-pointer"
+            >
+              Open ↗
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
