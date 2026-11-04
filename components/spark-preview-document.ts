@@ -88,28 +88,28 @@ window.addEventListener('error', function(event) {
 }, true);
 window.addEventListener('unhandledrejection', function(event) { failPreview(event.reason); });
 </script>
-<script data-spark-runtime="React" src="/api/preview-runtime?module=react"></script>
+<script data-spark-runtime="React" src="/api/preview-runtime?module=react" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js'"></script>
 <script>window.react = window.React;</script>
-<script data-spark-runtime="React DOM" src="/api/preview-runtime?module=react-dom"></script>
-<script data-spark-runtime="Framer Motion" src="/api/preview-runtime?module=framer-motion"></script>
-<script data-spark-runtime="Lucide icons" src="/api/preview-runtime?module=lucide-react"></script>
-<script data-spark-runtime="the animation compiler" src="/api/preview-runtime?module=babel" onerror="this.onerror=null;this.src='https://unpkg.com/@babel/standalone@7.24.0/babel.min.js'"></script>
+<script data-spark-runtime="React DOM" src="/api/preview-runtime?module=react-dom" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js'"></script>
+<script data-spark-runtime="Framer Motion" src="/api/preview-runtime?module=framer-motion" onerror="this.onerror=null;this.src='https://unpkg.com/framer-motion@11.11.17/dist/framer-motion.js'"></script>
+<script data-spark-runtime="Lucide icons" src="/api/preview-runtime?module=lucide-react" onerror="this.onerror=null;this.src='https://unpkg.com/lucide-react@0.468.0/dist/umd/lucide-react.min.js'"></script>
+<script data-spark-runtime="the animation compiler" src="/api/preview-runtime?module=babel" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js'"></script>
 </head><body><div id="stage-container"><div id="root"></div></div>
 <script>
 (function() {
   if (previewFailed) return;
-  // Guard SVG Element attributes against NaN values from animations or Lucide icons
+  // Guard SVG Element attributes against NaN / undefined values from animations or Lucide icons
   try {
     const origSetAttr = SVGElement.prototype.setAttribute;
     SVGElement.prototype.setAttribute = function(name, val) {
-      if (val === 'NaN' || (typeof val === 'number' && Number.isNaN(val))) {
+      if (val === 'NaN' || (typeof val === 'number' && Number.isNaN(val)) || val === 'undefined' || val === undefined || val === null) {
         val = '0';
       }
       return origSetAttr.call(this, name, val);
     };
     const origSetAttrNS = SVGElement.prototype.setAttributeNS;
     SVGElement.prototype.setAttributeNS = function(ns, name, val) {
-      if (val === 'NaN' || (typeof val === 'number' && Number.isNaN(val))) {
+      if (val === 'NaN' || (typeof val === 'number' && Number.isNaN(val)) || val === 'undefined' || val === undefined || val === null) {
         val = '0';
       }
       return origSetAttrNS.call(this, ns, name, val);

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -885,11 +885,18 @@ export default function ScriptRoom({
                   <path d="M8 38H170" fill="none" stroke="#d8bea4" strokeWidth="2" strokeLinecap="round" />
                   <path d="M8 38H170" fill="none" stroke="#df8058" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="5 9" className="memory-brain-wire" />
                   <circle cx="34" cy="38" r="2.5" fill="#c6a888" /><circle cx="83" cy="38" r="2.5" fill="#c6a888" /><circle cx="132" cy="38" r="2.5" fill="#c6a888" />
-                  <motion.circle key={`brain-feed-${brainFeedCount}`} cx="8" cy="38" r="4" fill="#e86c45" animate={{ cx: [8, 170], opacity: [0, 1, 1, 0], scale: [0.7, 1.15, 0.9] }} transition={{ duration: brainFeedCount ? 1.45 : 3.1, repeat: brainFeedCount ? 1 : Infinity, repeatDelay: brainFeedCount ? 0 : 0.8, ease: "easeInOut" }} />
+                  <motion.g
+                    key={`brain-feed-${brainFeedCount}`}
+                    initial={{ x: 0, opacity: 0 }}
+                    animate={{ x: [0, 162], opacity: [0, 1, 1, 0], scale: [0.7, 1.15, 0.9] }}
+                    transition={{ duration: brainFeedCount ? 1.45 : 3.1, repeat: brainFeedCount ? 1 : Infinity, repeatDelay: brainFeedCount ? 0 : 0.8, ease: "easeInOut" }}
+                  >
+                    <circle cx={8} cy={38} r={4} fill="#e86c45" />
+                  </motion.g>
                   <path d="M190 11c-6-5-14-2-15 5-8 1-11 10-6 16-6 7-2 16 6 16 3 8 12 9 18 3 6 5 15 1 15-7 8-3 9-13 3-18 2-8-5-14-13-11-2-7-9-9-15-4z" fill={memories.length ? "#f2d7bc" : "#fffaf1"} stroke="#9c7559" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M192 13c-3 5-2 10 1 14-4 4-4 9 0 12-3 5-2 8 1 11M178 18c4 2 5 6 3 10M171 33c5 0 8 2 10 5M177 47c5-1 8-3 10-7M211 18c-4 2-5 6-3 10M219 33c-5 0-8 2-10 5M214 47c-5-1-8-3-10-7" fill="none" stroke="#b38c70" strokeWidth="1.15" strokeLinecap="round" strokeDasharray="2 2" />
                   <path d="M170 38l10-7m-10 7l10 8" fill="none" stroke="#df8058" strokeWidth="1.5" strokeLinecap="round" />
-                  {memoryBrainNodes.map(([x, y], index) => <motion.circle key={`${x}-${y}`} cx={x} cy={y} r={index < memories.length ? 2.6 : 1.7} fill={index < memories.length ? memoryPalette[index % memoryPalette.length] : "#fffdf8"} stroke={index < memories.length ? "#9c7559" : "#cbb9a4"} strokeWidth="1" animate={{ opacity: index < memories.length ? [0.65, 1, 0.65] : [0.35, 0.65, 0.35], scale: index < memories.length ? [0.9, 1.2, 0.9] : [0.9, 1, 0.9] }} transition={{ duration: 1.9 + (index % 4) * 0.3, repeat: Infinity, delay: index * 0.09, ease: "easeInOut" }} style={{ transformBox: "fill-box", transformOrigin: "center" }} />)}
+                  {memoryBrainNodes.map(([x, y], index) => <motion.circle key={`${x}-${y}`} cx={x ?? 180} cy={y ?? 30} r={index < memories.length ? 2.6 : 1.7} fill={index < memories.length ? memoryPalette[index % memoryPalette.length] : "#fffdf8"} stroke={index < memories.length ? "#9c7559" : "#cbb9a4"} strokeWidth="1" animate={{ opacity: index < memories.length ? [0.65, 1, 0.65] : [0.35, 0.65, 0.35], scale: index < memories.length ? [0.9, 1.2, 0.9] : [0.9, 1, 0.9] }} transition={{ duration: 1.9 + (index % 4) * 0.3, repeat: Infinity, delay: index * 0.09, ease: "easeInOut" }} style={{ transformBox: "fill-box", transformOrigin: "center" }} />)}
                 </svg>
               </div>
             </div>

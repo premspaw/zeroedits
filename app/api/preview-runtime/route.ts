@@ -12,6 +12,14 @@ const runtimeFiles: Record<string, string> = {
   babel: "public/vendor/babel.min.js",
 };
 
+const runtimeCdn: Record<string, string> = {
+  react: "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js",
+  "react-dom": "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js",
+  "framer-motion": "https://unpkg.com/framer-motion@11.11.17/dist/framer-motion.js",
+  "lucide-react": "https://unpkg.com/lucide-react@0.468.0/dist/umd/lucide-react.min.js",
+  babel: "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js",
+};
+
 const memoryCache = new Map<string, string>();
 
 export async function GET(request: NextRequest) {
@@ -29,6 +37,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // 1. Try reading from local filesystem (works in local dev & Docker)
   try {
     const fullPath = path.join(process.cwd(), relativeFile);
     const source = await readFile(fullPath, "utf8");
@@ -40,8 +49,28 @@ export async function GET(request: NextRequest) {
         "X-Content-Type-Options": "nosniff",
       },
     });
-  } catch (err) {
-    console.warn(`[preview-runtime] Could not load ${moduleName}:`, err);
+  } catch {
+    // 2. On serverless platforms (Vercel) where node_modules files are not packaged, fallback to CDN
+    const cdnUrl = runtimeCdn[moduleName];
+    if (cdnUrl) {
+      try {
+        const cdnRes = await fetch(cdnUrl, { next: { revalidate: 86400 } });
+        if (cdnRes.ok) {
+          const source = await cdnRes.text();
+          memoryCache.set(moduleName, source);
+          return new NextResponse(source, {
+            headers: {
+              "Content-Type": "application/javascript; charset=utf-8",
+              "Cache-Control": "public, max-age=86400, immutable",
+              "X-Content-Type-Options": "nosniff",
+            },
+          });
+        }
+      } catch (cdnErr) {
+        console.warn(`[preview-runtime] Failed CDN fetch for ${moduleName}:`, cdnErr);
+      }
+    }
+
     return new NextResponse("Preview dependency is unavailable", { status: 503 });
   }
 }

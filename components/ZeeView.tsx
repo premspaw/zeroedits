@@ -1,20 +1,19 @@
-"use client";
+﻿"use client";
 
-import React, { useState } from "react";
+import React from "react";
 import {
-  Sparkles,
-  Scissors,
-  Layers,
-  Video,
   ArrowRight,
-  Brain,
-  Zap,
-  CheckCircle2,
-  User,
   BookOpen,
+  Brain,
+  CheckCircle2,
+  Mic,
+  Scissors,
   Sliders,
+  Sparkles,
+  User,
+  Video,
 } from "lucide-react";
-import Pip, { PipMood } from "./Pip";
+import Pip from "./Pip";
 import type { HeaderTab } from "./AppleDockNav";
 import { useZeeBrain } from "@/lib/zee-brain";
 
@@ -25,274 +24,186 @@ interface ZeeViewProps {
   totalReelsCount?: number;
 }
 
+const FORMAT_OPTIONS = [
+  ["auto", "Let Z choose"],
+  ["cutout", "Talking head + cutouts"],
+  ["storyExplainer", "Story explainer"],
+  ["paperCut", "Paper cut"],
+  ["clay3d", "Clay 3D"],
+  ["imageStory", "Image storyteller"],
+  ["paperCard", "Paper card"],
+  ["blackNeon", "Black neon"],
+  ["minimal", "Minimal"],
+] as const;
+
 export default function ZeeView({
   onSwitchToTab,
-  recentTopic = "Photosynthesis: How Plants Make Food",
+  recentTopic,
+  totalReelsCount = 0,
 }: ZeeViewProps) {
-  const { brain } = useZeeBrain();
-  const [pipMood, setPipMood] = useState<PipMood>("happy");
+  const { brain, updateBrain } = useZeeBrain();
+  const userName = brain.virtualYou.userName.trim();
+
+  const updatePreference = (
+    key: "voiceCadence" | "thinkingStyle" | "preferredFormat" | "signatureHookStyle" | "visualTaste",
+    value: string,
+  ) => {
+    updateBrain((prev) => ({
+      ...prev,
+      virtualYou: { ...prev.virtualYou, [key]: value },
+    }));
+  };
+
+  const stages: {
+    id: HeaderTab;
+    step: string;
+    title: string;
+    description: string;
+    action: string;
+    icon: React.ReactNode;
+    color: string;
+  }[] = [
+    {
+      id: "u",
+      step: "01 · UNDERSTAND",
+      title: "Give Z the story",
+      description: "Talk or type. Z saves the moment, reflects it back, and asks what it needs to understand better.",
+      action: "Open living memory",
+      icon: <Mic size={18} />,
+      color: "#A6573D",
+    },
+    {
+      id: "script",
+      step: "02 · WRITE",
+      title: "Shape it into a script",
+      description: "Turn a real memory or fresh idea into a spoken script, a series, or a documentary outline.",
+      action: "Open Script",
+      icon: <BookOpen size={18} />,
+      color: "#B7791F",
+    },
+    {
+      id: "edit",
+      step: "03 · MAKE",
+      title: "Build the video",
+      description: "Bring in your footage, review the transcript, and shape the edit, captions, visuals, and sound.",
+      action: "Open Video Studio",
+      icon: <Scissors size={18} />,
+      color: "#3467A8",
+    },
+    {
+      id: "post",
+      step: "04 · SHARE",
+      title: "Prepare to publish",
+      description: "Review the finished video and its export details before you share it.",
+      action: "Open publishing",
+      icon: <Video size={18} />,
+      color: "#39816A",
+    },
+  ];
 
   return (
-    <div className="mx-auto max-w-[1400px] w-full min-h-[calc(100vh-60px)] px-4 pt-1.5 pb-8 sm:px-8 sm:pt-2 sm:pb-10 animate-fade-in">
-      {/* Top Hero Banner */}
-      <div className="relative rounded-3xl border-2 border-[#141414] bg-gradient-to-br from-[#FAF8F3] via-[#F7F5EF] to-[#EFECE4] p-6 sm:p-10 shadow-[4px_4px_0px_#141414] overflow-hidden mb-8">
-        <div
-          className="absolute inset-0 opacity-[0.035] pointer-events-none"
-          style={{
-            backgroundImage: "radial-gradient(#141414 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
+    <div className="mx-auto w-full max-w-[1440px] px-3 pb-10 pt-2 sm:px-6 animate-fade-in">
+      <section className="grid gap-5 rounded-[28px] border border-[#e5ddd1] bg-gradient-to-br from-[#fffdfa] via-[#faf6ef] to-[#f4e9df] p-5 shadow-[0_18px_55px_rgba(54,42,28,0.07)] sm:p-8 lg:grid-cols-[1fr_300px] lg:items-center">
+        <div>
+          <p className="inline-flex items-center gap-2 rounded-full border border-[#a6573d]/20 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]">
+            <Sparkles size={12} /> Your creative partner
+          </p>
+          <h1 className="mt-3 max-w-3xl font-serif text-3xl font-semibold leading-tight tracking-tight text-[#25231f] sm:text-5xl">
+            Z helps you turn what matters into something you can share.
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#665d53] sm:text-base">
+            Start with your own story or an idea. Z helps you understand it, write it in your voice, shape the video, and prepare the finished piece. You can review and adjust each step.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <button type="button" onClick={() => onSwitchToTab("u")} className="inline-flex items-center gap-2 rounded-xl bg-[#a6573d] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#87462f]">
+              <Mic size={16} /> Talk to Z <ArrowRight size={15} />
+            </button>
+            <button type="button" onClick={() => onSwitchToTab("script")} className="inline-flex items-center gap-2 rounded-xl border border-[#d9cfc3] bg-white px-4 py-3 text-sm font-semibold text-[#37312b] transition hover:border-[#a6573d]">
+              <BookOpen size={16} /> Start a script
+            </button>
+          </div>
+        </div>
 
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E4491B]/10 border border-[#E4491B]/30 text-[#E4491B] mono text-[11px] font-bold uppercase tracking-wider mb-3">
-              <Sparkles size={12} />
-              <span>
-                Hey {brain.virtualYou.userName}, I Am Your Digital Brain ({brain.virtualYou.twinSyncScore}% Neural Sync)
-              </span>
-            </div>
-
-            <h1 className="serif text-3xl sm:text-5xl font-bold text-[#141414] tracking-tight leading-[1.1] mb-3">
-              Meet Zee. {brain.virtualYou.userName}&apos;s Living Second Mind & Reel Director.
-            </h1>
-
-            <p className="text-[15px] sm:text-[17px] text-[#55534E] leading-relaxed mb-6 font-normal">
-              I connect your{" "}
-              <strong className="text-[#141414]">
-                Personal Story Vault & Creative Gallery (You)
-              </strong>
-              ,{" "}
-              <strong className="text-[#141414]">Scripting</strong>,{" "}
-              <strong className="text-[#141414]">Video Studio</strong>, and{" "}
-              <strong className="text-[#141414]">Publishing</strong> into one continuous digital brain.
+        <div className="flex items-center gap-4 rounded-2xl border border-white/80 bg-white/80 p-4">
+          <Pip mood="happy" size={68} interactive showDialogue={false} />
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a6573d]">Z is ready</p>
+            <p className="mt-1 font-serif text-xl text-[#292722]">{userName ? `Welcome, ${userName}` : "Your workspace"}</p>
+            <p className="mt-1 text-xs leading-5 text-[#776d62]">
+              {brain.memories.length} saved {brain.memories.length === 1 ? "story" : "stories"} · {brain.gallery.length} visuals · {totalReelsCount} {totalReelsCount === 1 ? "script" : "scripts"} made
             </p>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => onSwitchToTab("u")}
-                className="px-5 py-2.5 rounded-full border-2 border-[#141414] bg-[#E4491B] hover:bg-[#C93D14] text-white mono text-[13px] font-bold flex items-center gap-2 shadow-[2px_2px_0px_#141414] active:translate-x-[1px] active:translate-y-[1px] transition cursor-pointer"
-              >
-                <User size={15} />
-                <span>Open {brain.virtualYou.userName}&apos;s Digital Brain</span>
-                <ArrowRight size={15} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onSwitchToTab("script")}
-                className="px-5 py-2.5 rounded-full border-2 border-[#141414] bg-[#FFFFFF] hover:bg-[#FAF8F3] text-[#141414] mono text-[13px] font-bold flex items-center gap-2 shadow-[2px_2px_0px_#141414] active:translate-x-[1px] active:translate-y-[1px] transition cursor-pointer"
-              >
-                <BookOpen size={14} className="text-[#E4491B]" />
-                <span>Scripting Stage</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onSwitchToTab("edit")}
-                className="px-5 py-2.5 rounded-full border-2 border-[#141414] bg-[#FFFFFF] hover:bg-[#FAF8F3] text-[#141414] mono text-[13px] font-bold flex items-center gap-2 shadow-[2px_2px_0px_#141414] active:translate-x-[1px] active:translate-y-[1px] transition cursor-pointer"
-              >
-                <Scissors size={14} className="text-[#2563EB]" />
-                <span>Video Studio</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Interactive Pip Companion */}
-          <div className="flex flex-col items-center p-6 rounded-2xl bg-[#FFFFFF]/90 border-2 border-[#141414] shadow-[3px_3px_0px_#141414] w-full sm:w-[320px] shrink-0 text-center">
-            <div className="mb-2">
-              <Pip
-                mood={pipMood}
-                size={76}
-                interactive={true}
-                showDialogue={false}
-              />
-            </div>
-
-            <div className="mono text-xs font-bold text-[#141414] uppercase tracking-wider mb-1">
-              Hey {brain.virtualYou.userName}, I Am Your Digital Brain
-            </div>
-            <div className="text-[12px] text-[#6B6A64] mb-3">
-              &ldquo;{brain.memories.length} memories & {brain.gallery.length} visual supply assets synced across every stage.&rdquo;
-            </div>
-
-            {/* Mood toggles */}
-            <div className="flex items-center justify-center gap-1.5 p-1 rounded-full bg-[#ECEAE3] border border-[#D5D2C8] w-full">
-              {(["happy", "thinking", "idea", "reading"] as PipMood[]).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setPipMood(m)}
-                  className={`px-2.5 py-1 rounded-full mono text-[10px] font-bold uppercase transition ${
-                    pipMood === m
-                      ? "bg-[#141414] text-white shadow-xs"
-                      : "text-[#6B6A64] hover:text-[#141414]"
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
+            {recentTopic && <p className="mt-2 truncate text-[10px] text-[#8a7e70]" title={recentTopic}>Last activity: {recentTopic}</p>}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Cross-Page Memory Pipeline (You -> Script -> Edit -> Post) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        {[
-          {
-            id: "u" as HeaderTab,
-            title: `1. ${brain.virtualYou.userName}'s Digital Brain`,
-            desc: `${brain.memories.length} stories + ${brain.gallery.length} curated workplace & travel visuals.`,
-            pill: "Voice + Visual Vault",
-            color: "#E4491B",
-          },
-          {
-            id: "script" as HeaderTab,
-            title: "2. Scripting Stage",
-            desc: `Weaves your reading rhythm & lived stories into scroll-stopping scripts.`,
-            pill: "Story Alchemy",
-            color: "#D97706",
-          },
-          {
-            id: "edit" as HeaderTab,
-            title: "3. Edit & Motion Stage",
-            desc: `Applies ${brain.virtualYou.preferredFormat} cutaways, dialogue cleanup & 60fps choreography.`,
-            pill: "Stage A + B Studio",
-            color: "#2563EB",
-          },
-          {
-            id: "post" as HeaderTab,
-            title: "4. Post & Distribute",
-            desc: `Exports verified 1080×1920 MP4 with captions crafted in ${brain.virtualYou.userName}'s voice.`,
-            pill: "1080×1920 MP4",
-            color: "#059669",
-          },
-        ].map((stage) => (
-          <div
-            key={stage.id}
-            onClick={() => onSwitchToTab(stage.id)}
-            className="p-5 rounded-2xl border-2 border-[#141414] bg-white hover:bg-[#FAF8F3] shadow-[3px_3px_0px_#141414] flex flex-col justify-between cursor-pointer transition"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span
-                  className="mono text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#FAF8F3] border"
-                  style={{ color: stage.color, borderColor: stage.color }}
-                >
-                  {stage.pill}
-                </span>
-                <ArrowRight size={13} className="text-[#141414]" />
-              </div>
-              <h3 className="serif text-lg font-bold text-[#141414] mb-1">
-                {stage.title}
-              </h3>
-              <p className="text-xs text-[#55534E] leading-relaxed">
-                {stage.desc}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* 3 Core Architecture Pillars */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="p-6 rounded-2xl border-2 border-[#141414] bg-[#FFFFFF] shadow-[3px_3px_0px_#141414]">
-          <div className="w-10 h-10 rounded-xl bg-[#E4491B]/10 border border-[#E4491B]/30 text-[#E4491B] flex items-center justify-center mb-4">
-            <Brain size={20} />
-          </div>
-          <h3 className="serif text-xl font-bold text-[#141414] mb-2">
-            Stage A: Editorial Cleanup
-          </h3>
-          <p className="text-[13px] text-[#55534E] leading-relaxed mb-4">
-            Spots false starts, stammers, and filler sounds. Protects rhetorical delivery while cutting dead air to hook viewers instantly.
-          </p>
-          <div className="mono text-[11px] font-bold text-emerald-700 flex items-center gap-1.5">
-            <CheckCircle2 size={13} />
-            <span>Deterministic cut verification</span>
-          </div>
-        </div>
-
-        <div className="p-6 rounded-2xl border-2 border-[#141414] bg-[#FFFFFF] shadow-[3px_3px_0px_#141414]">
-          <div className="w-10 h-10 rounded-xl bg-[#2563EB]/10 border border-[#2563EB]/30 text-[#2563EB] flex items-center justify-center mb-4">
-            <Layers size={20} />
-          </div>
-          <h3 className="serif text-xl font-bold text-[#141414] mb-2">
-            Stage B: Minimalist Motion
-          </h3>
-          <p className="text-[13px] text-[#55534E] leading-relaxed mb-4">
-            Alternates smoothly between full-screen face value and 100% full-screen visual cutaways with zero clashing or overlapping graphics.
-          </p>
-          <div className="mono text-[11px] font-bold text-[#2563EB] flex items-center gap-1.5">
-            <CheckCircle2 size={13} />
-            <span>Dialogue-grounded cards</span>
-          </div>
-        </div>
-
-        <div className="p-6 rounded-2xl border-2 border-[#141414] bg-[#FFFFFF] shadow-[3px_3px_0px_#141414]">
-          <div className="w-10 h-10 rounded-xl bg-[#059669]/10 border border-[#059669]/30 text-[#059669] flex items-center justify-center mb-4">
-            <Zap size={20} />
-          </div>
-          <h3 className="serif text-xl font-bold text-[#141414] mb-2">
-            Deterministic Export
-          </h3>
-          <p className="text-[13px] text-[#55534E] leading-relaxed mb-4">
-            Frame-by-frame seek and decode at exact timestamps. Shared 2D canvas compositor ensures preview and download match 1:1 with lossless stereo audio.
-          </p>
-          <div className="mono text-[11px] font-bold text-[#059669] flex items-center gap-1.5">
-            <CheckCircle2 size={13} />
-            <span>Verified 1080×1920 MP4</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Cross-Page Brain Activity Log & Quick Launchpad */}
-      <div className="p-6 rounded-2xl border-2 border-[#141414] bg-[#FAF8F3] shadow-[3px_3px_0px_#141414] flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#141414] text-white flex items-center justify-center font-black text-sm shrink-0">
-            Z
-          </div>
+      <section className="mt-7">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <div className="mono text-xs font-bold text-[#141414] uppercase flex items-center gap-2">
-              <span>Digital Brain Pulse</span>
-              <span className="text-[#E4491B]">
-                • {brain.activityLogs[0]?.action || recentTopic}
-              </span>
-            </div>
-            <div className="text-sm font-semibold text-[#55534E]">
-              Latest Spark: &ldquo;{brain.variables["user.todayInsight"]}&rdquo;
-            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]">How it works</p>
+            <h2 className="mt-1 font-serif text-2xl text-[#292722]">From your first thought to a finished video</h2>
           </div>
+          <p className="text-xs text-[#82796f]">You stay in control at every step.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {stages.map((stage) => (
+            <button key={stage.id} type="button" onClick={() => onSwitchToTab(stage.id)} className="group flex min-h-[210px] flex-col rounded-2xl border border-[#e8e1d7] bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#c4aa97] hover:shadow-md">
+              <div className="flex w-full items-center justify-between">
+                <span className="text-[9px] font-semibold tracking-[0.12em]" style={{ color: stage.color }}>{stage.step}</span>
+                <span className="grid h-9 w-9 place-items-center rounded-xl" style={{ color: stage.color, backgroundColor: `${stage.color}14` }}>{stage.icon}</span>
+              </div>
+              <h3 className="mt-4 font-serif text-xl text-[#292722]">{stage.title}</h3>
+              <p className="mt-1.5 flex-1 text-xs leading-5 text-[#746b60]">{stage.description}</p>
+              <span className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#51483e] group-hover:text-[#a6573d]">{stage.action}<ArrowRight size={13} /></span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-7 rounded-[24px] border border-[#e5ddd1] bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]"><Sliders size={13} /> Your controls</p>
+            <h2 className="mt-1 font-serif text-2xl text-[#292722]">Adjust how Z works with you</h2>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-[#746b60]">These saved preferences follow your work into Script and Video Studio. Change them whenever your direction changes.</p>
+          </div>
+          <button type="button" onClick={() => onSwitchToTab("u")} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e8e1d7] px-3 py-2 text-xs font-semibold text-[#51483e] transition hover:border-[#a6573d]"><User size={14} /> Personal and brand profile</button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onSwitchToTab("u")}
-            className="px-4 py-2 rounded-full border border-[#D5D2C8] bg-white hover:bg-[#F7F5EF] text-[#141414] mono text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <Sliders size={13} className="text-[#E4491B]" />
-            <span>Open {brain.virtualYou.userName}&apos;s Brain</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSwitchToTab("post")}
-            className="px-4 py-2 rounded-full border border-[#D5D2C8] bg-white hover:bg-[#F7F5EF] text-[#141414] mono text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <Video size={13} className="text-[#059669]" />
-            <span>Publish Hub</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSwitchToTab("edit")}
-            className="px-4 py-2 rounded-full border-2 border-[#141414] bg-[#141414] hover:bg-[#2B2B2B] text-white mono text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <span>Jump to Editor</span>
-            <ArrowRight size={13} />
-          </button>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <label className="text-xs font-semibold text-[#4a4138]">Writing voice
+            <input value={brain.virtualYou.voiceCadence} onChange={(event) => updatePreference("voiceCadence", event.target.value)} placeholder="Warm, direct, thoughtful, natural..." className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]" />
+          </label>
+          <label className="text-xs font-semibold text-[#4a4138]">How Z should shape a story
+            <input value={brain.virtualYou.thinkingStyle} onChange={(event) => updatePreference("thinkingStyle", event.target.value)} placeholder="Keep it grounded; ask when context is missing..." className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]" />
+          </label>
+          <label className="text-xs font-semibold text-[#4a4138]">Default visual direction
+            <input value={brain.virtualYou.visualTaste} onChange={(event) => updatePreference("visualTaste", event.target.value)} placeholder="Clean captions, warm colors, real footage..." className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]" />
+          </label>
+          <label className="text-xs font-semibold text-[#4a4138]">Hook preference
+            <input value={brain.virtualYou.signatureHookStyle} onChange={(event) => updatePreference("signatureHookStyle", event.target.value)} placeholder="Start with a real detail or honest question..." className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]" />
+          </label>
+          <label className="text-xs font-semibold text-[#4a4138]">Default video style
+            <select value={brain.virtualYou.preferredFormat || "auto"} onChange={(event) => updatePreference("preferredFormat", event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]">
+              {FORMAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <div className="flex items-end">
+            <p className="flex items-start gap-2 rounded-xl bg-[#faf7f1] px-3 py-2.5 text-[10px] leading-4 text-[#796f64]"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#39816a]" />Z uses your saved stories as evidence and asks before filling gaps.</p>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#292722] px-5 py-4 text-white">
+        <div className="flex items-center gap-3">
+          <Brain size={20} className="text-[#e6ad82]" />
+          <div>
+            <p className="text-sm font-semibold">Z works across one connected workspace</p>
+            <p className="mt-0.5 text-[10px] text-white/60">Your memories, scripts, edits, and publishing steps stay connected.</p>
+          </div>
+        </div>
+        <button type="button" onClick={() => onSwitchToTab("edit")} className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-[#292722] transition hover:bg-[#f4e9df]">Open Video Studio <ArrowRight size={14} /></button>
+      </section>
     </div>
   );
 }

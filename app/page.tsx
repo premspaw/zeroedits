@@ -3177,8 +3177,8 @@ export default function ProperMobileResponsiveChat() {
 
       {/* Apple-Style Floating Dock Navigation Bar (Replaces traditional header) */}
       <div
-        className={activeHeaderTab === "script" ? "fixed inset-x-0 top-1 z-[1000] w-full px-3 pointer-events-auto flex items-center justify-center" : "sticky top-1 z-[1000] w-full px-3 pointer-events-auto flex items-center justify-center -mb-2"}
-        style={{ top: activeHeaderTab === "script" ? "0.25rem" : "max(0.25rem, env(safe-area-inset-top, 0.25rem))" }}
+        className="pointer-events-none fixed inset-x-0 top-1 z-[9999] flex w-full items-center justify-center px-3"
+        style={{ top: "max(0.25rem, env(safe-area-inset-top, 0.25rem))" }}
       >
         <div className="pointer-events-auto relative flex items-center justify-center gap-2">
           {/* Mobile drawer trigger for small screens */}
@@ -3196,6 +3196,7 @@ export default function ProperMobileResponsiveChat() {
           />
         </div>
       </div>
+      <div aria-hidden="true" className={activeHeaderTab === "script" ? "h-0" : "h-[52px]"} />
 
       {/* Main Viewport: Z vs U vs Script vs Edit vs Post */}
       {activeHeaderTab === "z" ? (
