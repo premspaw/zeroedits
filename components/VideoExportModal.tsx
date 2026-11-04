@@ -39,6 +39,7 @@ export interface VoiceTrackInfo {
 interface VideoExportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  aspectRatio?: "9:16" | "16:9";
   beats: StoryboardBeat[];
   duration?: number;
   timing?: string;
@@ -48,6 +49,7 @@ interface VideoExportModalProps {
   storyboard?: any;
   sparkCode?: string;
   voiceTracks?: VoiceTrackInfo[];
+  soundEffectsUrl?: string;
   pipelineBRunId?: string;
   regeneratedSceneCode?: string;
   regeneratedSceneDuration?: number;
@@ -60,6 +62,7 @@ interface VideoExportModalProps {
 export default function VideoExportModal({
   isOpen,
   onClose,
+  aspectRatio = "9:16",
   beats = [],
   duration = 15,
   timing = "15s",
@@ -69,6 +72,7 @@ export default function VideoExportModal({
   storyboard,
   sparkCode = "",
   voiceTracks = [],
+  soundEffectsUrl,
   pipelineBRunId,
   regeneratedSceneCode = "",
   regeneratedSceneDuration,
@@ -87,6 +91,7 @@ export default function VideoExportModal({
   // true = using Remotion server-side path; false = canvas fallback
   const hasSparkCode = effectiveSparkCode.trim().length > 30;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const portraitCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [hasMeasuredRemotionProgress, setHasMeasuredRemotionProgress] = useState(false);
@@ -113,12 +118,12 @@ export default function VideoExportModal({
     0
   );
   // Real timeline wins: voiceover re-times beats away from the timing preset.
-  const totalDuration =
-    beatsEnd > 0
-      ? beatsEnd
-      : Number(storyboard?.duration) || Number(timing.replace("s", "")) || duration || 15;
+  const uploadedDuration = voiceTracks.find((track) => String(track.id).startsWith("upload-"))?.duration || 0;
+  const totalDuration = Math.max(beatsEnd, Number(storyboard?.duration) || 0, uploadedDuration)
+    || Number(timing.replace("s", "")) || duration || 15;
   const fps = 60;
   const totalFramesCount = Math.max(60, Math.round(totalDuration * fps));
+  const outputResolution = aspectRatio === "16:9" ? "1920×1080" : "1080×1920";
 
   // Clean up URL on unmount
   useEffect(() => {
@@ -648,15 +653,35 @@ export default function VideoExportModal({
     [activeBeatsList, duration, format, theme, timing, topic, totalDuration]
   );
 
+  const renderOutputFrame = useCallback((ctx: CanvasRenderingContext2D, time: number) => {
+    if (aspectRatio !== "16:9") {
+      renderFrameToCanvas(ctx, time);
+      return;
+    }
+    let portrait = portraitCanvasRef.current;
+    if (!portrait) {
+      portrait = document.createElement("canvas");
+      portrait.width = 1080;
+      portrait.height = 1920;
+      portraitCanvasRef.current = portrait;
+    }
+    const portraitCtx = portrait.getContext("2d");
+    if (!portraitCtx) return;
+    renderFrameToCanvas(portraitCtx, time);
+    ctx.fillStyle = "#0B0C10";
+    ctx.fillRect(0, 0, 1920, 1080);
+    ctx.drawImage(portrait, (1920 - 607.5) / 2, 0, 607.5, 1080);
+  }, [aspectRatio, renderFrameToCanvas]);
+
   // Render initial frame on canvas immediately when modal opens
   useEffect(() => {
     if (isOpen && canvasRef.current) {
       const ctx = canvasRef.current.getContext("2d");
       if (ctx) {
-        renderFrameToCanvas(ctx, 0);
+        renderOutputFrame(ctx, 0);
       }
     }
-  }, [isOpen, renderFrameToCanvas]);
+  }, [isOpen, renderOutputFrame]);
 
   // Reset state when opened
   useEffect(() => {
@@ -779,6 +804,28 @@ export default function VideoExportModal({
 
     // ── Compose the real animation first when the reel has no code yet ────
     // so the download renders the same animation as the preview.
+    // Older Create reels have planned cues but predate the generated effects file.
+    let effectsUrlForExport = soundEffectsUrl;
+    if (!pipelineBVideoUrl && !effectsUrlForExport && activeBeatsList.some((beat) => String(beat.sound || "").trim())) {
+      try {
+        setPhase("composing");
+        const response = await fetch("/api/create-sound-effects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ beats: activeBeatsList, duration: totalDuration }),
+          signal: abortController.signal,
+        });
+        const result = await response.json();
+        if (!response.ok || !result?.success) throw new Error(result?.error || "Sound effects generation failed.");
+        effectsUrlForExport = result?.data?.url || undefined;
+      } catch (error: any) {
+        setExportError(abortController.signal.aborted ? "Export cancelled." : error?.message || "Sound effects generation failed.");
+        setIsExporting(false);
+        exportAbortControllerRef.current = null;
+        return;
+      }
+    }
+
     let codeToRender = effectiveSparkCode;
     if (!hasSparkCode) {
       try {
@@ -789,6 +836,12 @@ export default function VideoExportModal({
       } catch (composeErr: any) {
         if (abortController.signal.aborted) {
           setExportError("Export cancelled.");
+          setIsExporting(false);
+          exportAbortControllerRef.current = null;
+          return;
+        }
+        if (voiceTracks.some((track) => track.hasAudio && track.url) || effectsUrlForExport) {
+          setExportError(composeErr?.message || "Animation could not be prepared for audio export.");
           setIsExporting(false);
           exportAbortControllerRef.current = null;
           return;
@@ -815,6 +868,7 @@ export default function VideoExportModal({
             sceneCameraPacing: regeneratedSceneCode ? regeneratedSceneCameraPacing : undefined,
             galleryBrollSegments: galleryBrollSegments.filter((segment) => segment.assetUrl),
             duration: totalDuration,
+            aspectRatio,
             fps: 30, // 30fps for faster server render (still silky smooth)
             topic,
             backgroundVideoUrl: pipelineBVideoUrl || undefined,
@@ -825,6 +879,7 @@ export default function VideoExportModal({
             audioTracks: pipelineBVideoUrl ? [] : (voiceTracks || [])
               .filter((t) => t?.hasAudio && t?.url)
               .map((t) => ({ url: t.url, start: t.start })),
+            soundEffectsUrl: pipelineBVideoUrl ? undefined : effectsUrlForExport,
           }),
           signal: abortController.signal,
         });
@@ -925,6 +980,19 @@ export default function VideoExportModal({
           exportAbortControllerRef.current = null;
           return;
         }
+        const renderMessage = String(err?.message || "");
+        if (/ENOSPC|no space left|not enough (temporary )?disk space|render drive ran out/i.test(renderMessage)) {
+          setExportError(`${renderMessage} The preview is saved; free space on the render drive and retry Download MP4.`);
+          setIsExporting(false);
+          exportAbortControllerRef.current = null;
+          return;
+        }
+        if (voiceTracks.some((track) => track.hasAudio && track.url) || effectsUrlForExport) {
+          setExportError(renderMessage || "Audio export failed. Please retry Download MP4.");
+          setIsExporting(false);
+          exportAbortControllerRef.current = null;
+          return;
+        }
         setUsedFallback(true);
         // Fall through to the canvas fallback below so the user still gets a file.
       }
@@ -978,7 +1046,7 @@ export default function VideoExportModal({
           if (recorder.state !== "inactive") recorder.stop();
           throw new Error("Export cancelled.");
         }
-        renderFrameToCanvas(ctx, f * frameStepTime);
+        renderOutputFrame(ctx, f * frameStepTime);
         if (typeof videoTrack?.requestFrame === "function") {
           try { videoTrack.requestFrame(); } catch {}
         }
@@ -1071,7 +1139,7 @@ export default function VideoExportModal({
               <div className="mono text-[12px] font-bold tracking-wider text-[#141414] uppercase flex items-center gap-1.5">
                 <span>EXPORT VIDEO REEL</span>
                 <span className="px-1.5 py-0.2 rounded-full border border-[#141414] bg-[#F6D9CC] text-[#E4491B] text-[9px] font-bold">
-                  1080×1920 • {renderedFps}FPS
+                  {outputResolution} • {renderedFps}FPS
                 </span>
               </div>
               <div className="mono text-[10px] text-[#52504A] font-medium">
@@ -1095,24 +1163,28 @@ export default function VideoExportModal({
         {/* Modal Body */}
         <div className="p-6 flex flex-col items-center">
           {/* Live Render Canvas Preview */}
-          <div className="relative w-[216px] h-[384px] rounded-[20px] border-2 border-[#141414] shadow-[4px_4px_0px_#141414] overflow-hidden bg-[#ECEAE3] mb-5">
+          <div className="relative w-[216px] h-[384px] rounded-[20px] border-2 border-[#141414] shadow-[4px_4px_0px_#141414] overflow-hidden bg-[#0B0C10] mb-5">
             {hasSparkCode ? (
               <div className="w-full h-full relative pointer-events-none">
                 <SparkLiveRunner
                   code={effectiveSparkCode}
                   duration={totalDuration}
                   theme={theme}
+                  previewCropRatio={aspectRatio}
                   showControls={false}
                 />
               </div>
             ) : (
-              <canvas
-                ref={canvasRef}
-                width={1080}
-                height={1920}
-                className="w-full h-full object-cover"
-              />
+              <div className={aspectRatio === "16:9" ? "absolute inset-x-0 top-1/2 -translate-y-1/2 aspect-video overflow-hidden" : "w-full h-full"}>
+                <canvas
+                  ref={canvasRef}
+                  width={aspectRatio === "16:9" ? 1920 : 1080}
+                  height={aspectRatio === "16:9" ? 1080 : 1920}
+                  className={aspectRatio === "16:9" ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[316.05%] h-[316.05%] max-w-none" : "w-full h-full object-cover"}
+                />
+              </div>
             )}
+            {aspectRatio === "16:9" && <div className="absolute inset-x-0 top-[34.18%] bottom-[34.18%] border-y border-white/30 pointer-events-none" aria-hidden="true" />}
             {!isExporting && !exportComplete && (
               <div className="absolute inset-0 bg-black/20 hover:bg-black/10 transition backdrop-blur-[1px] flex flex-col items-center justify-center text-white text-center p-4">
                 <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md grid place-items-center mb-2 shadow-sm">
@@ -1122,7 +1194,7 @@ export default function VideoExportModal({
                   Ready to Download
                 </span>
                 <span className="text-[11px] opacity-90 drop-shadow-sm mt-0.5">
-                  1080×1920 • {totalDuration}s • 60fps
+                  {outputResolution} • {totalDuration}s • 60fps
                 </span>
               </div>
             )}
@@ -1207,7 +1279,7 @@ export default function VideoExportModal({
                 </h4>
                 <p className="text-[12px] text-[#52504A] max-w-[380px] mx-auto leading-relaxed">
                   Synthesizes all {activeBeatsList.length || 6} scenes with paper physics, clean typography,
-                  and 1080×1920 9:16 portrait framing for Instagram & Meta Reels.
+                  and {outputResolution} {aspectRatio} framing.
                 </p>
               </div>
             )}

@@ -99,6 +99,8 @@ type VoiceType =
   | "KN-DIVYA"
   | "KN-KIRAN";
 type VoiceLang = "EN" | "HI" | "KN";
+type VideoAspectRatio = "9:16" | "16:9";
+const MAX_AUDIO_STORY_DURATION_SEC = 195;
 
 interface VoiceTrack {
   id: number | string;
@@ -147,11 +149,13 @@ interface ChatMessageItem {
   typing?: boolean;
   beats?: Beat[];
   format?: FormatType | string;
+  aspectRatio?: VideoAspectRatio;
   timing?: TimingType;
   voice?: VoiceType;
   voiceEnabled?: boolean;
   voiceLang?: VoiceLang;
   voiceTracks?: VoiceTrack[];
+  soundEffectsTrack?: { url: string; count: number };
   theme?: ThemeConfig;
   styleHint?: string;
   storyboard?: any;
@@ -173,6 +177,7 @@ interface ChatMessageItem {
     scenes: any[];
     words: any[];
     duration: number;
+    aspectRatio?: VideoAspectRatio;
     title: string;
     style: string;
   };
@@ -595,6 +600,7 @@ function PreviewCard({
   voice,
   timing,
   voiceTracks = [],
+  soundEffectsUrl,
   voiceEnabled = false,
   theme,
   compact = false,
@@ -616,6 +622,7 @@ function PreviewCard({
   onExportMP4,
   onRecreateScene,
   galleryClips = [],
+  aspectRatio = "9:16",
 }: {
   format: FormatType | string;
   beats: Beat[];
@@ -624,6 +631,7 @@ function PreviewCard({
   voice: VoiceType;
   timing: TimingType;
   voiceTracks?: VoiceTrack[];
+  soundEffectsUrl?: string;
   voiceEnabled?: boolean;
   theme?: ThemeConfig;
   compact?: boolean;
@@ -645,22 +653,55 @@ function PreviewCard({
   onExportMP4?: () => void;
   onRecreateScene?: (sceneIndex: number, instruction: string, visualStyle?: string) => Promise<any> | any;
   galleryClips?: GalleryClipItem[];
+  aspectRatio?: VideoAspectRatio;
 }) {
   const beatsDuration = beats.reduce(
     (m, b) => Math.max(m, typeof b.end === "number" ? b.end : 0),
     0
   );
-  const durationNum = beatsDuration > 0 ? beatsDuration : Number(timing.replace("s", "")) || 10;
+  const uploadedDuration = voiceTracks?.find((track) => String(track.id).startsWith("upload-"))?.duration || 0;
+  const durationNum = Math.max(beatsDuration, Number(storyboard?.duration) || 0, uploadedDuration) || Number(timing.replace("s", "")) || 10;
   const effectiveTheme = theme || (format !== "auto" && TEMPLATES[format] ? TEMPLATES[format] : null);
   const [showCleanCut, setShowCleanCut] = useState(false);
 
   // Beat-level voiceover playback, driven by the animation clock.
   const beatAudioRef = useRef<HTMLAudioElement | null>(null);
+  const soundEffectsAudioRef = useRef<HTMLAudioElement | null>(null);
   const voicedBeatRef = useRef(-1);
   const wasPlayingRef = useRef(true);
   const uploadedNarration = voiceTracks?.length === 1 && String(voiceTracks[0]?.id).startsWith("upload-")
     ? voiceTracks[0]
     : null;
+
+  useEffect(() => {
+    if (!soundEffectsUrl) return;
+    const audio = new Audio(soundEffectsUrl);
+    audio.preload = "auto";
+    audio.volume = 0.7;
+    soundEffectsAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      if (soundEffectsAudioRef.current === audio) soundEffectsAudioRef.current = null;
+    };
+  }, [soundEffectsUrl]);
+
+  const syncSoundEffects = useCallback((time: number, playing: boolean) => {
+    const audio = soundEffectsAudioRef.current;
+    if (!audio) return;
+    if (window.matchMedia("(min-width: 1024px)").matches === compact) {
+      audio.pause();
+      return;
+    }
+    if (!playing) { audio.pause(); return; }
+    if (Math.abs(audio.currentTime - time) > 0.35) {
+      try { audio.currentTime = Math.max(0, time); } catch {}
+    }
+    if (audio.paused && (!Number.isFinite(audio.duration) || time < audio.duration)) {
+      void audio.play().catch(() => {});
+    }
+  }, [compact]);
 
   const syncUploadedNarration = useCallback((time: number, playing: boolean) => {
     if (!uploadedNarration?.url) return;
@@ -748,6 +789,7 @@ function PreviewCard({
 
   const handleVoiceTime = useCallback(
     (t: number, playing: boolean) => {
+      syncSoundEffects(t, playing);
       if (uploadedNarration) {
         syncUploadedNarration(t, playing);
         return;
@@ -769,7 +811,7 @@ function PreviewCard({
       const idx = beatIndexAt(t);
       if (idx >= 0) playBeatVoice(idx);
     },
-    [beatIndexAt, playBeatVoice, uploadedNarration, syncUploadedNarration]
+    [beatIndexAt, playBeatVoice, uploadedNarration, syncUploadedNarration, syncSoundEffects]
   );
 
   // Card (non-Spark) path follows the parent's activeBeat.
@@ -828,6 +870,7 @@ function PreviewCard({
         scenes={audioStory.scenes}
         words={audioStory.words}
         duration={audioStory.duration}
+        aspectRatio={audioStory.aspectRatio || aspectRatio}
         topic={audioStory.title || topic}
         style={audioStory.style}
         runId={audioStory.runId}
@@ -846,6 +889,7 @@ function PreviewCard({
         beats={beats}
         topic={topic}
         compact={compact}
+        previewCropRatio={aspectRatio}
         galleryClips={galleryClips}
         onExportMP4={onExportMP4}
         onRecreateScene={onRecreateScene}
@@ -906,6 +950,7 @@ function PreviewCard({
         <SparkLiveRunner
           code={sparkCode}
           duration={durationNum}
+          previewCropRatio={aspectRatio}
           isGenerating={isGenerating}
           generatingStep={generatingStep}
           theme={effectiveTheme}
@@ -1418,6 +1463,7 @@ export default function ProperMobileResponsiveChat() {
     }
   }, [brain?.activeProject]);
   const [format, setFormat] = useState<FormatType>("auto");
+  const [aspectRatio, setAspectRatio] = useState<VideoAspectRatio>("9:16");
   const [autoEditTemplate, setAutoEditTemplate] = useState<"cutout" | "storyExplainer" | "auto" | "clay3d" | "gallery">("storyExplainer");
   const [timing, setTiming] = useState<TimingType>("15s");
   const [voice, setVoice] = useState<VoiceType>("EN-IN");
@@ -1434,6 +1480,7 @@ export default function ProperMobileResponsiveChat() {
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
   const [audioVoiceoverName, setAudioVoiceoverName] = useState<string | null>(null);
   const [audioVoiceoverDuration, setAudioVoiceoverDuration] = useState<number | null>(null);
+  const [audioVoiceoverOverLimit, setAudioVoiceoverOverLimit] = useState(false);
   const [audioVoiceoverUrl, setAudioVoiceoverUrl] = useState<string | null>(null);
   const [audioVoiceoverPlaying, setAudioVoiceoverPlaying] = useState(false);
   const [audioStyle, setAudioStyle] = useState<"auto" | "anime" | "cinematic" | "storybook" | "noir">("anime");
@@ -1741,6 +1788,7 @@ export default function ProperMobileResponsiveChat() {
       if (target.voice) {
         setVoice(target.voice as VoiceType);
       }
+      setAspectRatio(target.aspectRatio || target.audioStory?.aspectRatio || "9:16");
     }
     setActiveBeat(0);
     setIsPlaying(true);
@@ -1758,6 +1806,7 @@ export default function ProperMobileResponsiveChat() {
   const handleProjectCreated = (project: StudioProject, launchPrompt?: string) => {
     setActiveProject(project);
     lockStudioProject(project);
+    setAspectRatio(project.lockedMemory.aspectRatio === "16:9" ? "16:9" : "9:16");
 
     // Apply locked format, voice, and aspect ratio
     const projTemplate = project.lockedMemory.template as FormatType;
@@ -2021,12 +2070,16 @@ export default function ProperMobileResponsiveChat() {
     audioVoiceoverFileRef.current = file;
     setAudioVoiceoverName(file.name.length > 28 ? `${file.name.slice(0, 25)}...` : file.name);
     setAudioVoiceoverDuration(null);
+    setAudioVoiceoverOverLimit(false);
     try {
       const url = URL.createObjectURL(file);
       setAudioVoiceoverUrl(url);
       const probe = new Audio(url);
       probe.onloadedmetadata = () => {
-        if (Number.isFinite(probe.duration)) setAudioVoiceoverDuration(probe.duration);
+        if (Number.isFinite(probe.duration)) {
+          setAudioVoiceoverDuration(probe.duration);
+          setAudioVoiceoverOverLimit(probe.duration > MAX_AUDIO_STORY_DURATION_SEC);
+        }
       };
     } catch {}
   };
@@ -2038,6 +2091,7 @@ export default function ProperMobileResponsiveChat() {
     audioVoiceoverFileRef.current = null;
     setAudioVoiceoverName(null);
     setAudioVoiceoverDuration(null);
+    setAudioVoiceoverOverLimit(false);
     setAudioVoiceoverUrl(null);
     setAudioVoiceoverPlaying(false);
   };
@@ -2296,7 +2350,7 @@ export default function ProperMobileResponsiveChat() {
   };
 
   const handleSend = async () => {
-    // Use the Image Storyteller pipeline only when that template is selected.
+    // Only an explicit Image Storyteller selection uses the image story pipeline.
     if (studioMode === "create" && format === "imageStory") {
       if (isGenerating || isGeneratingCode) return;
       const audioFile = audioVoiceoverFileRef.current;
@@ -2308,6 +2362,10 @@ export default function ProperMobileResponsiveChat() {
           : "";
 
       if (!audioFile && !userNote && !customScript) {
+        return;
+      }
+      if (audioFile && audioVoiceoverDuration !== null && audioVoiceoverDuration > MAX_AUDIO_STORY_DURATION_SEC) {
+        setAudioVoiceoverOverLimit(true);
         return;
       }
 
@@ -2338,6 +2396,7 @@ export default function ProperMobileResponsiveChat() {
         generationStatus: "storyboarding",
         topic: userNote || customScript || "Image Story",
         format: "imageStory",
+        aspectRatio,
       };
 
       setMessages((prev) => [...prev, stagedUser, stagedReply]);
@@ -2348,12 +2407,16 @@ export default function ProperMobileResponsiveChat() {
         const formData = new FormData();
         if (audioFile) {
           formData.append("audio", audioFile);
+          if (audioVoiceoverDuration !== null) {
+            formData.append("audioDuration", String(audioVoiceoverDuration));
+          }
         }
         formData.append("style", "auto");
         formData.append("prompt", userNote);
         formData.append("userScript", customScript);
         formData.append("timing", timing);
         formData.append("voice", voice);
+        formData.append("aspectRatio", aspectRatio);
         formData.append("runId", clientRunId);
         if (refImgFile) {
           formData.append("referenceImage", refImgFile);
@@ -2391,7 +2454,8 @@ export default function ProperMobileResponsiveChat() {
           generationStatus: "ready",
           generationError: undefined,
           format: "imageStory",
-          text: `✨ Directed by Meta Wonder (muse-wonder-1.0) & illustrated by Meta Image (muse-image-1.0): Created ${data.scenes?.length || 4} character-consistent 9:16 scenes (${Math.round(data.duration || 15)}s) with dynamic 2.5D motion, VFX & MP4 video output.`,
+          aspectRatio: data.aspectRatio || aspectRatio,
+          text: `✨ Directed by Meta Wonder (muse-wonder-1.0) & illustrated by Meta Image (muse-image-1.0): Created ${data.scenes?.length || 4} character-consistent ${data.aspectRatio || aspectRatio} scenes (${Math.round(data.duration || 15)}s) with dynamic 2.5D motion, VFX & MP4 video output.`,
           beats,
           audioStory: {
             runId: data.runId,
@@ -2402,6 +2466,7 @@ export default function ProperMobileResponsiveChat() {
             scenes: data.scenes,
             words: data.transcriptWords,
             duration: data.duration,
+            aspectRatio: data.aspectRatio || aspectRatio,
             title: data.title,
             style: data.style || "anime",
           },
@@ -2500,6 +2565,7 @@ export default function ProperMobileResponsiveChat() {
         generationStatus: "rendering",
         pipeline: "pipeline-b",
         pipelineBRunId: clientRunId,
+        aspectRatio,
       };
 
       setMessages((prev) => [...prev, stagedUser, stagedReply]);
@@ -2549,6 +2615,7 @@ export default function ProperMobileResponsiveChat() {
           formData.append("video", videoFile);
         }
         formData.append("runId", clientRunId);
+        formData.append("aspectRatio", aspectRatio);
         if (userScriptContent && userNote) {
           formData.append("userScript", `[Target Script]:\n${userScriptContent}\n\n[Director Instructions]:\n${userNote}`);
         } else if (userScriptContent) {
@@ -2616,6 +2683,7 @@ export default function ProperMobileResponsiveChat() {
                       generationError: undefined,
                       pipeline: "pipeline-b",
                       pipelineBRunId: rId,
+                      aspectRatio: st.aspectRatio || aspectRatio,
                       videoUrl: `/api/pipeline-b/media/${rId}/clean`,
                       finalDownloadUrl: `/api/pipeline-b/media/${rId}/final`,
                       editPlan: st.editPlan,
@@ -2703,6 +2771,7 @@ export default function ProperMobileResponsiveChat() {
           generationError: undefined,
           pipeline: "pipeline-b",
           pipelineBRunId: runId,
+          aspectRatio: state?.aspectRatio || aspectRatio,
           videoUrl: isPausedAtEditorial ? undefined : cleanVideoUrl,
           finalDownloadUrl: isPausedAtEditorial ? undefined : finalVideoUrl,
           sparkCode: data.motionCode || undefined,
@@ -2746,8 +2815,9 @@ export default function ProperMobileResponsiveChat() {
     }
 
     const trimmed = input.trim();
-    const paperCutAudio = format === "paperCut" ? audioVoiceoverFileRef.current : null;
-    if ((!trimmed && !paperCutAudio) || isGenerating || isGeneratingCode) return;
+    const attachedAudio = audioVoiceoverFileRef.current;
+    if ((!trimmed && !attachedAudio) || isGenerating || isGeneratingCode) return;
+    if (attachedAudio && audioVoiceoverOverLimit) return;
     const sceneEdit = trimmed.match(/^(?:recreate|regenerate|edit|change|update)\s+scene\s+(\d+)\s*(?::|text\s+to)?\s*([\s\S]*)$/i);
     if (sceneEdit && activeMessage?.beats) {
       const sceneIndex = Number(sceneEdit[1]) - 1;
@@ -2762,7 +2832,7 @@ export default function ProperMobileResponsiveChat() {
     const userMessage: ChatMessageItem = {
       id: Date.now().toString(),
       role: "user",
-      text: isInternetEnabled ? `🌐 ${trimmed}` : trimmed,
+      text: `${isInternetEnabled ? "🌐 " : ""}${trimmed}${attachedAudio ? `${trimmed ? "\n" : ""}🎵 Voiceover: ${attachedAudio.name}` : ""}`,
     };
 
     // Pasted script: long or multi-line input is the user's own script.
@@ -2774,9 +2844,10 @@ export default function ProperMobileResponsiveChat() {
       ? nonEmptyLines[0].slice(0, 120)
       : trimmed;
 
+    const directionTopic = attachedAudio ? trimmed : scriptTopic;
     const finalTopic = isInternetEnabled
-      ? `${scriptTopic} (incorporating live web facts & trends)`
-      : scriptTopic || (paperCutAudio ? "Create a story from the uploaded audio" : "");
+      ? `${directionTopic || "Create a video directed by the uploaded voiceover"} (incorporating live web facts & trends)`
+      : directionTopic || (attachedAudio ? "Create a video directed by the uploaded voiceover" : "");
 
     const typingMessage: ChatMessageItem = {
       id: (Date.now() + 1).toString(),
@@ -2784,9 +2855,10 @@ export default function ProperMobileResponsiveChat() {
       text: "",
       typing: true,
       generationStatus: "storyboarding",
-      topic: scriptTopic || (paperCutAudio ? "Audio story" : ""),
+      topic: directionTopic.slice(0, 120) || (attachedAudio ? "Audio-directed video" : ""),
       timing,
       format,
+      aspectRatio,
       voice,
       voiceEnabled,
       voiceLang: voiceLangOf(voice),
@@ -2814,7 +2886,7 @@ export default function ProperMobileResponsiveChat() {
     }, 1500);
 
     try {
-      let creativeInput = trimmed;
+      let narrationScript = userScript;
       let audioDurationSec: number | null = null;
       let uploadedAudioTrack: VoiceTrack | null = null;
       const selectedAudio = format !== "imageStory" ? audioVoiceoverFileRef.current : null;
@@ -2822,13 +2894,12 @@ export default function ProperMobileResponsiveChat() {
         setGeneratingStep("Listening to your audio...");
         const audioForm = new FormData();
         audioForm.append("audio", selectedAudio);
-        audioForm.append("userScript", userScript);
         const transcriptRes = await fetch("/api/transcribe-audio", { method: "POST", body: audioForm });
         const transcriptData = await transcriptRes.json();
         if (!transcriptRes.ok || !transcriptData.success || !transcriptData.transcript) {
           throw new Error(transcriptData.error || "Could not transcribe the uploaded audio.");
         }
-        creativeInput = [trimmed, `Audio transcript: ${transcriptData.transcript}`].filter(Boolean).join("\n\n");
+        narrationScript = String(transcriptData.transcript).trim();
         audioDurationSec = Number(transcriptData.duration) || null;
         uploadedAudioTrack = {
           id: `upload-${Date.now()}`,
@@ -2847,16 +2918,18 @@ export default function ProperMobileResponsiveChat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: selectedAudio ? creativeInput : finalTopic,
+          topic: finalTopic,
           duration: durationNum,
           timing,
+          aspectRatio,
           template: selectedTemplate,
           format: format === "auto" ? null : format,
           voice,
           language: voiceLangOf(voice),
           voiceName: voiceNameOf(voice),
           voiceoverEnabled: voiceEnabled,
-          userScript: selectedAudio ? creativeInput : userScript,
+          userScript: narrationScript,
+          narrationSource: selectedAudio ? "uploadedAudio" : "",
           internet: isInternetEnabled,
         }),
       });
@@ -2870,6 +2943,7 @@ export default function ProperMobileResponsiveChat() {
         const formatUsed = json.data.formatUsed || format;
         const styleHint = json.data.styleHint || "";
         const validatedStoryboard = json.data;
+        const selectedVisualStyle = String(validatedStoryboard.globalDirection?.visualStyle || formatUsed).slice(0, 90);
 
         const metaBeats: Beat[] = json.data.beats.map((b: any, idx: number) => ({
           id: b.id ?? idx,
@@ -2948,21 +3022,53 @@ export default function ProperMobileResponsiveChat() {
           }
         }
 
+        let soundEffectsTrack: ChatMessageItem["soundEffectsTrack"];
+        try {
+          setGeneratingStep("Designing sound effects...");
+          const effectsRes = await fetch("/api/create-sound-effects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ beats: validatedStoryboard.beats, duration: reelDuration }),
+          });
+          const effectsJson = await effectsRes.json();
+          if (!effectsRes.ok || !effectsJson?.success) {
+            throw new Error(effectsJson?.error || "Sound effects generation failed.");
+          }
+          if (effectsJson.data?.url) {
+            soundEffectsTrack = { url: effectsJson.data.url, count: effectsJson.data.count };
+          }
+        } catch (effectsError: any) {
+          console.error("Create sound effects failed:", effectsError);
+          updateMessage(typingMessage.id, {
+            beats: metaBeats,
+            storyboard: validatedStoryboard,
+            voiceTracks: uploadedAudioTrack ? [uploadedAudioTrack] : voiceTracks,
+            format: formatUsed,
+            aspectRatio,
+          });
+          throw new Error(`Sound effects could not be added: ${effectsError?.message || "generation failed"}`);
+        }
+
         setGeneratingStep("Making your video");
 
         updateMessage(typingMessage.id, {
           typing: false,
-          text: voiceEnabled && voiceTracks.length
-            ? `Wonder has planned your ${reelDuration}s narrated story. Explore the scenes while Spark brings them to life.`
+          text: (uploadedAudioTrack
+            ? `Wonder planned your ${reelDuration}s voiceover video in ${selectedVisualStyle}. Explore the scenes while Spark brings them to life.`
+            : voiceEnabled && voiceTracks.length
+            ? `Wonder planned your ${reelDuration}s narrated story in ${selectedVisualStyle}. Explore the scenes while Spark brings them to life.`
             : voiceoverError
             ? `Your video is being made, but voiceover generation failed: ${voiceoverError}`
-            : `Wonder has planned your ${durationNum}s story. Explore the scenes while Spark brings them to life.`,
+            : `Wonder planned your ${durationNum}s story in ${selectedVisualStyle}. Explore the scenes while Spark brings them to life.`)
+            + (soundEffectsTrack ? ` ${soundEffectsTrack.count} sound effects added.` : ""),
           beats: metaBeats,
           format: formatUsed,
+          aspectRatio,
           theme,
           styleHint,
           storyboard: validatedStoryboard,
           voiceTracks: uploadedAudioTrack ? [uploadedAudioTrack] : voiceTracks,
+          soundEffectsTrack,
           generationStatus: "rendering",
         });
 
@@ -4745,6 +4851,13 @@ export default function ProperMobileResponsiveChat() {
                           Wonder 1.0 + Muse Image 1.0 • Prompt decides style (Anime, Storybook, etc.) with locked Character Sheet
                         </span>
                       </div>
+                      {studioMode === "create" && Boolean(audioVoiceoverName) && (
+                        <p className={`w-full mono text-[10px] leading-4 ${audioVoiceoverOverLimit ? "text-rose-700 font-bold" : "text-[#6B6A64]"}`}>
+                          {audioVoiceoverOverLimit
+                            ? "This audio is longer than 3:15. Trim it to 195 seconds or less before creating."
+                            : "Audio limit: 3:15. The full uploaded voiceover sets the video length; no splitting or transcript paste is needed."}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -4866,6 +4979,27 @@ export default function ProperMobileResponsiveChat() {
                           }`}
                         />
                       </button>
+
+                      {(studioMode === "autoEdit" || format === "imageStory" || (studioMode === "create" && format === "auto" && Boolean(audioVoiceoverName))) && (
+                        <div className="h-7 flex items-center gap-0.5 rounded-full border-2 border-[#141414]/30 bg-white p-0.5 shrink-0" role="group" aria-label="Output aspect ratio">
+                          {(["9:16", "16:9"] as VideoAspectRatio[]).map((ratio) => (
+                            <button
+                              key={ratio}
+                              type="button"
+                              aria-pressed={aspectRatio === ratio}
+                              onClick={() => setAspectRatio(ratio)}
+                              title={ratio === "16:9" ? "Landscape 16:9 output" : "Portrait 9:16 output"}
+                              className={`h-full px-2 rounded-full mono text-[9px] sm:text-[10px] font-bold transition shrink-0 ${
+                                aspectRatio === ratio
+                                  ? "bg-[#141414] text-white"
+                                  : "text-[#6B6A64] hover:bg-[#ECEAE3]"
+                              }`}
+                            >
+                              {ratio}
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Timing Selector Pill — Create mode only (when no voiceover file is overriding duration) */}
                       {studioMode === "create" && !audioVoiceoverName && (
@@ -5048,7 +5182,7 @@ export default function ProperMobileResponsiveChat() {
                         isGenerating ||
                         isGeneratingCode ||
                         (audioVoiceoverName
-                          ? false
+                          ? studioMode === "create" && audioVoiceoverOverLimit
                           : studioMode === "autoEdit"
                           ? !editVideoFileRef.current && !editVideoName && !input.trim()
                           : !input.trim())
@@ -5122,7 +5256,7 @@ export default function ProperMobileResponsiveChat() {
             <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-1.5 mono text-[11px] uppercase tracking-widest text-[#6B6A64] font-semibold">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#E4491B] animate-pulse" />
-                <span>Live Preview • 9:16</span>
+                <span>Live Preview | {activeMessage?.aspectRatio || activeMessage?.audioStory?.aspectRatio || aspectRatio}</span>
               </div>
               {!(activeMessage?.videoUrl || activeMessage?.finalDownloadUrl) && (
                 <div className="flex items-center gap-1.5">
@@ -5153,12 +5287,14 @@ export default function ProperMobileResponsiveChat() {
               proceduralStory={activeMessage?.proceduralStory}
               editPlan={activeMessage?.editPlan}
               format={activeMessage?.format || format}
+              aspectRatio={activeMessage?.audioStory || activeMessage?.videoUrl ? (activeMessage?.aspectRatio || activeMessage?.audioStory?.aspectRatio || aspectRatio) : aspectRatio}
               beats={currentBeats}
               activeBeat={activeBeat}
               isPlaying={isPlaying}
               voice={voice}
               timing={activeMessage?.timing || timing}
               voiceTracks={activeMessage?.voiceTracks}
+              soundEffectsUrl={activeMessage?.soundEffectsTrack?.url}
               voiceEnabled={activeMessage?.voiceEnabled}
               theme={currentTheme}
               isGenerating={isGenerating || isGeneratingCode}
@@ -5202,7 +5338,7 @@ export default function ProperMobileResponsiveChat() {
                 <div className="flex items-center gap-2 mono text-[11px] uppercase tracking-widest text-[#6B6A64] font-semibold">
                   <Maximize2 size={12} className="text-[#E4491B]" />
                   <span>
-                    Preview • {timing} • {voice}
+                    Preview | {activeMessage?.aspectRatio || activeMessage?.audioStory?.aspectRatio || aspectRatio} | {timing} | {voice}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -5233,12 +5369,14 @@ export default function ProperMobileResponsiveChat() {
                       proceduralStory={activeMessage?.proceduralStory}
                       editPlan={activeMessage?.editPlan}
                       format={activeMessage?.format || format}
+                      aspectRatio={activeMessage?.audioStory || activeMessage?.videoUrl ? (activeMessage?.aspectRatio || activeMessage?.audioStory?.aspectRatio || aspectRatio) : aspectRatio}
                       beats={currentBeats}
                       activeBeat={activeBeat}
                       isPlaying={isPlaying}
                       voice={voice}
                       timing={activeMessage?.timing || timing}
                       voiceTracks={activeMessage?.voiceTracks}
+                      soundEffectsUrl={activeMessage?.soundEffectsTrack?.url}
                       voiceEnabled={activeMessage?.voiceEnabled}
                       theme={currentTheme}
                       compact={true}
@@ -5421,7 +5559,7 @@ export default function ProperMobileResponsiveChat() {
                   }}
                   disabled={isGeneratingCode}
                   className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#E4491B] to-[#C93D14] text-white mono text-[12px] font-bold flex items-center gap-1.5 hover:brightness-105 transition active:scale-95 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Render and Download 1080x1920 60fps MP4 Reel"
+                  title={`Render and Download ${activeMessage?.aspectRatio === "16:9" ? "1920x1080" : "1080x1920"} MP4 Reel`}
                 >
                   <Video size={13} />
                   <span>Download MP4</span>
@@ -5448,7 +5586,7 @@ export default function ProperMobileResponsiveChat() {
                     Meta Spark 1.3 Synthesizing & Stitching All {currentBeats.length} Beats
                   </div>
                   <div className="mono text-[11px] text-[#6B6A64] max-w-md leading-relaxed">
-                    Stitching all beats into a continuous {timing} video reel.
+                    Stitching all beats into a continuous video reel.
                     Holding preview until all clips are synthesized and stitched together...
                   </div>
                   <div className="w-48 bg-[#EAE7DF] h-1.5 rounded-full overflow-hidden mt-2">
@@ -5462,7 +5600,12 @@ export default function ProperMobileResponsiveChat() {
               ) : modalTab === "preview" ? (
                 /* LIVE ANIMATION PREVIEW - STITCHED FULL REEL */
                 (() => {
-                  const totalSec = Number((activeMessage?.timing || timing).replace("s", "")) || 15;
+                  const totalSec = Math.max(
+                    Number(currentStoryboard?.duration) || 0,
+                    Number(activeMessage?.storyboard?.duration) || 0,
+                    ...currentBeats.map((beat) => Number(beat.end) || 0),
+                    ...(activeMessage?.voiceTracks || []).map((track) => Number(track.duration) || 0)
+                  ) || Number((activeMessage?.timing || timing).replace("s", "")) || 15;
                   const numBeatsCount = currentBeats.length || 6;
                   const currentModalBeat = currentBeats[modalActiveBeatIndex] || currentBeats[0];
                   const bStart = typeof currentModalBeat?.start === "number" ? currentModalBeat.start : 0;
@@ -5473,7 +5616,7 @@ export default function ProperMobileResponsiveChat() {
                   if (activeMessage?.audioStory) {
                     return (
                       <div className="w-full max-w-[360px] flex flex-col items-center">
-                        <CinematicStoryStage
+                    <CinematicStoryStage
                           audioUrl={activeMessage.audioStory.audioUrl}
                           finalVideoUrl={activeMessage.audioStory.finalVideoUrl}
                           scenes={activeMessage.audioStory.scenes}
@@ -5482,6 +5625,7 @@ export default function ProperMobileResponsiveChat() {
                           topic={activeMessage.audioStory.title || activeMessage.text || input}
                           style={activeMessage.audioStory.style}
                           runId={activeMessage.audioStory.runId}
+                      aspectRatio={activeMessage.audioStory.aspectRatio || aspectRatio}
                         />
                       </div>
                     );
@@ -5493,6 +5637,7 @@ export default function ProperMobileResponsiveChat() {
                         <SparkLiveRunner
                           code={regeneratedSceneCode}
                           duration={regeneratedSceneDuration}
+                          previewCropRatio={aspectRatio}
                           replayKey={replayKey}
                           theme={activeMessage?.storyboard?.theme || currentTheme}
                           storyboard={activeMessage?.storyboard}
@@ -5515,6 +5660,7 @@ export default function ProperMobileResponsiveChat() {
                           editPlan={activeMessage.editPlan}
                           beats={currentBeats}
                           topic={activeMessage.text || input}
+                          previewCropRatio={activeMessage?.aspectRatio || aspectRatio}
                           galleryClips={activeMessage?.editPlan?.templateId === "gallery" ? galleryClips : []}
                           onRecreateScene={(sceneIdx, instruction, visualStyle) =>
                             handleRecreateSingleScene(activeMessage, sceneIdx, instruction, undefined, undefined, visualStyle)
@@ -5527,10 +5673,11 @@ export default function ProperMobileResponsiveChat() {
                   if (regeneratedSceneCode || sparkError || (sparkCodeToRun && !sparkCodeToRun.startsWith("// Connecting"))) {
                     return (
                       <div className="w-full max-w-[360px] flex flex-col items-center">
-                        <div className="w-full aspect-[9/16] rounded-[28px] border-2 border-[#D5D2C8] shadow-[0_28px_60px_-16px_rgba(0,0,0,0.35)] overflow-hidden relative bg-[#E4491B]">
+                        <div className="w-full aspect-[9/16] rounded-[28px] border-2 border-[#D5D2C8] shadow-[0_28px_60px_-16px_rgba(0,0,0,0.35)] overflow-hidden relative bg-[#0B0C10]">
                           <SparkLiveRunner
                             code={regeneratedSceneCode || sparkCodeToRun || ""}
                             duration={regeneratedSceneCode ? regeneratedSceneDuration : totalSec}
+                            previewCropRatio={aspectRatio}
                             replayKey={replayKey}
                             theme={currentTheme}
                             storyboard={currentStoryboard || activeMessage?.storyboard}
@@ -5781,6 +5928,7 @@ export default function ProperMobileResponsiveChat() {
       <VideoExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
+        aspectRatio={activeMessage?.audioStory || activeMessage?.videoUrl ? (activeMessage?.aspectRatio || aspectRatio) : aspectRatio}
         pipelineBRunId={activeMessage?.pipelineBRunId}
         beats={currentBeats.length > 0 ? currentBeats : (activeMessage?.storyboard?.beats || [])}
         duration={Number((activeMessage?.timing || timing).replace("s", "")) || 15}
@@ -5793,6 +5941,7 @@ export default function ProperMobileResponsiveChat() {
           ? (activeMessage?.sparkCode || currentSparkCode || "")
           : (codeModalContent || currentSparkCode || activeMessage?.sparkCode || "")}
         voiceTracks={activeMessage?.voiceTracks}
+        soundEffectsUrl={activeMessage?.soundEffectsTrack?.url}
         regeneratedSceneCode={regeneratedSceneCode}
         regeneratedSceneDuration={regeneratedSceneDuration}
         regeneratedSceneStart={regeneratedSceneStart}

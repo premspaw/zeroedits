@@ -114,7 +114,7 @@ export function createCreatorContextSnapshot(brain: ZeeBrainState): CreatorConte
     updatedAt: brain.lastUpdated || new Date().toISOString(),
     virtualYou: { ...brain.virtualYou },
     brandProfile: { ...brain.brandProfile },
-    memories: brain.memories.slice(0, 1000).map((memory) => ({
+    memories: brain.memories.map((memory) => ({
       id: memory.id,
       conversationId: memory.conversationId,
       category: memory.category,
@@ -202,8 +202,9 @@ export function sanitizeCreatorContextSnapshot(value: unknown): CreatorContextSn
     analyzedAt: text(brand.analyzedAt, 80),
   };
 
+  const seenMemoryIds = new Set<string>();
   const memories: CreatorContextMemory[] = Array.isArray(raw.memories)
-    ? raw.memories.slice(0, 1000).map((item: unknown, index: number) => {
+    ? raw.memories.slice(0, 5000).map((item: unknown, index: number) => {
         const memory = record(item);
         const category = CATEGORIES.has(memory.category) ? memory.category : "insight";
         const source = MEMORY_SOURCES.has(memory.source) ? memory.source : "text_mic";
@@ -212,7 +213,7 @@ export function sanitizeCreatorContextSnapshot(value: unknown): CreatorContextSn
           conversationId: nonEmpty(text(memory.conversationId, 180) || ""),
           category,
           title: text(memory.title, 240) || "Saved story",
-          story: text(memory.story, 6000),
+          story: text(memory.story, 30000),
           zeeAnalysis: text(memory.zeeAnalysis, 3000),
           followUpQuestion: nonEmpty(text(memory.followUpQuestion, 1200) || ""),
           date: text(memory.date, 80),
@@ -224,7 +225,11 @@ export function sanitizeCreatorContextSnapshot(value: unknown): CreatorContextSn
           subSegment: nonEmpty(text(memory.subSegment, 240) || ""),
           durationLabel: nonEmpty(text(memory.durationLabel, 80) || ""),
         };
-      }).filter((memory) => memory.story || memory.title)
+      }).filter((memory) => {
+        if (!(memory.story || memory.title) || seenMemoryIds.has(memory.id)) return false;
+        seenMemoryIds.add(memory.id);
+        return true;
+      })
     : [];
 
   const gallery: CreatorGalleryContext[] = Array.isArray(raw.gallery)
@@ -346,7 +351,7 @@ export function formatCreatorContextForPrompt(
   snapshot: CreatorContextSnapshot | null,
   currentTask: string,
   maxChars = 18000,
-  includePersonalMemories = true
+  includePersonalArchive = true
 ): string {
   if (!snapshot) return "";
   const lines: string[] = [];
@@ -389,19 +394,19 @@ export function formatCreatorContextForPrompt(
   ].filter(Boolean) as string[];
   if (brandLines.length > 0) push(`Brand context:\n${brandLines.join("\n")}`);
 
-  const rankedMemories = includePersonalMemories ? snapshot.memories
+  const rankedMemories = includePersonalArchive ? snapshot.memories
     .map((memory, index) => ({
       memory,
       index,
-      relevance: scoreText(`${memory.title} ${memory.category} ${memory.story} ${memory.tags.join(" ")}`, terms),
+      relevance: scoreText(`${memory.title} ${memory.category} ${memory.story.slice(0, 2000)} ${memory.tags.join(" ")}`, terms),
     }))
     .sort((a, b) => b.relevance - a.relevance || a.index - b.index)
-    .slice(0, 10) : [];
+    .slice(0, 6) : [];
   const memoryLines = rankedMemories.map(({ memory }) => [
     `[${memory.category}] ${memory.title}${memory.date ? ` (${memory.date})` : ""}${memory.emotionTone ? ` — ${memory.emotionTone}` : ""}`,
-    memory.story && `Story: ${memory.story}`,
-    memory.zeeAnalysis && `Reflection: ${memory.zeeAnalysis}`,
-    memory.reelHookIdea && `Possible opening: ${memory.reelHookIdea}`,
+    memory.story && `Story excerpt: ${memory.story.slice(0, 1200)}`,
+    memory.zeeAnalysis && `Reflection: ${memory.zeeAnalysis.slice(0, 400)}`,
+    memory.reelHookIdea && `Possible opening: ${memory.reelHookIdea.slice(0, 300)}`,
   ].filter(Boolean).join("\n"));
   if (memoryLines.length > 0) push(`Relevant saved stories (background evidence only; do not combine separate memories or claim them as part of the current story):\n${memoryLines.join("\n\n")}`);
 
@@ -431,11 +436,11 @@ export function formatCreatorContextForPrompt(
       item.aiTags.join(", "),
       item.creativeInsight,
     ].filter(Boolean).join(" — "));
-  if (galleryItems.length > 0) push(`Useful visual archive context:\n${galleryItems.join("\n")}`);
+  if (includePersonalArchive && galleryItems.length > 0) push(`Useful visual archive context:\n${galleryItems.join("\n")}`);
 
-  const recentActions = snapshot.activityLogs.slice(0, 5)
+  const recentActions = includePersonalArchive ? snapshot.activityLogs.slice(0, 5)
     .map((item) => `${item.pageLabel}: ${item.action}`)
-    .filter(Boolean);
+    .filter(Boolean) : [];
   if (recentActions.length > 0) push(`Recent app activity:\n${recentActions.join("\n")}`);
 
   return lines.join("\n\n");

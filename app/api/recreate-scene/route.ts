@@ -5,6 +5,7 @@ import { generateMuseImage } from "@/lib/pipeline-b/tools/image-generator";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { getMetaApiBaseUrl, getMetaApiKey, getMetaModelId } from "@/lib/meta-api";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 
 export const maxDuration = 180;
 
@@ -231,9 +232,13 @@ export async function POST(req: NextRequest) {
       currentBeat?.visualDesc ||
       audioStory?.scenes?.[sceneIndex]?.visualPrompt ||
       "";
+    const creatorContext = await getCreatorContextForPrompt(
+      `${currentSpoken}\n${currentVisual}\n${userInstruction}`,
+      { includePersonalArchive: false }
+    );
 
     if (action === "suggestions") {
-      const prompt = `You are the visual director for Scene ${sceneIndex + 1} of a short explainer video. Create 4 concise, distinct animation directions that are specific to this scene. Each should say what visual metaphor/object appears and the motion/pop-out treatment. Do not suggest generic phone scrolls unless a phone is literally in the dialogue. Avoid repeating the current design. Each suggestion should be short enough to display as a selectable chip.\n\nScene dialogue: ${currentSpoken}\nScene visual context: ${currentVisual}\nNeighboring dialogue: ${JSON.stringify(adjacentContext)}\nCurrent design to avoid repeating: ${JSON.stringify(editPlan?.visualSegments?.[sceneIndex]?.visualRecipe || {})}\nUser style preference: ${requestedVisualStyle}\nAdditional direction: ${userInstruction || "none"}`;
+      const prompt = `You are the visual director for Scene ${sceneIndex + 1} of a short explainer video. Create 4 concise, distinct animation directions that are specific to this scene. Each should say what visual metaphor/object appears and the motion/pop-out treatment. Do not suggest generic phone scrolls unless a phone is literally in the dialogue. Avoid repeating the current design. Each suggestion should be short enough to display as a selectable chip.\n\nScene dialogue: ${currentSpoken}\nScene visual context: ${currentVisual}\nNeighboring dialogue: ${JSON.stringify(adjacentContext)}\nCurrent design to avoid repeating: ${JSON.stringify(editPlan?.visualSegments?.[sceneIndex]?.visualRecipe || {})}\nUser style preference: ${requestedVisualStyle}\nCreator visual context (background preference only): ${creatorContext || "none"}\nAdditional direction: ${userInstruction || "none"}`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 45_000);
       try {
@@ -281,6 +286,7 @@ Current Visual Description in Scene ${sceneIndex + 1}: "${currentVisual}"
 Neighboring dialogue for story continuity: ${JSON.stringify(adjacentContext)}
 Current animation recipe: ${JSON.stringify(editPlan?.visualSegments?.[sceneIndex]?.visualRecipe || {})}
 Required visual style: "${requestedVisualStyle}" ("auto" means choose what best serves the exact dialogue).
+Creator visual context (background preference only; user's explicit style wins):\n${creatorContext || "none"}
 
 ${fastPacedEdit ? `FAST-PACED EDIT MODE: Make this selected scene feel like a high-energy creator reel. Use quick visual beats and decisive punch-in/pull-out rhythm. Favor hard zoom changes at spoken-word stresses every roughly 0.4–0.7 seconds, with brief holds and varied framing. Keep graphics tied to this scene and clear of the speaker's face; avoid long, slow continuous movement. The renderer will apply word-timed camera punches to the talking-head footage.` : ""}
 

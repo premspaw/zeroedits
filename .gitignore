@@ -23,6 +23,7 @@ scratch/
 dev-server.log
 test_cut.mjs
 public/voiceover/
+public/sfx/
 public/renders/
 public/temp-render/
 public/*.mp4

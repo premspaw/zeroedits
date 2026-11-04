@@ -6,10 +6,12 @@ import crypto from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { transcribeAudio } from "@/lib/pipeline-b/tools/transcription";
+import { getFfprobePath } from "@/lib/media-binaries";
 
 const execFileAsync = promisify(execFile);
-export const maxDuration = 300;
+export const maxDuration = 600;
 export const dynamic = "force-dynamic";
+const MAX_AUDIO_DURATION_SEC = 195;
 
 export async function POST(req: Request) {
   let tempDir = "";
@@ -29,18 +31,27 @@ export async function POST(req: Request) {
     const audioBytes = Buffer.from(await audio.arrayBuffer());
     fs.writeFileSync(audioPath, audioBytes);
 
-    let duration = 30;
+    let duration: number;
     try {
-      const { stdout } = await execFileAsync("ffprobe", [
+      const { stdout } = await execFileAsync(getFfprobePath(), [
         "-v", "error", "-show_entries", "format=duration", "-of",
         "default=noprint_wrappers=1:nokey=1", audioPath,
       ]);
       const probed = Number.parseFloat(String(stdout).trim());
-      if (Number.isFinite(probed) && probed > 0) duration = Math.min(90, probed);
-    } catch {}
+      if (!Number.isFinite(probed) || probed <= 0) throw new Error("Audio duration could not be measured.");
+      duration = probed;
+    } catch {
+      return NextResponse.json({ success: false, error: "Could not read the uploaded audio duration. Please upload a valid audio file." }, { status: 400 });
+    }
+    if (duration > MAX_AUDIO_DURATION_SEC) {
+      return NextResponse.json({ success: false, error: `Audio must be ${MAX_AUDIO_DURATION_SEC} seconds or shorter. This file is ${duration.toFixed(1)} seconds.` }, { status: 400 });
+    }
 
     const result = await transcribeAudio({ videoPath: audioPath, wavPath, totalDuration: duration, userScript });
     const transcript = result.segments.map((segment) => segment.text).join(" ").trim();
+    if (!transcript) {
+      return NextResponse.json({ success: false, error: "No speech was found in the uploaded audio. Please use a voice recording or add a script." }, { status: 422 });
+    }
     const audioId = crypto.randomUUID();
     const voiceoverDir = path.join(process.cwd(), "public", "voiceover");
     fs.mkdirSync(voiceoverDir, { recursive: true });

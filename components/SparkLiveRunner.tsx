@@ -9,6 +9,7 @@ interface SparkLiveRunnerProps {
   code: string;
   duration?: number;
   aspectRatio?: string;
+  previewCropRatio?: "9:16" | "16:9";
   className?: string;
   replayKey?: number;
   isGenerating?: boolean;
@@ -32,6 +33,7 @@ export default function SparkLiveRunner({
   code,
   duration = 10,
   aspectRatio = "9/16",
+  previewCropRatio = "9:16",
   className = "",
   replayKey = 0,
   isGenerating = false,
@@ -51,6 +53,7 @@ export default function SparkLiveRunner({
   playbackIsPlaying,
 }: SparkLiveRunnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoAreaRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const callbacksRef = useRef({ onReady, onError, onTimeUpdate });
   callbacksRef.current = { onReady, onError, onTimeUpdate };
@@ -58,6 +61,7 @@ export default function SparkLiveRunner({
   const [isLoaded, setIsLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
+  const [landscapeCropInset, setLandscapeCropInset] = useState(0);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLayerEditMode, setIsLayerEditMode] = useState(false);
@@ -81,6 +85,23 @@ export default function SparkLiveRunner({
     code, duration: totalVideoDuration, background, ink, previewId, fps: 60,
   }), [code, totalVideoDuration, background, ink, previewId]);
   const visibleError = errorMessage || renderError;
+
+  useEffect(() => {
+    if (previewCropRatio !== "16:9" || !videoAreaRef.current) return;
+    const area = videoAreaRef.current;
+    const updateCrop = () => {
+      const bandHeight = Math.min(area.clientHeight, area.clientWidth * 9 / 16);
+      setLandscapeCropInset(Math.max(0, (area.clientHeight - bandHeight) / 2));
+    };
+    updateCrop();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateCrop);
+      return () => window.removeEventListener("resize", updateCrop);
+    }
+    const observer = new ResizeObserver(updateCrop);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [previewCropRatio]);
 
   useEffect(() => {
     if (!isLoaded || playbackTime === undefined) return;
@@ -234,7 +255,7 @@ export default function SparkLiveRunner({
         </div>
       </div>}
 
-      <div className="relative flex-1 min-h-0 w-full overflow-hidden">
+      <div ref={videoAreaRef} className="relative flex-1 min-h-0 w-full overflow-hidden">
         {!visibleError && code && !isGenerating && (
           <iframe
             key={previewId}
@@ -242,7 +263,15 @@ export default function SparkLiveRunner({
             srcDoc={srcDoc}
             sandbox="allow-scripts"
             className="absolute inset-0 w-full h-full border-none bg-transparent"
+            style={previewCropRatio === "16:9" ? { clipPath: `inset(${landscapeCropInset}px 0)` } : undefined}
             title="Meta Muse Spark 1.3 Live Animation Preview"
+          />
+        )}
+        {previewCropRatio === "16:9" && isLoaded && !visibleError && (
+          <div
+            className="pointer-events-none absolute inset-x-0 border-y border-white/30 z-10"
+            style={{ top: landscapeCropInset, bottom: landscapeCropInset }}
+            aria-hidden="true"
           />
         )}
         {isLayerEditMode && isLoaded && !visibleError && (

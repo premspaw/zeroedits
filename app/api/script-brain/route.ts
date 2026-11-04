@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const currentScript = body.currentScript ? JSON.stringify(body.currentScript) : "";
     const creatorContext = await getCreatorContextForPrompt(
       `${storyIdea}\n${userInstruction}\n${currentScript}`,
-      { includePersonalMemories: storyMode !== "direct" }
+      { includePersonalArchive: storyMode !== "direct" }
     );
 
     if (!apiKey) {

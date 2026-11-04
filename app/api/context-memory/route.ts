@@ -5,14 +5,24 @@ import { sanitizeCreatorContextSnapshot } from "@/lib/creator-context";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_BODY_BYTES = 32 * 1024 * 1024;
+const MAX_BODY_BYTES = 64 * 1024 * 1024;
+
+function localOnlyResponse() {
+  return process.env.NODE_ENV === "production"
+    ? NextResponse.json({ success: false, error: "Shared creator memory is available only in the local studio until account authentication is added." }, { status: 404 })
+    : null;
+}
 
 export async function GET() {
+  const blocked = localOnlyResponse();
+  if (blocked) return blocked;
   const snapshot = await readCreatorContextSnapshot();
-  return NextResponse.json({ success: true, snapshot });
+  return NextResponse.json({ success: true, snapshot }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = localOnlyResponse();
+  if (blocked) return blocked;
   try {
     const rawBody = await request.text();
     if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) {

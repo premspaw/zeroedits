@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 
-export const maxDuration = 120; // Extended time for high reasoning model
+export const maxDuration = 600;
 
 const WONDER_MASTER_SYSTEM_PROMPT = `# SYSTEM PROMPT — META MUSE WONDER: UNIVERSAL CREATIVE DIRECTOR
 
@@ -118,6 +119,7 @@ Suggested ranges:
 - 15 seconds: 3–7 beats
 - 20 seconds: 4–8 beats
 - 30 seconds: 5–12 beats
+- 60–195 seconds: enough distinct beats to follow the complete narration, usually one new scene every 5–10 seconds (about 20–40 beats for 195 seconds)
 
 These are guidelines, not fixed rules.
 
@@ -525,14 +527,12 @@ function validateWonderStoryboard(
     durationNum: number;
     formatUsed: string;
     styleHint: string;
+    aspectRatio: string;
     template?: any;
   }
 ) {
   const cleanTopic = (ctx.topic || "Story").trim().replace(/[.!?]+$/, "");
-  const duration =
-    typeof raw?.duration === "number" && raw.duration > 0
-      ? +raw.duration.toFixed(1)
-      : ctx.durationNum;
+  const duration = +ctx.durationNum.toFixed(1);
 
   const rawBeats = Array.isArray(raw?.beats) && raw.beats.length > 0 ? raw.beats : [];
   const numBeats =
@@ -563,9 +563,7 @@ function validateWonderStoryboard(
       ? raw.styleHint
       : ctx.styleHint;
 
-  const aspectRatio = ["9:16", "16:9", "1:1", "4:5"].includes(raw?.aspectRatio)
-    ? raw.aspectRatio
-    : "9:16";
+  const aspectRatio = ctx.aspectRatio;
 
   const rawGD = raw?.globalDirection || {};
   const globalDirection = {
@@ -608,6 +606,8 @@ function validateWonderStoryboard(
 
   const beatCount = rawBeats.length > 0 ? rawBeats.length : numBeats;
   const slice = +(duration / beatCount).toFixed(2);
+  const rawTimelineEnd = rawBeats.reduce((max: number, beat: any) => Math.max(max, Number(beat?.end) || 0), 0);
+  const timelineScale = rawTimelineEnd > 0 ? duration / rawTimelineEnd : 1;
   const defaultRoles = ["HOOK", "SETUP", "TRANSFORMATION", "MECHANISM", "BENEFIT", "PAYOFF", "OUTRO"];
 
   const beats = (rawBeats.length > 0 ? rawBeats : Array.from({ length: beatCount })).map(
@@ -616,9 +616,17 @@ function validateWonderStoryboard(
       const calcEnd = i === beatCount - 1 ? +duration.toFixed(1) : +((i + 1) * slice).toFixed(1);
 
       const start =
-        typeof b?.start === "number" && b.start >= 0 ? +b.start.toFixed(1) : calcStart;
+        i === 0
+          ? 0
+          : typeof b?.start === "number" && b.start >= 0
+          ? +(b.start * timelineScale).toFixed(1)
+          : calcStart;
       const end =
-        typeof b?.end === "number" && b.end > start ? +b.end.toFixed(1) : calcEnd;
+        i === beatCount - 1
+          ? duration
+          : typeof b?.end === "number" && b.end * timelineScale > start
+          ? +(b.end * timelineScale).toFixed(1)
+          : calcEnd;
       const beatDuration = +(end - start).toFixed(1);
 
       // Normalize animationCues to strictly match array of { time: number, action: string }
@@ -775,6 +783,8 @@ export async function POST(req: NextRequest) {
       voiceName = "",
       voiceoverEnabled = false,
       userScript = "",
+      aspectRatio = "9:16",
+      narrationSource = "",
     } = body;
 
     const durationNum =
@@ -783,19 +793,26 @@ export async function POST(req: NextRequest) {
       10;
 
     const styleHint = extractStyleHint(topic || "");
-    const formatUsed = template?.id || format || (styleHint !== "none" ? styleHint : "auto");
+    const formatUsed = template?.id || format || "auto";
+    const requestedAspectRatio = aspectRatio === "16:9" ? "16:9" : "9:16";
+    const compositionDirection = requestedAspectRatio === "16:9"
+      ? "The final output is a 16:9 landscape frame with a 9:16 portrait animation centered inside dark side bars. Compose all scene content for the portrait center stage."
+      : "Compose all scene content for a 9:16 portrait frame.";
+    const creatorContext = await getCreatorContextForPrompt(`${topic || ""}\n${userScript || ""}`);
 
     const apiKey = getMetaApiKey();
 
     const voiceLanguageName =
       language === "HI" ? "Hindi" : language === "KN" ? "Kannada" : "English";
 
-    const voiceDirection = voiceoverEnabled
+    const voiceDirection = narrationSource === "uploadedAudio"
+      ? "An uploaded voiceover supplies the audio. The transcript is authoritative. Split it across beats as spoken content, with visuals timed to its full duration. Do not request synthesized speech."
+      : voiceoverEnabled
       ? `Voiceover is ON. Language: ${voiceLanguageName}. Voice: ${voiceName || voice}. Write a speakable voiceover line for EVERY beat in ${voiceLanguageName} (same script), paced to fit each beat's duration at roughly 2-2.5 words per second. Keep lines natural for speech, no stage directions inside voiceover text.`
       : "Voiceover is OFF. Keep voiceover fields short or ambient. The visuals carry the story.";
 
     const scriptDirection = (typeof userScript === "string" && userScript.trim())
-      ? ` The user pasted their OWN script (see userScript). Use it as the spoken script: split it across beats for the text/voiceover fields, preserving the user's wording. Do not invent a different story.`
+      ? ` The user supplied ${narrationSource === "uploadedAudio" ? "an uploaded audio transcript" : "their own script"} (see userScript). It is the narration and timing source. Follow its full story in order and preserve its wording across beats. The prompt is the user's creative direction for the visuals; do not replace the narration with the prompt or invent a different story.`
       : " No user script was supplied, so you write the dialogues.";
 
     const wonderInput = {
@@ -803,7 +820,7 @@ export async function POST(req: NextRequest) {
       topic,
       duration: durationNum,
       timing: `${durationNum}s`,
-      aspectRatio: "9:16",
+      aspectRatio: requestedAspectRatio,
       format: formatUsed,
       template: template || null,
       language,
@@ -812,8 +829,9 @@ export async function POST(req: NextRequest) {
       voiceName: voiceName || voice,
       voiceoverEnabled: Boolean(voiceoverEnabled),
       ...(typeof userScript === "string" && userScript.trim()
-        ? { userScript: userScript.trim().slice(0, 4000) }
+        ? { userScript: userScript.trim().slice(0, 16000) }
         : {}),
+      ...(creatorContext ? { creatorContext } : {}),
       styleHint,
       rendererCapabilities: [
         "framer-motion",
@@ -824,7 +842,7 @@ export async function POST(req: NextRequest) {
       ],
       responseSchema: "MetaMuseWonderStoryboard",
       instruction:
-        `Return structured output strictly matching the MetaMuseWonderStoryboard JSON Schema. Do not wrap in markdown fences or commentary. ${voiceDirection}${scriptDirection}`,
+        `Return structured output strictly matching the MetaMuseWonderStoryboard JSON Schema. Do not wrap in markdown fences or commentary. If format is auto and template is null, choose formatUsed and the visual approach based on the prompt and narration; never default to Image Storyteller solely because audio is uploaded. Cover the entire ${durationNum}s timeline. Preserve the requested ${requestedAspectRatio} output aspect ratio. ${compositionDirection} Use creatorContext only for relevant voice, audience, visual preferences, or story continuity. The current topic and userScript are authoritative; do not insert private details from saved memories into a supplied script. ${voiceDirection}${scriptDirection}`,
     };
 
     // Payload configured with structured schema and maximum reasoning capability
@@ -913,6 +931,7 @@ export async function POST(req: NextRequest) {
       durationNum,
       formatUsed,
       styleHint,
+      aspectRatio: requestedAspectRatio,
       template,
     };
 

@@ -315,6 +315,7 @@ export interface PipelineBRunState {
   rawVideoPath: string;
   userScript?: string;
   templateId: string;
+  aspectRatio?: "9:16" | "16:9";
   galleryAssets?: Array<{ id: string; name: string; url: string; kind: "video" | "image"; tags: string[]; duration?: number; thumbnailPath?: string }>;
   mode?: "wonder-ai" | "rules-only";
   pacingProfile?: PacingProfile;

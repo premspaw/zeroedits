@@ -637,6 +637,7 @@ export async function exportPipelineBVideo(runId: string): Promise<PipelineBRunS
     transcript: state.transcript || [],
     outputPath: finalOutputPath,
     templateId: state.templateId,
+    aspectRatio: state.aspectRatio,
   });
 
   state.finalVideoPath = finalOutputPath;
@@ -644,7 +645,7 @@ export async function exportPipelineBVideo(runId: string): Promise<PipelineBRunS
   // QA gates on the final render: H.264/AAC 1080×1920 @30fps, loop seam, safe-zone proof frame
   const qa = state.qaReport || newQaReport();
   try {
-    addGate(qa, await gateExportAndLoop(finalOutputPath));
+    addGate(qa, await gateExportAndLoop(finalOutputPath, state.aspectRatio === "16:9" ? { expectedWidth: 1920, expectedHeight: 1080 } : undefined));
     const proofPath = path.join(runDir, "qa_safe_zone_proof.png");
     await renderSafeZoneProof(finalOutputPath, proofPath, Math.max(0, (state.editPlan?.cleanDuration || 2) / 2));
     const layoutBoxes = (state.editPlan as any)?.layoutBoxes as LayoutBox[] | undefined;

@@ -5,6 +5,7 @@ import { readModelResponse } from "@/lib/model-response";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import { withModelRetry } from "@/lib/model-retry";
 import { BANK_DIR, ensureBankDir } from "@/lib/story-bank";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 import {
   analyzeUserStoryWithZee,
   buildScriptBeatsForStory,
@@ -244,6 +245,7 @@ async function analyzeWhatsAppConversationWithMetaAI(
 }> {
   const userTurns = thread.filter((t) => t.role === "user");
   const combinedUserText = userTurns.map((t) => t.text).join(" ");
+  const creatorContext = await getCreatorContextForPrompt(combinedUserText);
   const wordCount = combinedUserText.split(/\s+/).filter(Boolean).length;
 
   const shouldAskFollowUp =
@@ -273,7 +275,7 @@ async function analyzeWhatsAppConversationWithMetaAI(
                 role: "user",
                 content: `WhatsApp Phone: ${userPhone}\nForce Segregate Now: ${
                   forceSegregate ? "YES (Finalize & Segregate immediately)" : "AUTO"
-                }\nUser Turns Count: ${userTurns.length}\n\nConversation Thread:\n${transcriptLog}`,
+                }\nUser Turns Count: ${userTurns.length}\n\n${creatorContext ? `Shared creator context (background only; do not add old memory details to this conversation):\n${creatorContext}\n\n` : ""}Conversation Thread:\n${transcriptLog}`,
               },
             ],
           }),

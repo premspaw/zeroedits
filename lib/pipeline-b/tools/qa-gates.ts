@@ -428,8 +428,8 @@ async function grabGrayFrame(videoPath: string, atSec: number | "last"): Promise
   return stdout as unknown as Buffer;
 }
 
-export async function gateExportAndLoop(finalPath: string, opts?: { maxFrameDelta?: number; maxEdgeDb?: number }): Promise<QaGateResult> {
-  const { maxFrameDelta = 0.08, maxEdgeDb = -30 } = opts || {};
+export async function gateExportAndLoop(finalPath: string, opts?: { maxFrameDelta?: number; maxEdgeDb?: number; expectedWidth?: number; expectedHeight?: number }): Promise<QaGateResult> {
+  const { maxFrameDelta = 0.08, maxEdgeDb = -30, expectedWidth = 1080, expectedHeight = 1920 } = opts || {};
   const { stdout } = await execFileAsync("ffprobe", [
     "-v", "error", "-show_entries", "stream=codec_type,codec_name,avg_frame_rate,width,height", "-of", "json", finalPath,
   ]);
@@ -437,7 +437,7 @@ export async function gateExportAndLoop(finalPath: string, opts?: { maxFrameDelt
   const v = streams.find((s: any) => s.codec_type === "video") || {};
   const a = streams.find((s: any) => s.codec_type === "audio") || {};
   const fps = parseRate(v.avg_frame_rate);
-  const formatOk = v.codec_name === "h264" && a.codec_name === "aac" && Math.abs(fps - QA_FPS) < 0.01 && v.width === 1080 && v.height === 1920;
+  const formatOk = v.codec_name === "h264" && a.codec_name === "aac" && Math.abs(fps - QA_FPS) < 0.01 && v.width === expectedWidth && v.height === expectedHeight;
 
   const p = await probeExact(finalPath);
   const [first, last] = await Promise.all([grabGrayFrame(finalPath, 0), grabGrayFrame(finalPath, "last")]);
@@ -459,6 +459,8 @@ export async function gateExportAndLoop(finalPath: string, opts?: { maxFrameDelt
       video: { codec: v.codec_name, fps: +fps.toFixed(3), width: v.width, height: v.height },
       audio: { codec: a.codec_name },
       formatOk,
+      expectedWidth,
+      expectedHeight,
       firstLastFrameMeanAbsDelta: +frameDelta.toFixed(4),
       maxFrameDelta,
       audioHeadPeakDb: head.maxDb,

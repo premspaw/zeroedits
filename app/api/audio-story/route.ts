@@ -8,10 +8,15 @@ import { generateMuseImage } from "@/lib/pipeline-b/tools/image-generator";
 import { readModelResponse } from "@/lib/model-response";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import { withModelRetry } from "@/lib/model-retry";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
+import { getFfmpegPath, getFfprobePath } from "@/lib/media-binaries";
 
 const execFileAsync = util.promisify(execFile);
 
-export const maxDuration = 300; // Up to 5 minutes for AI story direction, consistent 9:16 art & MP4 video output
+const MAX_AUDIO_STORY_DURATION_SEC = 195;
+type AudioStoryAspectRatio = "9:16" | "16:9";
+
+export const maxDuration = 600; // Leave room for transcription and visual generation for a 3:15 voiceover.
 
 export type CameraMotionType =
   | "push_in"
@@ -244,8 +249,11 @@ async function renderServerSideStoryMp4(params: {
   audioPath: string;
   outputMp4Path: string;
   totalDuration: number;
+  aspectRatio: AudioStoryAspectRatio;
 }): Promise<boolean> {
-  const { scenes, audioPath, outputMp4Path, totalDuration } = params;
+  const { scenes, audioPath, outputMp4Path, totalDuration, aspectRatio } = params;
+  const targetWidth = aspectRatio === "16:9" ? 1920 : 1080;
+  const targetHeight = aspectRatio === "16:9" ? 1080 : 1920;
   const validScenes = scenes.filter((s) => s.localFilePath && fs.existsSync(s.localFilePath));
   if (validScenes.length === 0 || !fs.existsSync(audioPath)) return false;
 
@@ -278,10 +286,10 @@ async function renderServerSideStoryMp4(params: {
         zExpr = `min(zoom+0.0022,1.24)`;
       }
 
-      const vf = `scale=1200:2134:force_original_aspect_ratio=increase,crop=1200:2134,zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':d=${frames}:s=1080x1920:fps=30,format=yuv420p`;
+      const vf = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':d=${frames}:s=${targetWidth}x${targetHeight}:fps=30,format=yuv420p`;
 
       await execFileAsync(
-        "ffmpeg",
+        getFfmpegPath(),
         [
           "-y",
           "-loop",
@@ -321,7 +329,7 @@ async function renderServerSideStoryMp4(params: {
     fs.writeFileSync(concatListPath, concatContent, "utf-8");
 
     await execFileAsync(
-      "ffmpeg",
+      getFfmpegPath(),
       [
         "-y",
         "-f",
@@ -383,6 +391,9 @@ export async function POST(req: NextRequest) {
     const userScript = ((formData.get("userScript") as string) || "").trim();
     const requestedTiming = ((formData.get("timing") as string) || "15s").trim();
     const requestedVoice = ((formData.get("voice") as string) || "EN-IN").trim();
+    const clientAudioDuration = Number(formData.get("audioDuration"));
+    const requestedAspectRatio = String(formData.get("aspectRatio") || "9:16");
+    const aspectRatio: AudioStoryAspectRatio = requestedAspectRatio === "16:9" ? "16:9" : "9:16";
     const referenceImageFile = formData.get("referenceImage") as File | null;
     const clientRunId = formData.get("runId") as string | null;
 
@@ -427,7 +438,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let durationSec = Math.min(65, Math.max(5, parseInt(requestedTiming.replace("s", ""), 10) || 15));
+    let durationSec = Math.min(MAX_AUDIO_STORY_DURATION_SEC, Math.max(5, parseInt(requestedTiming.replace("s", ""), 10) || 15));
     let audioPath = path.join(runDir, "voiceover.mp3");
     let transcriptWords: { word: string; start: number; end: number }[] = [];
     let fullTranscriptText = userScript || "";
@@ -439,8 +450,9 @@ export async function POST(req: NextRequest) {
       audioPath = path.join(runDir, `voiceover${audioExt}`);
       fs.writeFileSync(audioPath, Buffer.from(rawAudioBytes));
 
+      let uploadedAudioDuration: number | null = null;
       try {
-        const probeRes = await execFileAsync("ffprobe", [
+        const probeRes = await execFileAsync(getFfprobePath(), [
           "-v",
           "error",
           "-show_entries",
@@ -451,11 +463,53 @@ export async function POST(req: NextRequest) {
         ]);
         const parsed = parseFloat(probeRes.stdout.trim());
         if (Number.isFinite(parsed) && parsed > 0) {
-          durationSec = Math.min(65, +parsed.toFixed(2));
+          uploadedAudioDuration = parsed;
+          if (parsed > MAX_AUDIO_STORY_DURATION_SEC) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: `This story accepts audio up to 3 minutes 15 seconds. Your file is ${Math.round(parsed)} seconds; trim it to 195 seconds or less and upload it again.`,
+              },
+              { status: 413 }
+            );
+          }
+          durationSec = +parsed.toFixed(2);
         }
       } catch (probeErr) {
-        console.warn("ffprobe duration check fallback:", probeErr);
+        console.warn("Could not inspect uploaded audio duration:", probeErr);
       }
+      if (uploadedAudioDuration === null && Number.isFinite(clientAudioDuration) && clientAudioDuration > 0) {
+        uploadedAudioDuration = clientAudioDuration;
+      }
+      if (uploadedAudioDuration === null) {
+        return NextResponse.json(
+          { success: false, error: "Could not read this audio file's duration. Try exporting it as MP3, WAV, M4A, or AAC and upload it again." },
+          { status: 400 }
+        );
+      }
+      if (
+        Number.isFinite(clientAudioDuration) &&
+        clientAudioDuration > 0 &&
+        Math.abs(uploadedAudioDuration - clientAudioDuration) > Math.max(2, clientAudioDuration * 0.02)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `The browser reports ${Math.round(clientAudioDuration)} seconds, but the uploaded audio decodes to ${uploadedAudioDuration.toFixed(1)} seconds. The MP3 may be truncated or have incorrect duration metadata. Re-export the complete voiceover as MP3 or WAV and upload it again.`,
+          },
+          { status: 422 }
+        );
+      }
+      if (uploadedAudioDuration > MAX_AUDIO_STORY_DURATION_SEC) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `This story accepts audio up to 3 minutes 15 seconds. Your file is ${Math.round(uploadedAudioDuration)} seconds; trim it to 195 seconds or less and upload it again.`,
+          },
+          { status: 413 }
+        );
+      }
+      durationSec = +uploadedAudioDuration.toFixed(2);
 
       const wavPath = path.join(runDir, "extracted_audio.wav");
       try {
@@ -479,7 +533,17 @@ export async function POST(req: NextRequest) {
           .join(" ")
           .trim();
       } catch (transErr) {
-        console.warn("Whisper transcription warning, generating timing windows:", transErr);
+        console.error("[AudioStory] Voiceover transcription failed:", transErr);
+      }
+
+      if (!fullTranscriptText.trim()) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "I couldn't transcribe the uploaded voiceover, so Wonder can't build scenes from its story yet. Check audio processing and retry.",
+          },
+          { status: 422 }
+        );
       }
     }
 
@@ -490,7 +554,7 @@ export async function POST(req: NextRequest) {
     const clauses = buildSpokenClauses(transcriptWords, 6);
 
     // 4. Meta Muse Wonder 1.0 — Master Visual Storyteller & Character Continuity Director
-    const sceneCount = Math.min(8, Math.max(3, Math.round(durationSec / 4.2)));
+    const sceneCount = Math.min(24, Math.max(3, Math.round(durationSec / 8.2)));
     let storyScenes: StoryScene[] = [];
     let resolvedStyle = requestedStyle === "auto" ? "anime" : requestedStyle;
     let storyTitle = "";
@@ -505,6 +569,7 @@ export async function POST(req: NextRequest) {
             .map((c) => `[${c.start.toFixed(1)}s - ${c.end.toFixed(1)}s]: "${c.text}"`)
             .join("\n")
         : fullTranscriptText || userPrompt || "An epic visual story";
+    const creatorContext = await getCreatorContextForPrompt(`${userPrompt}\n${userScript}\n${fullTranscriptText}`);
 
     const wonderSystemInstructions = `# SYSTEM PROMPT — META MUSE WONDER: MASTER IMAGE STORYTELLER & CHARACTER CONTINUITY DIRECTOR
 
@@ -538,6 +603,8 @@ Your job is to transform a spoken voiceover and/or user story prompt into a deep
 
 User Prompt / Creative Direction:
 "${userPrompt || "Create a cohesive, character-consistent cinematic anime story matching the narration."}"
+
+${creatorContext ? `Creator context for voice and visual continuity (background only; do not merge its memories into this story):\n${creatorContext}\n` : ""}
 
 ${
   fullTranscriptText
@@ -663,7 +730,7 @@ Return valid JSON strictly matching the schema.`;
           charInScene ? `[SUBJECT IN THIS SHOT]: ${charInScene}.` : "",
           userPrompt ? `[USER DIRECTION]: ${userPrompt}.` : "",
           `[SCENE ACTION & FRAMING]: ${rawVisual}.`,
-          `[CONTINUITY MANDATE]: Keep the character's exact species, age, facial features, hair/fur, crown/headgear, and outfit 100% identical to the Character Model Sheet. Full-bleed 9:16 vertical composition, zero text, zero subtitles, zero watermarks.`,
+          `[CONTINUITY MANDATE]: Keep the character's exact species, age, facial features, hair/fur, crown/headgear, and outfit 100% identical to the Character Model Sheet. Full-bleed ${aspectRatio} ${aspectRatio === "16:9" ? "landscape" : "vertical"} composition, zero text, zero subtitles, zero watermarks.`,
         ]
           .filter(Boolean)
           .join(" ");
@@ -685,7 +752,16 @@ Return valid JSON strictly matching the schema.`;
         };
       });
     } catch (wonderErr) {
-      console.error("[AudioStory] Wonder AI error, using contextual narrative fallback:", wonderErr);
+      console.error("[AudioStory] Wonder AI could not create the scene plan:", wonderErr);
+      if (audioFile && audioFile.size > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Wonder AI couldn't create the voiceover-led scene plan because its model service is unreachable. Check the model API connection and retry; no substitute scenes were generated.",
+          },
+          { status: 502 }
+        );
+      }
     }
 
     // Fallback if Wonder API was unreachable
@@ -714,7 +790,7 @@ Return valid JSON strictly matching the schema.`;
           characterAppearanceInScene: characterAndWorldBible,
           visualPrompt: `[STYLE LOCK]: Masterpiece theatrical anime film aesthetic, volumetric lighting. [CHARACTER MODEL SHEET]: ${characterAndWorldBible}. [FULL STORY CONTEXT]: ${fullContextSummary}. [CURRENT SCENE ACTION]: Illustrating "${
             wordsInSeg || userPrompt || "the story moment"
-          }" with the exact same recurring main character and attire. Pure 9:16 vertical anime film frame, no text, no logos.`,
+          }" with the exact same recurring main character and attire. Pure ${aspectRatio} ${aspectRatio === "16:9" ? "landscape" : "vertical"} anime film frame, no text, no logos.`,
           cameraMotion: i % 2 === 0 ? "push_in" : "pan_right",
           atmosphere: "golden_dust",
           lightingMood: "golden_hour",
@@ -747,7 +823,7 @@ Return valid JSON strictly matching the schema.`;
 
           if (fs.existsSync(audioPath) && fs.statSync(audioPath).size > 500) {
             synthesizedOk = true;
-            const probeRes = await execFileAsync("ffprobe", [
+            const probeRes = await execFileAsync(getFfprobePath(), [
               "-v",
               "error",
               "-show_entries",
@@ -769,7 +845,7 @@ Return valid JSON strictly matching the schema.`;
       if (!synthesizedOk) {
         // Generate clean silent audio track so MP4 muxing and HTML5 audio playback work seamlessly
         try {
-          await execFileAsync("ffmpeg", [
+          await execFileAsync(getFfmpegPath(), [
             "-y",
             "-f",
             "lavfi",
@@ -841,6 +917,7 @@ Return valid JSON strictly matching the schema.`;
           assetId: storyScenes[0].id,
           reasoningStrength: "high",
           referenceImageDataUri: anchorImageDataUri,
+          aspectRatio,
         });
         storyScenes[0].assetUrl = firstImg.publicUrl;
         storyScenes[0].localFilePath = firstImg.filePath;
@@ -867,6 +944,7 @@ Return valid JSON strictly matching the schema.`;
                 assetId: scene.id,
                 reasoningStrength: "high",
                 referenceImageDataUri: anchorImageDataUri,
+                aspectRatio,
               });
               scene.assetUrl = imageResult.publicUrl;
               scene.localFilePath = imageResult.filePath;
@@ -877,14 +955,8 @@ Return valid JSON strictly matching the schema.`;
                 imgErr
               );
               if (attempt === 2) {
-                // Fallback to nearest generated scene asset so there is never a blank frame
-                const fallbackScene = storyScenes.find((s) => s.assetUrl);
-                if (fallbackScene) {
-                  scene.assetUrl = fallbackScene.assetUrl;
-                  scene.localFilePath = fallbackScene.localFilePath;
-                } else if (referenceImagePublicUrl) {
-                  scene.assetUrl = referenceImagePublicUrl;
-                }
+                // Leave failed scenes missing so the completeness check can report
+                // the actual model failure instead of repeating unrelated artwork.
               }
             }
           }
@@ -892,13 +964,17 @@ Return valid JSON strictly matching the schema.`;
       );
     }
 
-    // If Scene 1 failed earlier, backfill from Scene 2
-    if (storyScenes[0] && !storyScenes[0].assetUrl) {
-      const firstValid = storyScenes.find((s) => s.assetUrl);
-      if (firstValid) {
-        storyScenes[0].assetUrl = firstValid.assetUrl;
-        storyScenes[0].localFilePath = firstValid.localFilePath;
-      }
+    const missingVisualCount = storyScenes.filter(
+      (scene) => !scene.localFilePath || !fs.existsSync(scene.localFilePath)
+    ).length;
+    if (missingVisualCount > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Muse Image could not finish ${missingVisualCount} scene image(s). The story wasn't marked complete; check the model API connection and retry.`,
+        },
+        { status: 502 }
+      );
     }
 
     // 6. Render Server-Side MP4 Video Output (1080x1920 H.264 + AAC Voiceover)
@@ -908,6 +984,7 @@ Return valid JSON strictly matching the schema.`;
       audioPath,
       outputMp4Path: finalMp4Path,
       totalDuration: durationSec,
+      aspectRatio,
     });
 
     const audioUrl = `/api/audio-story/media/${runId}?type=audio`;
@@ -932,6 +1009,7 @@ Return valid JSON strictly matching the schema.`;
       imageModel: "muse-image-1.0",
       directorModel: "muse-wonder-1.0",
       duration: durationSec,
+      aspectRatio,
       audioUrl,
       finalVideoUrl,
       scenes: storyScenes,
@@ -972,6 +1050,7 @@ Return valid JSON strictly matching the schema.`;
       directorModel: "muse-wonder-1.0",
       referenceImageUrl: referenceImagePublicUrl,
       duration: durationSec,
+      aspectRatio,
       audioUrl,
       finalVideoUrl,
       scenes: storyScenes,

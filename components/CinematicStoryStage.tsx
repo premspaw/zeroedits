@@ -88,6 +88,7 @@ interface CinematicStoryStageProps {
   topic?: string;
   style?: string;
   runId?: string;
+  aspectRatio?: "9:16" | "16:9";
   onDownloadMp4?: () => void;
 }
 
@@ -525,6 +526,7 @@ export default function CinematicStoryStage({
   topic = "Cinematic Anime Story",
   style = "anime",
   runId,
+  aspectRatio = "9:16",
 }: CinematicStoryStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -545,6 +547,9 @@ export default function CinematicStoryStage({
     if (scenes.length > 0) return scenes[scenes.length - 1].end;
     return 15;
   }, [duration, scenes]);
+  const frameWidth = aspectRatio === "16:9" ? 1920 : 1080;
+  const frameHeight = aspectRatio === "16:9" ? 1080 : 1920;
+  const frameLabel = `${frameWidth}×${frameHeight}`;
 
   const clauses = useMemo(() => buildClausesFromWords(words, 6), [words]);
 
@@ -631,7 +636,7 @@ export default function CinematicStoryStage({
     } catch {}
   }, []);
 
-  // Pure, deterministic 1080x1920 frame renderer (shared by live 60fps preview & MP4 export)
+  // Pure, deterministic frame renderer shared by live preview and MP4 export.
   const renderFrameToContext = useCallback(
     (ctx: CanvasRenderingContext2D, W: number, H: number, t: number) => {
       // 1. Clear base with deep cinema black
@@ -839,7 +844,7 @@ export default function CinematicStoryStage({
     return () => cancelAnimationFrame(animId);
   }, [renderFrameToContext, currentTime]);
 
-  // Deterministic 1080x1920 H.264 MP4 Export with Original Voiceover Audio
+  // Deterministic H.264 MP4 export with the original voiceover audio.
   const handleExportMP4 = useCallback(async () => {
     if (isExporting) return;
     setIsExporting(true);
@@ -868,10 +873,10 @@ export default function CinematicStoryStage({
       const fps = 30;
       const totalFrames = Math.max(1, Math.round(totalDuration * fps));
       const offCanvas = document.createElement("canvas");
-      offCanvas.width = 1080;
-      offCanvas.height = 1920;
+      offCanvas.width = frameWidth;
+      offCanvas.height = frameHeight;
       const offCtx = offCanvas.getContext("2d", { willReadFrequently: true });
-      if (!offCtx) throw new Error("Could not initialize 1080x1920 export canvas");
+      if (!offCtx) throw new Error(`Could not initialize ${frameLabel} export canvas`);
 
       let encoder: any = null;
       const chunks: Uint8Array[] = [];
@@ -882,8 +887,8 @@ export default function CinematicStoryStage({
           const VideoEncoderClass = (window as any).VideoEncoder;
           const isSupported = await VideoEncoderClass.isConfigSupported({
             codec: "avc1.640028",
-            width: 1080,
-            height: 1920,
+            width: frameWidth,
+            height: frameHeight,
             bitrate: 10_000_000,
             framerate: fps,
             avc: { format: "annexb" },
@@ -902,8 +907,8 @@ export default function CinematicStoryStage({
             });
             encoder.configure({
               codec: "avc1.640028",
-              width: 1080,
-              height: 1920,
+              width: frameWidth,
+              height: frameHeight,
               bitrate: 10_000_000,
               framerate: fps,
               avc: { format: "annexb" },
@@ -920,7 +925,7 @@ export default function CinematicStoryStage({
 
       for (let f = 0; f < totalFrames; f++) {
         const t = Math.min(totalDuration - 0.02, +(f / fps).toFixed(4));
-        renderFrameToContext(offCtx, 1080, 1920, t);
+        renderFrameToContext(offCtx, frameWidth, frameHeight, t);
 
         if (hasWebCodecs && encoder && encoder.state === "configured") {
           const VideoFrameClass = (window as any).VideoFrame;
@@ -1019,7 +1024,7 @@ export default function CinematicStoryStage({
     } finally {
       setIsExporting(false);
     }
-  }, [isExporting, scenes, totalDuration, renderFrameToContext, runId, topic, finalVideoUrl]);
+  }, [isExporting, scenes, totalDuration, renderFrameToContext, runId, topic, finalVideoUrl, frameWidth, frameHeight, frameLabel]);
 
   // Listen for global export events (triggered by chat card, modal header, or Post tab)
   useEffect(() => {
@@ -1053,17 +1058,19 @@ export default function CinematicStoryStage({
         />
       )}
 
-      {/* Pure 9:16 Cinematic Anime Frame (Zero overlays/badges cluttering the artwork) */}
+      {/* Keep the preview card portrait; show landscape output in its centered band. */}
       <div
         onClick={togglePlay}
         className="relative w-full aspect-[9/16] rounded-[24px] overflow-hidden shadow-[0_24px_50px_rgba(0,0,0,0.38)] border-2 border-[#141414] bg-black cursor-pointer group"
       >
-        <canvas
-          ref={canvasRef}
-          width={1080}
-          height={1920}
-          className="w-full h-full object-cover"
-        />
+        <div className={aspectRatio === "16:9" ? "absolute inset-x-0 top-1/2 -translate-y-1/2 aspect-video overflow-hidden" : "absolute inset-0"}>
+          <canvas
+            ref={canvasRef}
+            width={frameWidth}
+            height={frameHeight}
+            className="w-full h-full object-cover"
+          />
+        </div>
 
         {/* Fullscreen button on hover only */}
         <button
@@ -1086,7 +1093,7 @@ export default function CinematicStoryStage({
           >
             <Loader2 size={36} className="animate-spin text-[#FFE17D]" />
             <div className="font-bold text-[14px]">
-              Rendering 1080×1920 Cinematic Anime MP4...
+              Rendering {frameLabel} Cinematic Anime MP4...
             </div>
             <div className="w-48 h-1.5 rounded-full bg-white/20 overflow-hidden">
               <div

@@ -107,8 +107,9 @@ export async function exportFinalVideo(params: {
   transcript: TranscriptSegment[];
   outputPath: string;
   templateId?: string;
+  aspectRatio?: "9:16" | "16:9";
 }): Promise<string> {
-  const { cleanVideoPath, editPlan, transcript, outputPath, templateId } = params;
+  const { cleanVideoPath, editPlan, transcript, outputPath, templateId, aspectRatio = "9:16" } = params;
   const _template = getPipelineBTemplate(templateId);
 
   const outputDir = path.dirname(outputPath);
@@ -404,6 +405,7 @@ export async function exportFinalVideo(params: {
   fs.writeFileSync(assPath, assLines.join("\n"), "utf-8");
 
   const tmpOutputPath = `${outputPath}.tmp.mp4`;
+  const portraitOutputPath = `${outputPath}.portrait.tmp.mp4`;
   const soundEffectsPath = path.join(outputDir, "edit_sound_effects.wav");
   try {
     const fontsDir = path
@@ -455,9 +457,28 @@ export async function exportFinalVideo(params: {
         "2",
         "-movflags",
         "+faststart",
-        tmpOutputPath,
+        aspectRatio === "16:9" ? portraitOutputPath : tmpOutputPath,
       ];
     await execFileAsync("ffmpeg", ffmpegArgs, { maxBuffer: 20 * 1024 * 1024 });
+
+    if (aspectRatio === "16:9") {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-i", portraitOutputPath,
+        "-vf", "scale=608:1080:force_original_aspect_ratio=decrease:flags=bicubic,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
+        "-c:v", "libx264",
+        "-profile:v", "high",
+        "-level:v", "4.1",
+        "-pix_fmt", "yuv420p",
+        "-preset", "ultrafast",
+        "-crf", "21",
+        "-threads", "2",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        tmpOutputPath,
+      ], { maxBuffer: 20 * 1024 * 1024 });
+      if (fs.existsSync(portraitOutputPath)) fs.unlinkSync(portraitOutputPath);
+    }
 
     if (fs.existsSync(tmpOutputPath)) {
       fs.renameSync(tmpOutputPath, outputPath);
@@ -468,6 +489,9 @@ export async function exportFinalVideo(params: {
   } catch (err) {
     if (fs.existsSync(tmpOutputPath)) {
       try { fs.unlinkSync(tmpOutputPath); } catch {}
+    }
+    if (fs.existsSync(portraitOutputPath)) {
+      try { fs.unlinkSync(portraitOutputPath); } catch {}
     }
     if (fs.existsSync(soundEffectsPath)) {
       try { fs.unlinkSync(soundEffectsPath); } catch {}

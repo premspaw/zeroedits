@@ -39,6 +39,7 @@ export function createRun(params: {
   rawVideoPath: string;
   userScript?: string;
   templateId?: string;
+  aspectRatio?: "9:16" | "16:9";
   mode?: "wonder-ai" | "rules-only";
   pacingProfile?: "natural" | "snappy" | "relaxed";
 }): PipelineBRunState {
@@ -79,6 +80,7 @@ export function createRun(params: {
     rawVideoPath: params.rawVideoPath,
     userScript: params.userScript || "",
     templateId: params.templateId || "hormoziPunch",
+    aspectRatio: params.aspectRatio === "16:9" ? "16:9" : "9:16",
     mode: params.mode || "wonder-ai",
     pacingProfile: params.pacingProfile || "snappy",
     stages: stagesMap as Record<PipelineBStage, StageRecord>,

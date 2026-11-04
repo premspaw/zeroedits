@@ -5,6 +5,7 @@ import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { ensureBankDir } from "@/lib/story-bank";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = getMetaApiKey();
+    const creatorContext = await getCreatorContextForPrompt(transcript, { includePersonalArchive: false });
 
     let parsed: any = null;
     if (apiKey) {
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
               input: [
                 {
                   role: "user",
-                  content: `Goal: ${goal}\nTranscript:\n${transcript}`,
+                  content: `Goal: ${goal}\n${creatorContext ? `Creator voice context (use for voice notes only; extract moments from the transcript alone):\n${creatorContext}\n\n` : ""}Transcript:\n${transcript}`,
                 },
               ],
               stream: true,

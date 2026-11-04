@@ -4,6 +4,7 @@ import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import type { GalleryMediaItem, LifeCategory } from "@/lib/zee-brain";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -55,6 +56,7 @@ async function classifyMetadataWithMetaMuse(
           `${i}: file="${it.name}" folder="${it.folderHint || "web-folder"}" date="${it.dateIso}"`
       )
       .join("\n");
+    const creatorContext = await getCreatorContextForPrompt(listText, { includePersonalArchive: false });
 
     const parsed = await withModelRetry(
       async () => {
@@ -70,7 +72,7 @@ async function classifyMetadataWithMetaMuse(
             input: [
               {
                 role: "user",
-                content: `Classify these web-app gallery filenames for Prem's Digital Brain:\n${listText}`,
+                content: `Classify these web-app gallery filenames for Prem's Digital Brain. Use creatorContext only for relevant brand vocabulary and visual taste; infer people, relationships, and events from the filenames/folder hints only.\n${creatorContext ? `Creator context:\n${creatorContext}\n\n` : ""}${listText}`,
               },
             ],
             stream: true,

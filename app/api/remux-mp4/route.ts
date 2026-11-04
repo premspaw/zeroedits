@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getFfmpegPath, getFfprobePath } from "@/lib/media-binaries";
 
 const execFileAsync = promisify(execFile);
 
@@ -171,7 +172,7 @@ export async function POST(req: NextRequest) {
             "+faststart",
             outputPath,
           ];
-      await execFileAsync("ffmpeg", ffmpegArgs, { maxBuffer: 40 * 1024 * 1024 });
+      await execFileAsync(getFfmpegPath(), ffmpegArgs, { maxBuffer: 40 * 1024 * 1024 });
     } else {
       // ── RAW BITSTREAM / WEBM / MP4 BUFFER FROM WEBCODECS ──
       const arrayBuffer = await req.arrayBuffer();
@@ -231,12 +232,12 @@ export async function POST(req: NextRequest) {
               "+faststart",
               outputPath,
             ];
-        await execFileAsync("ffmpeg", copyArgs, { maxBuffer: 30 * 1024 * 1024 });
+        await execFileAsync(getFfmpegPath(), copyArgs, { maxBuffer: 30 * 1024 * 1024 });
         muxSuccess = fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1000;
         // Validate that the copied stream is really a playable H.264 video (not garbage bytes)
         if (muxSuccess) {
           try {
-            const { stdout } = await execFileAsync("ffprobe", [
+            const { stdout } = await execFileAsync(getFfprobePath(), [
               "-v", "error",
               "-select_streams", "v:0",
               "-show_entries", "stream=codec_name,nb_frames,duration,width,height",
@@ -331,7 +332,7 @@ export async function POST(req: NextRequest) {
               "+faststart",
               outputPath,
             ];
-        await execFileAsync("ffmpeg", transcodeArgs, { maxBuffer: 30 * 1024 * 1024 });
+        await execFileAsync(getFfmpegPath(), transcodeArgs, { maxBuffer: 30 * 1024 * 1024 });
       }
     }
 

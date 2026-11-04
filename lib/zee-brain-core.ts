@@ -879,6 +879,7 @@ export function loadZeeBrain(): ZeeBrainState {
     const parsed = JSON.parse(raw) as Partial<ZeeBrainState>;
     const isSampleMemoryId = (id: string) => /^mem-(insight|work|travel|personal|family|rel)-1$/.test(id);
     const isSampleGalleryId = (id: string) => /^gal-(gokarna|portrait|family|rel|work|travel|ai-img|ai-vid)-\d+$/.test(id);
+    const seenMemoryIds = new Set<string>();
     const hasSampleRecords = Boolean(
       parsed.memories?.some((memory) => isSampleMemoryId(memory.id)) ||
       parsed.gallery?.some((item) => isSampleGalleryId(item.id))
@@ -896,7 +897,11 @@ export function loadZeeBrain(): ZeeBrainState {
         ...(parsed.brandProfile || {}),
       },
       memories: Array.isArray(parsed.memories)
-        ? parsed.memories.filter((memory) => !isSampleMemoryId(memory.id))
+        ? parsed.memories.filter((memory) => {
+            if (isSampleMemoryId(memory.id) || seenMemoryIds.has(memory.id)) return false;
+            seenMemoryIds.add(memory.id);
+            return true;
+          })
         : INITIAL_ZEE_BRAIN.memories,
       gallery: Array.isArray(parsed.gallery)
         ? parsed.gallery.filter((item) => !isSampleGalleryId(item.id))

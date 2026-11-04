@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 import {
   BANK_DIR,
   RAW_BANK_MD,
@@ -234,6 +235,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Mode: Memory & Digital Brain Synthesis with Meta Muse
+    const creatorContext = await getCreatorContextForPrompt(transcriptText);
     const brainResult = await withModelRetry(
       async () => {
         const response = await fetch(getMetaEndpoint("responses"), {
@@ -251,6 +253,7 @@ export async function POST(req: NextRequest) {
                 content: [
                   `Preferred Pillar: ${preferredCategory || "auto-detect"}`,
                   identityContext ? `Known user and brand context (use only when relevant; the spoken account remains the source of truth):\n${identityContext}` : "",
+                  creatorContext ? `Shared creator context (background only; do not add details from other memories to this account):\n${creatorContext}` : "",
                   `User's Spoken Input:\n"${transcriptText}"`,
                 ].filter(Boolean).join("\n\n"),
               },

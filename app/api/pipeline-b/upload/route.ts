@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     const videoUrl = (formData.get("videoUrl") as string | null) || null;
     const userScript = (formData.get("userScript") as string) || "";
     const templateId = (formData.get("templateId") as string) || "hormoziPunch";
+    const aspectRatio = String(formData.get("aspectRatio") || "9:16") === "16:9" ? "16:9" : "9:16";
     const mode = (formData.get("mode") as "wonder-ai" | "rules-only") || "wonder-ai";
 
     if (!videoFile && !r2Key && !videoUrl) {
@@ -116,6 +117,7 @@ export async function POST(req: NextRequest) {
       rawVideoPath,
       userScript,
       templateId,
+      aspectRatio,
       mode,
     });
     if (galleryAssets.length) {

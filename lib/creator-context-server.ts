@@ -29,8 +29,8 @@ export async function writeCreatorContextSnapshot(
 
 export async function getCreatorContextForPrompt(
   task: string,
-  options: { includePersonalMemories?: boolean } = {}
+  options: { includePersonalArchive?: boolean } = {}
 ): Promise<string> {
   const snapshot = await readCreatorContextSnapshot();
-  return formatCreatorContextForPrompt(snapshot, task, 18000, options.includePersonalMemories !== false);
+  return formatCreatorContextForPrompt(snapshot, task, 18000, options.includePersonalArchive !== false);
 }

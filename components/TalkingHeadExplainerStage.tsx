@@ -320,6 +320,7 @@ interface TalkingHeadExplainerStageProps {
   beats?: any[];
   topic?: string;
   compact?: boolean;
+  previewCropRatio?: "9:16" | "16:9";
   galleryClips?: GalleryClipItem[];
   onExportMP4?: () => void;
   onRecreateScene?: (sceneIndex: number, instruction: string, visualStyle?: string, customStart?: number, customEnd?: number) => Promise<any> | any;
@@ -344,6 +345,7 @@ export default function TalkingHeadExplainerStage({
   beats = [],
   topic = "",
   compact = false,
+  previewCropRatio = "9:16",
   galleryClips = [],
   onExportMP4,
   onRecreateScene,
@@ -1274,11 +1276,11 @@ export default function TalkingHeadExplainerStage({
           className={`absolute inset-0 w-full h-full object-cover pointer-events-none z-0 ${
             activeSparkCode.trim().length > 30 ? "opacity-100" : "opacity-0"
           }`}
-          style={{ transform: `scale(${activeCameraZoom})`, transformOrigin: "center center" }}
+          style={{ transform: `scale(${activeCameraZoom})`, transformOrigin: "center center", clipPath: previewCropRatio === "16:9" ? "inset(34.18% 0 34.18% 0)" : undefined }}
         />
 
         {/* 100% Unified Template Canvas Preview */}
-        <div className={`absolute inset-0 z-10 overflow-hidden bg-[#0B0C10] flex items-center justify-center ${
+        <div style={previewCropRatio === "16:9" ? { clipPath: "inset(34.18% 0 34.18% 0)" } : undefined} className={`absolute inset-0 z-10 overflow-hidden bg-[#0B0C10] flex items-center justify-center ${
           activeSparkCode.trim().length > 30 ? "invisible" : "visible"
         }`}>
           <canvas
@@ -1301,6 +1303,7 @@ export default function TalkingHeadExplainerStage({
             playbackTime={Math.max(0, currentTime - activeSparkStart)}
             playbackIsPlaying={isPlaying}
             transparent
+            previewCropRatio={previewCropRatio}
             theme={{ bg: "transparent", ink: "#FFFFFF" }}
             topic={activeVisualSegment?.spokenReference || topic}
             showControls={false}
@@ -1311,14 +1314,20 @@ export default function TalkingHeadExplainerStage({
 
         {/* Real-time Kinetic Typography & Multi-Style Caption Layer */}
         {!hideCaptions && (
-          <CaptionLayerOverlay
+          <div className="absolute inset-0 z-30 pointer-events-none" style={previewCropRatio === "16:9" ? { clipPath: "inset(34.18% 0 34.18% 0)" } : undefined}>
+            <CaptionLayerOverlay
             words={effectiveWords}
             currentTime={currentTime}
             styleId={captionStyleId}
             sizeScale={captionSizeScale}
             captionYPercent={captionYPercent}
             hideCaptions={hideCaptions}
-          />
+            />
+          </div>
+        )}
+
+        {previewCropRatio === "16:9" && (
+          <div className="absolute inset-x-0 top-[34.18%] bottom-[34.18%] z-[35] border-y border-white/30 pointer-events-none" aria-hidden="true" />
         )}
 
         {/* On-Video Subtitle Drag Hotspot (Shown when CC Studio or Edit Mode is open) */}

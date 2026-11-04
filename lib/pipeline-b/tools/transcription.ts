@@ -8,6 +8,7 @@ import util from "util";
 import fs from "fs";
 import path from "path";
 import type { TranscriptSegment, TranscriptWord } from "../types.ts";
+import { getFfmpegPath } from "@/lib/media-binaries";
 
 const execFileAsync = util.promisify(execFile);
 
@@ -24,7 +25,7 @@ const cachedWhisperPipelines: Record<string, any> = {};
 
 async function getAudioFloat32(wavPath: string): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
-    const ffmpeg = spawn("ffmpeg", [
+    const ffmpeg = spawn(getFfmpegPath(), [
       "-y",
       "-i", wavPath,
       "-ar", "16000",
@@ -220,7 +221,7 @@ export async function extractAudioTrack(videoPath: string, outputWavPath: string
   }
 
   // Extract 16kHz mono 16-bit PCM WAV for clean speech processing
-  await execFileAsync("ffmpeg", [
+  await execFileAsync(getFfmpegPath(), [
     "-y",
     "-i",
     videoPath,
@@ -243,7 +244,7 @@ export async function detectSilences(
   minDurationSec = 0.4
 ): Promise<{ start: number; end: number; duration: number }[]> {
   try {
-    const { stderr } = await execFileAsync("ffmpeg", [
+    const { stderr } = await execFileAsync(getFfmpegPath(), [
       "-i",
       audioPath,
       "-af",

@@ -1672,7 +1672,7 @@ export default function StoryBankView({
               const isSelected = mem.id === activeMemory.id;
               return (
                 <div
-                  key={mem.id}
+                  key={`${mem.id}-${idx}`}
                   onClick={() => handleSelectMemory(mem)}
                   className={`group relative rounded-[16px] border p-3 hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] hover:-translate-y-[1px] transition-all cursor-pointer ${
                     isSelected
@@ -1860,11 +1860,11 @@ export default function StoryBankView({
             {/* Horizontal Story Quick-Switcher Chips */}
             <div className="mt-2.5 pt-2 border-t border-[#F0EBE5] flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
               <span className="text-[10px] mono uppercase font-bold text-[#8A8880] shrink-0 mr-1">Switch Story:</span>
-              {memoryBankList.slice(0, 6).map((mem) => {
+              {memoryBankList.slice(0, 6).map((mem, idx) => {
                 const isSelected = mem.id === activeMemory.id;
                 return (
                   <button
-                    key={mem.id}
+                    key={`${mem.id}-${idx}`}
                     type="button"
                     onClick={() => handleSelectMemory(mem)}
                     className={`h-6 px-3 rounded-full text-[11px] mono font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${

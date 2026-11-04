@@ -1397,7 +1397,7 @@ export default function YouView({
               <Pip mood={isListeningMic ? "listening" : "happy"} size={38} interactive={false} showDialogue={false} />
               <div className="min-w-0">
                 <h2 className="text-xs font-semibold text-[#292722]">Tell your story to Zee</h2>
-                <p className="text-[10px] leading-4 text-[#786e64]">Talk for up to 2 minutes. Zee listens, saves the details, and helps shape them into a story.</p>
+                <p className="text-[10px] leading-4 text-[#786e64]">Talk for up to 2 minutes. Saved stories, voice, brand and style preferences become shared context for writing and video generation.</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5">
@@ -1491,7 +1491,7 @@ export default function YouView({
                 {/* Colorful Differentiated Story Cards with Category Waveforms */}
                 <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
                   {filteredMemories.length === 0 && <div className="rounded-2xl border border-dashed border-[#d9c9b9] bg-white/65 p-4"><p className="font-serif text-lg text-[#332d27]">Your stories start here.</p><p className="mt-1 text-[10px] leading-4 text-[#786e64]">Share a turning point, a person who shaped you, what you are building, or what you want people to understand.</p></div>}
-                  {filteredMemories.map((mem) => {
+                  {filteredMemories.map((mem, idx) => {
                     const meta = CATEGORY_META[mem.category];
                     const isSelected = activeStreamItem?.id === mem.id;
                     const pillarBadge =
@@ -1511,7 +1511,7 @@ export default function YouView({
 
                     return (
                       <button
-                        key={mem.id}
+                        key={`${mem.id}-${idx}`}
                         type="button"
                         onClick={() => {
                           setSelectedStreamItemId(mem.id);

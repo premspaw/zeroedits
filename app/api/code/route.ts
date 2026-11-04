@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readModelResponse } from "@/lib/model-response";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 
-export const maxDuration = 180;
+export const maxDuration = 600;
 
 const SPARK_1_3_MASTER_SYSTEM_PROMPT = `# SYSTEM PROMPT — META MUSE SPARK 1.3: UNIVERSAL ANIMATION ENGINEER
 
@@ -494,12 +495,20 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = getMetaApiKey();
+    const storyForContext = [
+      topic,
+      storyboard?.globalDirection?.concept,
+      ...(Array.isArray(storyboard?.beats) ? storyboard.beats.map((item: any) => item?.script || item?.text || "") : []),
+      body.scene?.spokenReference,
+    ].filter(Boolean).join("\n");
+    const creatorContext = await getCreatorContextForPrompt(storyForContext, { includePersonalArchive: false });
 
     // Support dedicated topic-aware custom procedural SVG synthesis via Spark 1.3
     if (body.mode === "custom_svg" || body.type === "custom_svg") {
       const svgPrompt = `Create a high-energy animated procedural React SVG component for a 9:16 talking-head reel.
 Topic: "${topic || body.concept || "Interactive Visual Flow"}"
 Visual Focus: "${body.headline || body.spokenReference || "Topic Visualization"}"
+Creator visual context (use only when it fits the supplied topic and style): ${creatorContext || "none"}
 Style: Hormozi / MrBeast high-energy kinetic style with glowing neon accents, high contrast, and animated SVG paths.
 The component MUST accept { currentTime: number, scale?: number } and derive all animation values deterministically from currentTime.
 Return ONLY raw executable TSX component code exporting CustomTopicGraphic as default. No markdown fences.`;
@@ -748,6 +757,9 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
       timing: `${totalVideoDuration}s`,
       format: storyboard?.formatUsed || format || "auto",
       aspectRatio: storyboard?.aspectRatio || "9:16",
+      outputFrameLayout: storyboard?.aspectRatio === "16:9"
+        ? "Render the animation within the fixed 1080x1920 portrait stage. The export renderer centers that stage inside a 1920x1080 landscape frame with dark side bars."
+        : "Render the animation within the fixed 1080x1920 portrait stage.",
       theme,
       beats: formattedBeats,
       globalDirection,
@@ -768,7 +780,9 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
         {
           role: "user",
           content: isPipelineBScene
-            ? `Generate only the selected Pipeline B scene from this JSON. The scene duration is ${totalVideoDuration.toFixed(2)} seconds; currentTime is local to this scene and starts at 0. Use only this scene's dialogue as semantic context, its visualDesc and motion as direction, and its elements as the objects to animate. Do not expand it into a summary of the whole video.
+            ? `Generate only the selected Pipeline B scene from this JSON. The scene duration is ${totalVideoDuration.toFixed(2)} seconds; currentTime is local to this scene and starts at 0. Use only this scene's dialogue as semantic context, its visualDesc and motion as direction, and its elements as the objects to animate. Use creator context for visual taste only. Do not expand it into a summary of the whole video.
+
+Creator visual context:\n${creatorContext || "none"}
 
 Selected scene input:
 ${JSON.stringify(sparkInput, null, 2)}
@@ -776,6 +790,8 @@ ${JSON.stringify(sparkInput, null, 2)}
 Create a visually complete scene animation only. No subtitles, captions, karaoke or kinetic dialogue, transcript, headlines, title/scene cards, timeline rails, progress bars, thinking/loading indicator, or editor UI. No unrelated beats. Return only raw executable TSX with one default-exported component.`
             : `Here is the validated MetaMuseWonderStoryboard JSON from Wonder Muse:
 ${JSON.stringify(sparkInput, null, 2)}
+
+Creator visual context (background preference only; the storyboard's explicit directions take priority):\n${creatorContext || "none"}
 
 Implement the complete, executable, self-contained animated React TSX component according to your Master System Prompt.
 The animation must render all ${numBeats} beats across the exact ${totalVideoDuration}s timeline with Framer Motion, honoring the visualDesc, motion, layout, camera, lighting, sound cues, animationCues, and theme.

@@ -7,6 +7,7 @@ import { transcribeAudio } from "@/lib/pipeline-b/tools/transcription";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
+import { getCreatorContextForPrompt } from "@/lib/creator-context-server";
 import {
   validateSceneScript,
   generateProceduralSparkCode,
@@ -420,6 +421,7 @@ export async function POST(req: NextRequest) {
 
     // ── STEP 2: Story-to-SceneScript LLM Call (Wonder AI muse-wonder-1.0) ──
     const apiKey = getMetaApiKey();
+    const creatorContext = await getCreatorContextForPrompt(`${prompt}\n${userScript}\n${fullTranscriptText}`);
 
     const storyInputPayload = {
       storyPrompt:
@@ -434,7 +436,8 @@ export async function POST(req: NextRequest) {
       preferredStyle: preferredStyle !== "auto" ? preferredStyle : undefined,
       preferredMood: preferredMood !== "auto" ? preferredMood : undefined,
       voiceoverRequested: Boolean(voiceoverEnabled || uploadedAudioFile),
-      instruction: `Convert the supplied topic, script, or audio transcript into a scene-by-scene ProceduralSceneScript JSON for a ${durationSec}s generative animation. Keep every scene, visual element, caption, and transition grounded in the supplied story; do not add unrelated generic filler. Respect preferredStyle exactly when provided. Output ONLY valid JSON matching the schema.`,
+      creatorContext: creatorContext || undefined,
+      instruction: `Convert the supplied topic, script, or audio transcript into a scene-by-scene ProceduralSceneScript JSON for a ${durationSec}s generative animation. Use creatorContext for relevant voice and style continuity only; the supplied topic/script/transcript is the source of truth, and saved memories must not be presented as part of it. Keep every scene, visual element, caption, and transition grounded in the supplied story; do not add unrelated generic filler. Respect preferredStyle exactly when provided. Output ONLY valid JSON matching the schema.`,
     };
 
     let llmRawScript: any = null;

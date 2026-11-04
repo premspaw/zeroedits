@@ -13,6 +13,7 @@ export interface GenerateImageParams {
   assetId?: string;
   reasoningStrength?: "low" | "medium" | "high";
   referenceImageDataUri?: string | null;
+  aspectRatio?: "9:16" | "16:9";
 }
 
 export interface GeneratedImageResult {
@@ -31,6 +32,7 @@ export async function generateMuseImage(params: GenerateImageParams): Promise<Ge
     assetId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     reasoningStrength = "high",
     referenceImageDataUri = null,
+    aspectRatio = "9:16",
   } = params;
 
   const apiKey = getMetaApiKey();
@@ -46,7 +48,8 @@ export async function generateMuseImage(params: GenerateImageParams): Promise<Ge
     fs.mkdirSync(publicAssetsDir, { recursive: true });
   }
 
-  const enhancedPrompt = `${prompt}, 9:16 vertical portrait format, consistent character identity and proportions, cinematic lighting, masterpiece quality, ultra-high resolution, no text, no watermarks`;
+  const composition = aspectRatio === "16:9" ? "16:9 landscape format" : "9:16 vertical portrait format";
+  const enhancedPrompt = `${prompt}, ${composition}, consistent character identity and proportions, cinematic lighting, masterpiece quality, ultra-high resolution, no text, no watermarks`;
 
   console.log(`[muse-image-1.0] Generating visual for runId=${runId} assetId=${assetId} (refImage=${Boolean(referenceImageDataUri)})...`);
 
