@@ -12,12 +12,30 @@ export async function POST(req: NextRequest) {
     }
 
     const state = await exportPipelineBVideo(runId);
+    let r2Url: string | undefined;
+
+    try {
+      const { isR2Configured, uploadLocalFileToR2 } = await import("@/lib/r2-storage");
+      if (isR2Configured() && state.finalVideoPath) {
+        const uploadRes = await uploadLocalFileToR2(
+          state.finalVideoPath,
+          `exports/${runId}.mp4`,
+          "video/mp4"
+        );
+        if (uploadRes.success) {
+          r2Url = uploadRes.url;
+        }
+      }
+    } catch (r2Err) {
+      console.warn("Optional Cloudflare R2 backup skipped:", r2Err);
+    }
 
     return NextResponse.json({
       success: true,
       runId,
       finalVideoPath: state.finalVideoPath,
       downloadUrl: `/api/pipeline-b/media/${runId}/final`,
+      r2Url,
       state,
     });
   } catch (err: any) {

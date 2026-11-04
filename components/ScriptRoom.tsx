@@ -10,6 +10,7 @@ import {
   LockKeyhole,
   LoaderCircle,
   MicOff,
+  Pause,
   Play,
   Send,
   Sparkles,
@@ -194,9 +195,12 @@ export default function ScriptRoom({
   const [cameraReady, setCameraReady] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [teleprompterAutoScroll, setTeleprompterAutoScroll] = useState(false);
+  const [teleprompterSpeed, setTeleprompterSpeed] = useState(24);
   const [toast, setToast] = useState("");
   const [brainFeedCount, setBrainFeedCount] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const teleprompterScrollRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -245,8 +249,8 @@ export default function ScriptRoom({
   const hookOptions: ScriptHook[] = activeDraft?.hooks?.length ? activeDraft.hooks : activeHooks.map((hook) => ({ hookText: hook }));
   const activeCtas = activeMemory ? ctaAngles[activeMemory.category] || ctaAngles.personal : ctaAngles.personal;
   const railLayoutClass = memoryRailOpen
-    ? (inspirationRailOpen ? "md:grid-cols-[150px_minmax(0,1fr)_205px] xl:grid-cols-[205px_minmax(0,1fr)_258px]" : "md:grid-cols-[150px_minmax(0,1fr)_38px] xl:grid-cols-[205px_minmax(0,1fr)_38px]")
-    : (inspirationRailOpen ? "md:grid-cols-[38px_minmax(0,1fr)_205px] xl:grid-cols-[38px_minmax(0,1fr)_258px]" : "md:grid-cols-[38px_minmax(0,1fr)_38px]");
+    ? (inspirationRailOpen ? "md:grid-cols-[160px_minmax(0,1fr)_220px] xl:grid-cols-[230px_minmax(0,1fr)_300px]" : "md:grid-cols-[160px_minmax(0,1fr)_38px] xl:grid-cols-[230px_minmax(0,1fr)_38px]")
+    : (inspirationRailOpen ? "md:grid-cols-[38px_minmax(0,1fr)_220px] xl:grid-cols-[38px_minmax(0,1fr)_300px]" : "md:grid-cols-[38px_minmax(0,1fr)_38px]");
 
   useEffect(() => {
     try {
@@ -820,6 +824,7 @@ export default function ScriptRoom({
     recorder.start();
     setRecording(true);
     setRecordingSeconds(0);
+    setTeleprompterAutoScroll(true);
   };
 
   const stopRecording = () => {
@@ -832,6 +837,38 @@ export default function ScriptRoom({
     const timer = setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
     return () => clearInterval(timer);
   }, [recording]);
+
+  useEffect(() => {
+    if (!recordingOpen) {
+      setTeleprompterAutoScroll(false);
+      return;
+    }
+    if (teleprompterScrollRef.current) teleprompterScrollRef.current.scrollTop = 0;
+    setTeleprompterAutoScroll(true);
+  }, [recordingOpen, activeDraft?.title]);
+
+  useEffect(() => {
+    const scrollArea = teleprompterScrollRef.current;
+    if (!recordingOpen || !teleprompterAutoScroll || !scrollArea) return;
+
+    let frameId = 0;
+    let previousFrame = 0;
+    const scrollFrame = (now: number) => {
+      if (!previousFrame) previousFrame = now;
+      const elapsedMs = Math.min(now - previousFrame, 64);
+      previousFrame = now;
+      scrollArea.scrollTop += (teleprompterSpeed * elapsedMs) / 1000;
+
+      if (scrollArea.scrollTop + scrollArea.clientHeight >= scrollArea.scrollHeight - 1) {
+        setTeleprompterAutoScroll(false);
+        return;
+      }
+      frameId = window.requestAnimationFrame(scrollFrame);
+    };
+
+    frameId = window.requestAnimationFrame(scrollFrame);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [recordingOpen, teleprompterAutoScroll, teleprompterSpeed, activeDraft]);
 
   useEffect(() => () => {
     stopCamera();
@@ -856,7 +893,7 @@ export default function ScriptRoom({
           <div className="flex items-center gap-1.5 rounded-full border border-white/80 bg-white/60 py-0.5 pl-0.5 pr-2.5 shadow-sm backdrop-blur-sm"><Pip mood={loadingScript || chatLoading ? "thinking" : "happy"} size={38} interactive={false} className="!m-0" /><div><p className="text-[11px] font-semibold">Z is here.</p><p className="text-[9px] text-[#777267]">Your story partner</p></div></div>
         </header>
 
-        <div className={`grid min-h-0 flex-1 grid-cols-1 items-stretch gap-2.5 pb-1 ${railLayoutClass}`}>
+        <div className={`grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 pb-2 ${railLayoutClass}`}>
           <aside aria-label="Memory gallery" className={`hidden min-h-0 flex-col overflow-hidden rounded-[21px] border border-[#e4ded4] bg-[#fffefa]/80 p-2 shadow-[0_10px_28px_rgba(48,39,28,.04)] md:flex xl:p-2.5 ${memoryRailOpen ? "" : "items-center"}`}>
             {memoryRailOpen ? <>
             <div className="mb-2 flex items-start justify-between gap-1 px-1"><div><p className="font-serif text-[16px] leading-tight">Memory gallery</p><p className="mt-0.5 text-[8px] leading-relaxed text-[#878277]">Real moments, in your words. Pick one to see what Z can build a story around.</p></div><div className="flex shrink-0 items-center gap-1"><span className="rounded-full bg-[#f3e8db] px-1.5 py-0.5 text-[8px] font-semibold text-[#8b6048]">{memories.length}</span><button onClick={() => setMemoryRailOpen(false)} className="rounded-full px-1.5 py-0.5 text-[8px] text-[#8c7769] hover:bg-[#f1ebe2]">Hide</button></div></div>
@@ -903,7 +940,7 @@ export default function ScriptRoom({
             </> : <button onClick={() => setMemoryRailOpen(true)} aria-label="Show memory gallery" className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f3e4d4] font-serif text-sm text-[#a85f43]">M</button>}
           </aside>
 
-          <main className="flex min-h-0 min-w-0 flex-col gap-2.5 pb-[88px]">
+          <main className="relative mx-auto flex min-h-0 min-w-0 w-full max-w-[820px] flex-col gap-3 pb-[92px]">
             <section aria-label="Choose a moment" className="shrink-0 rounded-[20px] border border-[#e4ded4] bg-[#fffefa]/75 px-3 py-2 shadow-[0_10px_28px_rgba(48,39,28,.04)]">
               <div className="mb-2 flex items-center justify-between gap-2"><div><p className="font-serif text-[16px] leading-tight">Choose a moment</p><p className="text-[9px] text-[#878277]">Pick the memory you want to turn into a story</p></div><div className="flex items-center gap-1.5"><span className="text-[9px] text-[#9b9489]">{topPicks.length} story picks</span>{!memoryRailOpen && <button onClick={() => setMemoryRailOpen(true)} className="rounded-full border border-[#e4ded4] px-2 py-1 text-[8px] text-[#71685c]">+ Memories</button>}{!inspirationRailOpen && <button onClick={() => setInspirationRailOpen(true)} className="rounded-full border border-[#e4ded4] px-2 py-1 text-[8px] text-[#71685c]">+ Formats</button>}</div></div>
               <div className="grid grid-cols-3 gap-2.5">
@@ -950,7 +987,7 @@ export default function ScriptRoom({
                 {activeDraft && !scriptLocked && <p className="mt-1 shrink-0 text-right text-[8px] text-[#948a7e]">Chat with Z anytime. Lock your words when you are ready to record.</p>}
               </div>
             </section>
-            <section aria-label="Chat with Z about this script" className="absolute bottom-2 left-1/2 z-[70] w-[min(760px,calc(100vw-24px))] -translate-x-1/2">
+            <section aria-label="Chat with Z about this script" className="absolute bottom-2 left-1/2 z-[70] w-[min(820px,calc(100%_-_24px))] -translate-x-1/2">
               <div className="overflow-hidden rounded-[20px] border-2 border-[#141414] bg-[#ECEAE3] shadow-[2px_2px_0px_#141414]">
                 <div className="flex items-center justify-between gap-2 border-b border-[#D5D2C8] px-3 py-1.5"><div className="inline-flex items-center rounded-full bg-[#dedbd3] p-0.5" role="group" aria-label="Choose story source"><button type="button" onClick={() => setStoryMode("memory")} disabled={!memories.length} aria-pressed={storyMode === "memory"} className={`rounded-full px-2.5 py-1 text-[8px] font-semibold transition ${storyMode === "memory" ? "bg-white text-[#302f29] shadow-sm" : "text-[#777267]"}`}>Use a memory</button><button type="button" onClick={() => setStoryMode("direct")} aria-pressed={storyMode === "direct"} className={`rounded-full px-2.5 py-1 text-[8px] font-semibold transition ${storyMode === "direct" ? "bg-white text-[#302f29] shadow-sm" : "text-[#777267]"}`}>Start with my story</button></div><span className="hidden text-[8px] text-[#777267] sm:block">{storyMode === "direct" ? "Tell Z what happened; it will shape a story." : "Z will ground this in your selected memory."}</span></div>
                 {chat.length > 0 && <div className="truncate border-b border-[#D5D2C8] px-4 py-1 font-mono text-[9px] text-[#6B6A64]">{chat[chat.length - 1].role === "z" ? "Z Â· " : "YOU Â· "}{chat[chat.length - 1].text}</div>}
@@ -1010,8 +1047,8 @@ export default function ScriptRoom({
 
       <AnimatePresence>
         {recordingOpen && activeDraft && <motion.div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171815]/65 p-3 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <motion.div initial={{ y: 16, scale: .98 }} animate={{ y: 0, scale: 1 }} exit={{ y: 12, scale: .98 }} className="grid max-h-[94vh] w-full max-w-5xl overflow-hidden rounded-[26px] bg-[#faf8f2] shadow-2xl lg:grid-cols-[1.1fr_.9fr]">
-            <div className="relative grid min-h-[260px] place-items-center bg-[#252620] p-4 text-white sm:min-h-[440px]">
+          <motion.div initial={{ y: 16, scale: .98 }} animate={{ y: 0, scale: 1 }} exit={{ y: 12, scale: .98 }} className="grid h-[min(760px,94vh)] w-full grid-rows-[minmax(220px,.75fr)_minmax(0,1.25fr)] overflow-hidden rounded-[26px] bg-[#faf8f2] shadow-2xl lg:grid-cols-[1.1fr_.9fr] lg:grid-rows-1">
+            <div className="relative grid min-h-0 place-items-center bg-[#252620] p-4 text-white">
               <video ref={videoRef} autoPlay muted playsInline className={`absolute inset-0 h-full w-full object-cover ${cameraReady ? "" : "hidden"}`} />
               {!cameraReady && <div className="relative z-10 text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white/10"><Video size={26} /></span><p className="mt-4 text-sm">Camera preview</p><p className="mt-1 text-xs text-white/55">Allow camera and microphone when prompted</p><button onClick={enableCamera} className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#252620]">Enable camera</button></div>}
               {cameraReady && <div className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1.5 text-xs">{recording ? <span className="inline-flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}</span> : "Camera ready"}</div>}
@@ -1023,8 +1060,57 @@ export default function ScriptRoom({
                 <div className="min-w-0 flex-1"><p className="flex items-center gap-1.5 text-[10px] font-bold text-[#332f29]"><Smartphone size={13} className="text-[#a85f43]" /> Record on your phone</p><p className="mt-1 text-[8px] leading-relaxed text-[#71695f]">Scan to read this script, record with your phone camera, then send the take straight to Edit.</p><p className="mt-1.5 flex items-center gap-1 text-[8px] font-semibold text-[#80614c]"><span className={`h-1.5 w-1.5 rounded-full ${mobileStatus === "mobile_connected" || mobileStatus === "recording" ? "animate-pulse bg-[#6a9a6b]" : mobileStatus === "completed" ? "bg-[#6a9a6b]" : "bg-[#c39466]"}`} />{mobileStatus === "mobile_connected" ? "Phone connected" : mobileStatus === "recording" ? "Recording on phone" : mobileStatus === "completed" ? "Take received" : "Waiting for phone scan"}</p>{mobileRecordUrl && <a href={mobileRecordUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[8px] font-semibold text-[#9b563b] hover:underline">Open phone companion <ExternalLink size={9} /></a>}</div>
               </div>
               <p className="mb-1 shrink-0 text-[7px] leading-relaxed text-[#8a8277]">Phone and computer should share Wi-Fi. The phone opens the companion on your local network; camera access may require HTTPS.</p>
-              <div className="my-4 flex-1 space-y-4 overflow-y-auto rounded-[18px] bg-white p-4">{activeDraft.beats.map((beat, index) => <div key={index}><p className="text-[9px] font-bold uppercase tracking-[.14em] text-[#a16a50]">{beat.phase || `Beat ${index + 1}`}</p><p className="mt-1 font-serif text-lg leading-relaxed">{beat.spokenLine}</p></div>)}</div>
-              <div className="flex items-center justify-between gap-2"><button onClick={copyScript} className="inline-flex items-center gap-1.5 rounded-full border border-[#ded8ce] px-3 py-2 text-xs"><Copy size={13} /> Copy</button>{!cameraReady ? <span className="text-[11px] text-[#898478]">Camera access needed to record</span> : recording ? <button onClick={stopRecording} className="inline-flex items-center gap-2 rounded-full bg-[#a7382b] px-5 py-2.5 text-xs font-semibold text-white"><MicOff size={14} /> Stop & send to edit</button> : <button onClick={startRecording} className="inline-flex items-center gap-2 rounded-full bg-[#252620] px-5 py-2.5 text-xs font-semibold text-white"><Play size={14} fill="currentColor" /> Record take</button>}</div>
+              <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-[14px] border border-[#eadfd0] bg-white/80 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const area = teleprompterScrollRef.current;
+                    if (area && area.scrollTop + area.clientHeight >= area.scrollHeight - 4) area.scrollTop = 0;
+                    setTeleprompterAutoScroll((scrolling) => !scrolling);
+                  }}
+                  aria-pressed={teleprompterAutoScroll}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#252620] px-3 py-1.5 text-[10px] font-semibold text-white transition hover:bg-[#45463f]"
+                >
+                  {teleprompterAutoScroll ? <Pause size={12} /> : <Play size={12} fill="currentColor" />}
+                  {teleprompterAutoScroll ? "Pause scroll" : "Resume scroll"}
+                </button>
+                <label className="flex items-center gap-2 text-[9px] font-medium text-[#746b60]">
+                  <span>Scroll pace</span>
+                  <input
+                    type="range"
+                    min={12}
+                    max={56}
+                    step={2}
+                    value={teleprompterSpeed}
+                    onChange={(event) => setTeleprompterSpeed(Number(event.target.value))}
+                    aria-label="Teleprompter scroll pace"
+                    className="w-20 accent-[#e97150]"
+                  />
+                  <span className="w-9 text-right tabular-nums">{teleprompterSpeed}px/s</span>
+                </label>
+              </div>
+              <div
+                ref={teleprompterScrollRef}
+                tabIndex={0}
+                role="region"
+                aria-label="Teleprompter script"
+                onWheel={() => setTeleprompterAutoScroll(false)}
+                onTouchStart={() => setTeleprompterAutoScroll(false)}
+                onKeyDown={(event) => {
+                  if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(event.key)) {
+                    setTeleprompterAutoScroll(false);
+                  }
+                }}
+                className="my-2 min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain rounded-[18px] bg-white p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e97150] sm:p-6"
+              >
+                {activeDraft.beats.map((beat, index) => (
+                  <div key={index} className="border-b border-[#f0ebe4] pb-4 last:border-b-0 last:pb-0">
+                    <p className="text-[9px] font-bold uppercase tracking-[.14em] text-[#a16a50]">{beat.phase || `Beat ${index + 1}`}</p>
+                    <p className="mt-1.5 font-serif text-lg leading-relaxed text-[#302d27] sm:text-xl">{beat.spokenLine}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex shrink-0 items-center justify-between gap-2 pt-2"><button onClick={copyScript} className="inline-flex items-center gap-1.5 rounded-full border border-[#ded8ce] px-3 py-2 text-xs"><Copy size={13} /> Copy</button>{!cameraReady ? <span className="text-[11px] text-[#898478]">Camera access needed to record</span> : recording ? <button onClick={stopRecording} className="inline-flex items-center gap-2 rounded-full bg-[#a7382b] px-5 py-2.5 text-xs font-semibold text-white"><MicOff size={14} /> Stop & send to edit</button> : <button onClick={startRecording} className="inline-flex items-center gap-2 rounded-full bg-[#252620] px-5 py-2.5 text-xs font-semibold text-white"><Play size={14} fill="currentColor" /> Record take</button>}</div>
             </div>
           </motion.div>
         </motion.div>}

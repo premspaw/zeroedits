@@ -1355,7 +1355,7 @@ export default function YouView({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] min-h-[calc(100vh-60px)] px-1 pb-16 pt-[5px] sm:px-2 sm:pb-20 sm:pt-[5px] animate-fade-in">
+    <div className="mx-auto w-full max-w-[1760px] min-h-[calc(100vh-60px)] px-1 pb-16 pt-[5px] sm:px-2 sm:pb-20 sm:pt-[5px] animate-fade-in">
       {/* Hidden File Input & Complete Folder Input (webkitdirectory) */}
       <input
         ref={fileInputRef}
@@ -1385,13 +1385,30 @@ export default function YouView({
          ===================================================================== */}
       {activeSubTab === "personalize" ? (
         <div className="space-y-7">
+          <section className="grid items-center gap-3 rounded-2xl border border-[#e5ddd1] bg-[#fffdfa] px-3 py-2 shadow-sm sm:px-4 lg:grid-cols-[minmax(280px,0.85fr)_1.5fr]">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Pip mood={isListeningMic ? "listening" : "happy"} size={38} interactive={false} showDialogue={false} />
+              <div className="min-w-0">
+                <h2 className="text-xs font-semibold text-[#292722]">Tell your story to Z</h2>
+                <p className="text-[10px] leading-4 text-[#786e64]">Talk for up to 2 minutes. Z listens, saves the details, and helps shape them into a story.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              {LIFE_CATEGORIES.map((cat) => {
+                const meta = CATEGORY_META[cat];
+                const selected = selectedPromptCategory === cat;
+                const label = cat === "work" ? "Work" : cat === "personal" ? "Personal" : cat === "relationships" ? "Bonds" : meta.shortLabel;
+                return <button key={cat} type="button" onClick={() => setSelectedPromptCategory(cat)} className="rounded-full border px-2.5 py-1 text-[10px] font-medium transition" style={{ backgroundColor: selected ? `${meta.color}14` : "#fff", color: selected ? meta.color : "#62594f", borderColor: selected ? meta.color : "#e8e1d7" }}>{CATEGORY_ICONS[cat]} <span className="ml-1">{label}</span></button>;
+              })}
+            </div>
+          </section>
           {/* 3-COLUMN INTERACTIVE STUDIO CONTAINER */}
           <div className="overflow-hidden rounded-[28px] border border-[#e5ddd1] bg-[#fffdfa] shadow-[0_18px_55px_rgba(54,42,28,0.06)]">
-            <div className="grid min-h-[620px] grid-cols-1 divide-y divide-[#eee7dd] lg:grid-cols-[300px_minmax(340px,1fr)_340px] lg:divide-x lg:divide-y-0">
+            <div className="grid min-h-[680px] grid-cols-1 divide-y divide-[#eee7dd] lg:grid-cols-[280px_minmax(300px,1fr)_310px] xl:grid-cols-[320px_minmax(380px,1fr)_360px] 2xl:grid-cols-[330px_minmax(480px,1fr)_380px] lg:divide-x lg:divide-y-0">
               {/* ===============================================================
                   LEFT COLUMN: COLORFUL DIFFERENTIATED LIFE & BUSINESS MEMORY STREAM
                  =============================================================== */}
-              <aside className="flex h-full max-h-[760px] flex-col bg-gradient-to-b from-[#fbf8f2] via-[#f8f4ed] to-[#f6e7dc]/60">
+              <aside className="flex h-full max-h-[860px] flex-col bg-gradient-to-b from-[#fbf8f2] via-[#f8f4ed] to-[#f6e7dc]/60">
                 <div className="px-4 pb-4 pt-1.5 border-b border-[#1E1E1C]/10">
                   <div className="mb-4">
                     <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]">{brain.memories.length} stories / {brain.gallery.length} visuals</p>
@@ -1579,7 +1596,7 @@ export default function YouView({
                   (With Integrated Input Channel Switcher: Studio Mic vs WhatsApp Channel)
                  =============================================================== */}
               <section
-                className="relative flex min-h-[620px] flex-col overflow-hidden p-0 transition-colors duration-500 lg:h-[calc(100vh-60px)] lg:min-h-[620px] lg:max-h-[calc(100vh-52px)]"
+                className="relative flex min-h-[680px] flex-col overflow-hidden p-0 transition-colors duration-500 lg:h-[calc(100vh-60px)] lg:min-h-[680px] lg:max-h-[calc(100vh-52px)]"
                 style={{
                   background:
                     inputChannel === "whatsapp_channel"
@@ -1696,18 +1713,6 @@ export default function YouView({
 
                 {/* Conversation surface: the user's memories and Zee's replies live in one chat thread. */}
                 <div className="order-2 relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden bg-white/45">
-                  <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#e5ddd1] px-3 py-2">
-                    {LIFE_CATEGORIES.map((cat) => {
-                      const meta = CATEGORY_META[cat];
-                      const selected = selectedPromptCategory === cat;
-                      return (
-                        <button key={cat} type="button" onClick={() => setSelectedPromptCategory(cat)} className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition" style={{ backgroundColor: selected ? meta.color : "white", color: selected ? "white" : meta.color, borderColor: meta.color }}>
-                          {CATEGORY_ICONS[cat]} {cat === "work" ? "Work" : meta.shortLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
-
                   <div ref={chatScrollRef} aria-live="polite" className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
                     {activeConversationItems.map((turn) => (
                       <div key={turn.id} className="space-y-2.5">
@@ -1765,7 +1770,7 @@ export default function YouView({
                   RIGHT COLUMN: ZEE'S LIVE REPLIES, CONVERSATION & STORY ANALYSIS
                   (Zee responds like a friend, asks follow-ups & breaks down the story)
                  =============================================================== */}
-              <aside className="flex flex-col bg-gradient-to-b from-[#FAF8F3] to-[#F5F1E8]/60 h-full max-h-[820px]">
+              <aside className="flex flex-col bg-gradient-to-b from-[#FAF8F3] to-[#F5F1E8]/60 h-full max-h-[860px]">
                 <div className="px-4 pb-4 pt-1.5 border-b border-[#1E1E1C]/10 flex items-center justify-between">
                   <div>
                     <span className="mono text-[10px] font-bold uppercase tracking-widest text-[#E4491B] block">

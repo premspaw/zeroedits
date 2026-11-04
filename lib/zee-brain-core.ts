@@ -1,6 +1,7 @@
 
 import type { HeaderTab } from "@/components/AppleDockNav";
-export type { HeaderTab };
+import type { StudioProject } from "./studio-projects";
+export type { HeaderTab, StudioProject };
 
 export type LifeCategory =
   | "insight"
@@ -241,6 +242,7 @@ export interface ZeeBrainState {
   variables: ZeeMatchedVariables;
   activityLogs: CrossPageActivityLog[];
   activeTab: HeaderTab;
+  activeProject?: StudioProject;
   lastUpdated: string;
 }
 
@@ -377,6 +379,7 @@ export const INITIAL_ZEE_BRAIN: ZeeBrainState = {
   },
   activityLogs: [],
   activeTab: "u",
+  activeProject: undefined,
   lastUpdated: new Date().toISOString(),
 };
 

@@ -1,0 +1,48 @@
+{
+  "id": "proj-1793803862030-sr830",
+  "title": "AI Founder Chronicles",
+  "formatType": "series",
+  "description": "",
+  "storyPrompt": "Episode 1: Why 90% of solo founders quit in month 2",
+  "goal": "personal-brand",
+  "lockedMemory": {
+    "isToneLocked": true,
+    "tonality": "punchy",
+    "toneBible": "Direct and high energy",
+    "isVoiceLocked": true,
+    "voice": "EN-IN",
+    "voiceSpeed": 1,
+    "voicePitch": 1,
+    "isTemplateLocked": true,
+    "template": "cutout",
+    "templateStyleName": "Standard",
+    "visualRules": "",
+    "aspectRatio": "9:16"
+  },
+  "seriesMeta": {
+    "seriesName": "AI Founder Chronicles",
+    "currentEpisode": 1,
+    "totalPlannedEpisodes": 5,
+    "episodes": [
+      {
+        "id": "ep-1-1793803862030",
+        "episodeNumber": 1,
+        "title": "AI Founder Chronicles - Episode 1",
+        "hook": "Episode 1: Why 90% of solo founders quit in month 2",
+        "status": "in_progress",
+        "createdAt": "2026-11-04T14:51:02.030Z"
+      }
+    ],
+    "seriesArc": ""
+  },
+  "databaseFileName": "proj-1793803862030-sr830.json",
+  "activityLog": [
+    {
+      "timestamp": "8:21:02 pm",
+      "action": "Created Database File",
+      "details": "Created project database \"proj-1793803862030-sr830.json\" with locked series memory settings."
+    }
+  ],
+  "createdAt": "2026-11-04T14:51:02.030Z",
+  "updatedAt": "2026-11-04T14:51:02.039Z"
+}

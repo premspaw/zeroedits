@@ -1,0 +1,32 @@
+{
+  "id": "explainer-startup-lessons-stories-mw2a2wgp",
+  "title": "Startup Lessons & Stories",
+  "formatType": "explainer",
+  "description": "explainer with locked memory.",
+  "storyPrompt": "",
+  "goal": "personal-brand",
+  "lockedMemory": {
+    "isToneLocked": true,
+    "tonality": "punchy",
+    "toneBible": "Tone locked to punchy. Maintain consistent emotional cadence and delivery across all reels.",
+    "isVoiceLocked": true,
+    "voice": "EN-IN",
+    "voiceSpeed": 1,
+    "voicePitch": 1,
+    "isTemplateLocked": true,
+    "template": "minimal",
+    "templateStyleName": "Minimalist Bold (Clean Typography)",
+    "visualRules": "",
+    "aspectRatio": "9:16"
+  },
+  "databaseFileName": "explainer-startup-lessons-stories-mw2a2wgp.json",
+  "activityLog": [
+    {
+      "timestamp": "9:05:11 pm",
+      "action": "Created Database File",
+      "details": "Created project database \"explainer-startup-lessons-stories-mw2a2wgp.json\" with locked explainer memory settings."
+    }
+  ],
+  "createdAt": "2026-11-04T15:35:11.849Z",
+  "updatedAt": "2026-11-04T15:35:11.964Z"
+}

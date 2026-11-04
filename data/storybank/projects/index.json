@@ -1,0 +1,32 @@
+{
+  "projects": [
+    {
+      "id": "explainer-startup-lessons-stories-mw2a2wgp",
+      "title": "Startup Lessons & Stories",
+      "formatType": "explainer",
+      "aspectRatio": "9:16",
+      "template": "minimal",
+      "voice": "EN-IN",
+      "tonality": "punchy",
+      "isSeries": false,
+      "currentEpisode": 1,
+      "databaseFileName": "explainer-startup-lessons-stories-mw2a2wgp.json",
+      "updatedAt": "2026-11-04T15:35:11.964Z",
+      "createdAt": "2026-11-04T15:35:11.849Z"
+    },
+    {
+      "id": "proj-1793803862030-sr830",
+      "title": "AI Founder Chronicles",
+      "formatType": "series",
+      "aspectRatio": "9:16",
+      "template": "cutout",
+      "voice": "EN-IN",
+      "tonality": "punchy",
+      "isSeries": true,
+      "currentEpisode": 1,
+      "databaseFileName": "proj-1793803862030-sr830.json",
+      "updatedAt": "2026-11-04T14:51:02.039Z",
+      "createdAt": "2026-11-04T14:51:02.030Z"
+    }
+  ]
+}

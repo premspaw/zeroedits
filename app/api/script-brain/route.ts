@@ -19,6 +19,27 @@ async function requestModelJson(model: string, prompt: string, instructions: str
   return JSON.parse(clean);
 }
 
+function explainScriptModelFailure(error: any): string {
+  const message = typeof error?.message === "string" ? error.message : "The model request failed.";
+  if (/fetch failed/i.test(message)) {
+    let host = "the configured model API";
+    try {
+      host = new URL(getMetaEndpoint("responses")).host;
+    } catch {
+      // Keep the diagnostic useful even when the configured URL is malformed.
+    }
+    const code = typeof error?.cause?.code === "string" ? ` (${error.cause.code})` : "";
+    return `The app server could not reach ${host}${code}. Check its outbound network, DNS or firewall access, and API base URL.`;
+  }
+  if (/HTTP 401|HTTP 403/i.test(message)) {
+    return `${message} Check that MODEL_API_KEY is valid and enabled for this model.`;
+  }
+  if (/HTTP 404/i.test(message)) {
+    return `${message} Check that the configured model ID and API base URL are correct.`;
+  }
+  return message;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -126,8 +147,9 @@ export async function POST(req: NextRequest) {
       },
       { attempts: 2, delayMs: 500 }
     ).catch((err) => {
-      console.warn("[api/script-brain] Wonder first draft failed:", err?.message || err);
-      throw new Error("Z could not reach the configured script model. Check the model key, model ID, and API base URL, then retry.");
+      const networkCode = typeof err?.cause?.code === "string" ? ` (${err.cause.code})` : "";
+      console.warn(`[api/script-brain] Wonder first draft failed${networkCode}:`, err?.message || err);
+      throw new Error(explainScriptModelFailure(err));
     });
 
     const criticModel = getMetaModelId("spark", "muse-spark-1.3");

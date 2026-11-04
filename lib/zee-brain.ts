@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { StudioProject } from "./studio-projects";
 export * from "./zee-brain-core";
 import {
   ZeeBrainState,
@@ -296,6 +297,40 @@ export function useZeeBrain() {
     [updateBrain]
   );
 
+
+  const lockStudioProject = useCallback(
+    (project: StudioProject) => {
+      updateBrain((prev) => {
+        const nextLog: CrossPageActivityLog = {
+          id: `act-${Date.now()}`,
+          page: "edit",
+          pageLabel: "Edit • Studio Project",
+          action: `Locked Memory: "${project.title}" (${project.formatType}) - Voice: ${project.lockedMemory.voice}, Tone: ${project.lockedMemory.tonality}`,
+          timestamp: "Just now",
+        };
+        return {
+          ...prev,
+          activeProject: project,
+          virtualYou: {
+            ...prev.virtualYou,
+            preferredFormat: project.lockedMemory.template,
+            voiceCadence: project.lockedMemory.voice,
+            thinkingStyle: project.lockedMemory.tonality,
+          },
+          variables: {
+            ...prev.variables,
+            "user.preferredFormat": project.lockedMemory.template,
+            "user.voiceTone": `${project.lockedMemory.voice} (${project.lockedMemory.tonality})`,
+            "app.activeStage": "Edit • Studio Project",
+            "app.lastTopic": project.title,
+          },
+          activityLogs: [nextLog, ...prev.activityLogs].slice(0, 20),
+        };
+      });
+    },
+    [updateBrain]
+  );
+
   return {
     brain,
     hydrated,
@@ -306,5 +341,6 @@ export function useZeeBrain() {
     toggleSourceConnection,
     scanLikedReel,
     recordPageActivity,
+    lockStudioProject,
   };
 }

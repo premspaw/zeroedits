@@ -27,3 +27,7 @@ Hey, that's what I mean, do you know or do you know about my, my, my type of thi
 ## 2026-10-31 12:20 · Prem Voice Brain (insight)
 
 دیلوں آمور مائے حکتا ہم مدہا ہکتا ہکتا ہکت جس ہی کے دیوائن
+
+## 2026-11-04 14:08 · Voice memory (insight)
+
+I am preparing for Meta Akaton like Meta Akaton, Hakaton, Hak, HSK, THN, Hakaton, Hakaton, Meta Hakaton. Okay, so this is the Meta Akaton. I prepared a complete app, but in a lot of this is the last moment it's going on. I want to submit, but there's a confusion and I'm meeting like confusion is like, it's a last moment I'm doing it still it's an uploading process there some of the pages is not working so it's a yeah it's very tough situation but I don't apply it anyway so yeah I'm a little bit checking with my app now

@@ -6,7 +6,7 @@ node_modules
 workspace
 scratch
 .render-temp
-data/storybank/audio
+data/storybank
 public/assets
 public/voiceover
 public/renders

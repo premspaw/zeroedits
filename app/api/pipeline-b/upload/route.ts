@@ -15,13 +15,15 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const videoFile = formData.get("video") as File | null;
+    const r2Key = (formData.get("r2Key") as string | null) || null;
+    const videoUrl = (formData.get("videoUrl") as string | null) || null;
     const userScript = (formData.get("userScript") as string) || "";
     const templateId = (formData.get("templateId") as string) || "hormoziPunch";
     const mode = (formData.get("mode") as "wonder-ai" | "rules-only") || "wonder-ai";
 
-    if (!videoFile) {
+    if (!videoFile && !r2Key && !videoUrl) {
       return NextResponse.json(
-        { success: false, error: "No video file uploaded. Please upload a talking-head video up to 60s." },
+        { success: false, error: "No video file uploaded or R2 key provided. Please upload a talking-head video." },
         { status: 400 }
       );
     }
@@ -40,10 +42,33 @@ export async function POST(req: NextRequest) {
     }
 
     // Save video file to run directory
-    const bytes = await videoFile.arrayBuffer();
-    const buffer = Buffer.from(bytes);
     const rawVideoPath = path.join(runDir, "raw_input.mp4");
-    fs.writeFileSync(rawVideoPath, buffer);
+    if (videoFile) {
+      const bytes = await videoFile.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      fs.writeFileSync(rawVideoPath, buffer);
+    } else if (r2Key) {
+      const { getR2Client } = await import("@/lib/r2-storage");
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = getR2Client();
+      const res = await client.send(
+        new GetObjectCommand({
+          Bucket: process.env.R2_BUCKET_NAME || "zerolensbucket-cdn",
+          Key: r2Key,
+        })
+      );
+      const stream = res.Body as any;
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+      }
+      fs.writeFileSync(rawVideoPath, Buffer.concat(chunks));
+    } else if (videoUrl) {
+      const res = await fetch(videoUrl);
+      if (!res.ok) throw new Error(`Failed to download video from URL: ${res.statusText}`);
+      const arrayBuf = await res.arrayBuffer();
+      fs.writeFileSync(rawVideoPath, Buffer.from(arrayBuf));
+    }
 
     const galleryFiles = formData.getAll("galleryAsset").filter((item): item is File => item instanceof File);
     const galleryAssets: Array<{ id: string; name: string; url: string; kind: "video" | "image"; tags: string[]; duration?: number; thumbnailPath?: string }> = [];

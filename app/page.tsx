@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu,
+  Lock,
   Clock,
   FileJson,
   FileText,
@@ -44,6 +45,8 @@ import {
 import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
+import NewStudioReelModal from "@/components/NewStudioReelModal";
+import type { StudioProject } from "@/lib/studio-projects";
 import ScriptRoom from "@/components/ScriptRoom";
 import TalkingHeadExplainerStage from "@/components/TalkingHeadExplainerStage";
 import {
@@ -1405,7 +1408,15 @@ async function readGenerationResponse(response: Response, stage: string) {
 }
 
 export default function ProperMobileResponsiveChat() {
-  const { recordPageActivity } = useZeeBrain();
+  const { recordPageActivity, lockStudioProject, brain } = useZeeBrain();
+  const [activeProject, setActiveProject] = useState<StudioProject | null>(null);
+  const [isNewReelModalOpen, setIsNewReelModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (brain?.activeProject && !activeProject) {
+      setActiveProject(brain.activeProject);
+    }
+  }, [brain?.activeProject]);
   const [format, setFormat] = useState<FormatType>("auto");
   const [autoEditTemplate, setAutoEditTemplate] = useState<"cutout" | "storyExplainer" | "auto" | "clay3d" | "gallery">("storyExplainer");
   const [timing, setTiming] = useState<TimingType>("15s");
@@ -1744,17 +1755,91 @@ export default function ProperMobileResponsiveChat() {
     }, 80);
   };
 
-  const handleNewReel = () => {
-    setInput("");
+  const handleProjectCreated = (project: StudioProject, launchPrompt?: string) => {
+    setActiveProject(project);
+    lockStudioProject(project);
+
+    // Apply locked format, voice, and aspect ratio
+    const projTemplate = project.lockedMemory.template as FormatType;
+    if (projTemplate) {
+      setFormat(projTemplate);
+    }
+    const projVoice = project.lockedMemory.voice as VoiceType;
+    if (projVoice) {
+      setVoice(projVoice);
+      setVoiceEnabled(true);
+    }
+    if (launchPrompt) {
+      setInput(launchPrompt);
+    } else if (project.storyPrompt) {
+      setInput(project.storyPrompt);
+    }
+
+    recordPageActivity(
+      "edit",
+      "Edit • Studio Project",
+      `Activated project "${project.title}" (${project.formatType}) - Voice: ${project.lockedMemory.voice}, Tone: ${project.lockedMemory.tonality}`,
+      project.title
+    );
+
     setSelectedMessageId(null);
     setIsMobileDrawerOpen(false);
-    textareaRef.current?.focus();
     setTimeout(() => {
-      chatContainerRef.current?.scrollTo({
-        top: chatContainerRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    }, 50);
+      textareaRef.current?.focus();
+    }, 100);
+  };
+
+  const handleNextSeriesEpisode = (project: StudioProject) => {
+    const nextEpNum = (project.seriesMeta?.currentEpisode ?? 1) + 1;
+    const nextEpTitle = `${project.seriesMeta?.seriesName || project.title} - Episode ${nextEpNum}`;
+    const nextPrompt = `Episode ${nextEpNum}: `;
+    setInput(nextPrompt);
+
+    const updated: StudioProject = {
+      ...project,
+      seriesMeta: project.seriesMeta
+        ? {
+            ...project.seriesMeta,
+            currentEpisode: nextEpNum,
+            episodes: [
+              ...(project.seriesMeta.episodes || []),
+              {
+                id: `ep-${nextEpNum}-${Date.now()}`,
+                episodeNumber: nextEpNum,
+                title: nextEpTitle,
+                hook: nextPrompt,
+                status: "in_progress",
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }
+        : undefined,
+      activityLog: [
+        {
+          timestamp: new Date().toLocaleTimeString(),
+          action: "Started Next Episode",
+          details: `Advanced to Episode ${nextEpNum} with locked tone "${project.lockedMemory.tonality}" and voice "${project.lockedMemory.voice}".`,
+        },
+        ...(project.activityLog || []),
+      ],
+    };
+
+    setActiveProject(updated);
+    lockStudioProject(updated);
+
+    fetch("/api/studio/project", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    }).catch(console.error);
+
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 100);
+  };
+
+  const handleNewReel = () => {
+    setIsNewReelModalOpen(true);
   };
 
   const handleDeleteHistoryItem = (messageId: string) => {
@@ -2424,8 +2509,45 @@ export default function ProperMobileResponsiveChat() {
       let pollTimer: NodeJS.Timeout | null = null;
 
       try {
+        let r2Key: string | null = null;
+
+        // If video is large (> 4.5 MB), try direct presigned upload to Cloudflare R2
+        // to bypass server body size limits and boost upload speed
+        if (videoFile.size > 4 * 1024 * 1024) {
+          try {
+            setGeneratingStep("Uploading video to Cloudflare R2 CDN...");
+            const r2Init = await fetch("/api/r2", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                filename: videoFile.name,
+                contentType: videoFile.type || "video/mp4",
+              }),
+            });
+            if (r2Init.ok) {
+              const r2Data = await r2Init.json();
+              if (r2Data.uploadUrl && r2Data.key) {
+                const putRes = await fetch(r2Data.uploadUrl, {
+                  method: "PUT",
+                  headers: { "Content-Type": videoFile.type || "video/mp4" },
+                  body: videoFile,
+                });
+                if (putRes.ok) {
+                  r2Key = r2Data.key;
+                }
+              }
+            }
+          } catch (r2Err) {
+            console.warn("Direct R2 upload bypassed or failed, falling back to standard upload:", r2Err);
+          }
+        }
+
         const formData = new FormData();
-        formData.append("video", videoFile);
+        if (r2Key) {
+          formData.append("r2Key", r2Key);
+        } else {
+          formData.append("video", videoFile);
+        }
         formData.append("runId", clientRunId);
         if (userScriptContent && userNote) {
           formData.append("userScript", `[Target Script]:\n${userScriptContent}\n\n[Director Instructions]:\n${userNote}`);
@@ -2513,10 +2635,12 @@ export default function ProperMobileResponsiveChat() {
         });
 
         if (pollTimer) clearInterval(pollTimer);
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
 
-        if (!response.ok || !data.success) {
-          const errMsg = data.error || "Failed to process video in Pipeline B";
+        if (!response.ok || !data?.success) {
+          const errMsg = response.status === 413
+            ? "The upload was rejected as too large by the server (HTTP 413). The hosting platform or reverse proxy has a smaller request limit than this video upload."
+            : data?.error || `Failed to process video in Pipeline B (HTTP ${response.status})`;
           updateMessage(botMsgId, {
             generationStatus: "error",
             generationError: errMsg,
@@ -2770,6 +2894,7 @@ export default function ProperMobileResponsiveChat() {
         // Voiceover first: synthesize real audio, then re-time beats to the
         // measured durations so animation and voice stay locked by construction.
         let voiceTracks: VoiceTrack[] = [];
+        let voiceoverError = "";
         let reelDuration = durationNum;
         if (voiceEnabled && !uploadedAudioTrack) {
           try {
@@ -2817,6 +2942,7 @@ export default function ProperMobileResponsiveChat() {
             console.warn("Voiceover synthesis error (continuing silent):", voiceErr);
             voiceTracks = [];
             reelDuration = durationNum;
+            voiceoverError = voiceErr?.message || "Voiceover synthesis failed.";
           }
         }
 
@@ -2826,6 +2952,8 @@ export default function ProperMobileResponsiveChat() {
           typing: false,
           text: voiceEnabled && voiceTracks.length
             ? `Wonder has planned your ${reelDuration}s narrated story. Explore the scenes while Spark brings them to life.`
+            : voiceoverError
+            ? `Your video is being made, but voiceover generation failed: ${voiceoverError}`
             : `Wonder has planned your ${durationNum}s story. Explore the scenes while Spark brings them to life.`,
           beats: metaBeats,
           format: formatUsed,
@@ -3175,10 +3303,10 @@ export default function ProperMobileResponsiveChat() {
         </div>
       )}
 
-      {/* Apple-Style Floating Dock Navigation Bar (Replaces traditional header) */}
+      {/* Shared dock navigation floats cleanly at the top without dead-space header block */}
       <div
-        className="pointer-events-none fixed inset-x-0 top-1 z-[9999] flex w-full items-center justify-center px-3"
-        style={{ top: "max(0.25rem, env(safe-area-inset-top, 0.25rem))" }}
+        className="pointer-events-none fixed inset-x-0 top-1.5 z-[9999] flex w-full items-center justify-center px-3"
+        style={{ top: "max(0.35rem, env(safe-area-inset-top, 0.35rem))" }}
       >
         <div className="pointer-events-auto relative flex items-center justify-center gap-2">
           {/* Mobile drawer trigger for small screens */}
@@ -3196,11 +3324,10 @@ export default function ProperMobileResponsiveChat() {
           />
         </div>
       </div>
-      <div aria-hidden="true" className={activeHeaderTab === "script" ? "h-0" : "h-[52px]"} />
 
       {/* Main Viewport: Z vs U vs Script vs Edit vs Post */}
       {activeHeaderTab === "z" ? (
-        <ZeeView
+        <div className="pt-12"><ZeeView
           onSwitchToTab={(tab) => {
             setActiveHeaderTab(tab);
             recordPageActivity(tab, `Switched to ${tab.toUpperCase()}`, `Opened ${tab.toUpperCase()} stage from Zee Brain`);
@@ -3208,9 +3335,9 @@ export default function ProperMobileResponsiveChat() {
           onNewReel={handleNewReel}
           recentTopic={activeMessage?.topic || activeMessage?.text || input}
           totalReelsCount={messages.filter((m) => m.role === "assistant" && (m.topic || m.beats)).length}
-        />
+        /></div>
       ) : activeHeaderTab === "u" ? (
-        <YouView
+        <div className="pt-12"><YouView
           onSwitchToTab={(tab) => {
             setActiveHeaderTab(tab);
             recordPageActivity(tab, `Switched to ${tab.toUpperCase()}`, `Navigated from You Memory Bank to ${tab.toUpperCase()}`);
@@ -3223,7 +3350,7 @@ export default function ProperMobileResponsiveChat() {
             recordPageActivity("script", "Script • Story Bank", `Loaded personal memory hook: "${hookIdea.slice(0, 48)}..."`, hookIdea);
             setActiveHeaderTab("script");
           }}
-        />
+        /></div>
       ) : activeHeaderTab === "script" ? (
         <div className="w-full max-w-[1600px] mx-auto px-0 pt-0 pb-0">
           <ScriptRoom
@@ -3263,7 +3390,7 @@ export default function ProperMobileResponsiveChat() {
           />
         </div>
       ) : activeHeaderTab === "post" ? (
-        <PostView
+        <div className="pt-12"><PostView
           onSwitchToTab={setActiveHeaderTab}
           activeTopic={activeMessage?.topic || activeMessage?.text || input}
           activeVideoUrl={
@@ -3314,11 +3441,11 @@ export default function ProperMobileResponsiveChat() {
               setIsExportModalOpen(true);
             }
           }}
-        />
+        /></div>
       ) : (
         <>
-          {/* Main Studio Viewport (Edit) */}
-          <div className="mx-auto max-w-[1600px] w-full flex flex-col lg:flex-row min-h-[calc(100vh-50px)]">
+          {/* Main Studio Viewport (Edit) - Fitted flush to top */}
+          <div className="mx-auto max-w-[1600px] w-full flex flex-col lg:flex-row min-h-screen">
         {/* Left History Sidebar */}
         <aside className="hidden lg:flex w-[280px] shrink-0 border-r-2 border-[#141414] bg-[#ECEAE3] flex-col p-4 sticky top-0 h-screen overflow-y-auto">
           {/* Top: New Studio Reel button */}
@@ -3329,6 +3456,71 @@ export default function ProperMobileResponsiveChat() {
             <Plus size={16} />
             <span>New Studio Reel</span>
           </button>
+
+          {/* Active Project / Series Lock Card */}
+          {activeProject && (
+            <div className="mb-4 p-3 rounded-2xl border-2 border-[#141414] bg-[#FFFDF9] shadow-[2px_2px_0px_#141414] flex flex-col gap-1.5 shrink-0 animate-fade-in">
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <span className="text-[12px] font-extrabold text-[#141414] truncate">
+                    {activeProject.title}
+                  </span>
+                </div>
+                <span className="mono text-[8.5px] px-1.5 py-0.2 rounded bg-[#F6D9CC] text-[#E4491B] font-bold uppercase shrink-0">
+                  {activeProject.formatType}
+                </span>
+              </div>
+
+              {activeProject.formatType === "series" && activeProject.seriesMeta && (
+                <div className="flex items-center justify-between mono text-[10px] text-[#E4491B] font-bold">
+                  <span>Episode {activeProject.seriesMeta.currentEpisode} of {activeProject.seriesMeta.totalPlannedEpisodes || "Ongoing"}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-1 mt-0.5 mono text-[8.5px] text-[#6B6A64]">
+                <span className="px-1.5 py-0.5 rounded bg-[#ECEAE3] border border-[#D5D2C8] flex items-center gap-0.5">
+                  <Lock size={8} /> Tone: {activeProject.lockedMemory.tonality}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-[#ECEAE3] border border-[#D5D2C8] flex items-center gap-0.5">
+                  <Lock size={8} /> Voice: {activeProject.lockedMemory.voice}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-[#ECEAE3] border border-[#D5D2C8] flex items-center gap-0.5">
+                  <Lock size={8} /> {activeProject.lockedMemory.template}
+                </span>
+              </div>
+
+              <div className="mt-1.5 flex items-center gap-1">
+                {activeProject.formatType === "series" && (
+                  <button
+                    type="button"
+                    onClick={() => handleNextSeriesEpisode(activeProject)}
+                    className="flex-1 py-1 px-2 rounded-xl border border-[#141414] bg-[#141414] hover:bg-[#E4491B] text-white mono text-[9.5px] font-bold flex items-center justify-center gap-1 transition active:scale-95"
+                    title="Advance to next episode with identical locked tone and voiceover"
+                  >
+                    <Plus size={10} /> Next Ep
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsNewReelModalOpen(true)}
+                  className="py-1 px-2 rounded-xl border border-[#D5D2C8] bg-white hover:bg-[#FAF8F3] text-[#141414] mono text-[9.5px] font-bold transition"
+                  title="Switch or change project settings"
+                >
+                  Manage
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveProject(null)}
+                  className="py-1 px-1.5 rounded-xl border border-[#D5D2C8] hover:border-rose-400 hover:text-rose-600 text-[#6B6A64] mono text-[9.5px] transition"
+                  title="Unlock and clear project"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            </div>
+          )}
+
 
           <div className="flex items-center justify-between mb-3 px-1">
             <div className="flex items-center gap-2 mono text-[11px] uppercase tracking-[0.12em] text-[#141414] font-bold">
@@ -3589,8 +3781,53 @@ export default function ProperMobileResponsiveChat() {
             onScroll={(event) => {
               try { sessionStorage.setItem("paper_studio_chat_scroll_v1", String(event.currentTarget.scrollTop)); } catch {}
             }}
-            className="flex-1 overflow-y-auto px-4 lg:px-10 pt-2 lg:pt-3 space-y-6 lg:space-y-8 pb-[140px] lg:pb-[160px]"
+            className="flex-1 overflow-y-auto px-4 lg:px-10 pt-14 space-y-6 lg:space-y-8 pb-[140px] lg:pb-[160px]"
           >
+
+            {/* Active Locked Project / Series Identity Banner */}
+            {activeProject && (
+              <div className="w-full max-w-[780px] mx-auto rounded-[20px] border-2 border-[#141414] bg-gradient-to-r from-[#FFFDF9] via-[#FAF6EC] to-[#F6D9CC]/50 p-3 shadow-[2px_2px_0px_#141414] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-[#E4491B] text-white grid place-items-center shrink-0">
+                    <Lock size={13} />
+                  </div>
+                  <div className="truncate">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-extrabold text-[#141414] truncate">
+                        {activeProject.formatType === "series" ? "Series Identity Locked:" : "Project Identity Locked:"}{" "}
+                        {activeProject.title}
+                      </span>
+                      {activeProject.formatType === "series" && activeProject.seriesMeta && (
+                        <span className="px-1.5 py-0.2 rounded bg-[#E4491B] text-white mono text-[8.5px] font-bold">
+                          Ep {activeProject.seriesMeta.currentEpisode} / {activeProject.seriesMeta.totalPlannedEpisodes}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mono text-[9.5px] text-[#6B6A64] mt-0.5">
+                      <span>🔒 Tone: {activeProject.lockedMemory.tonality}</span>
+                      <span>•</span>
+                      <span>🔒 Voice: {activeProject.lockedMemory.voice}</span>
+                      <span>•</span>
+                      <span>🔒 Template: {activeProject.lockedMemory.template}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="mono text-[9px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                    DB FILE SAVED
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsNewReelModalOpen(true)}
+                    className="mono text-[9.5px] text-[#E4491B] font-bold hover:underline"
+                  >
+                    Manage
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Zee Welcome & Live Agent Greeting Banner */}
             <div className="w-full max-w-[780px] mx-auto rounded-[20px] border-2 border-[#141414] bg-gradient-to-r from-[#FFFDF8] via-[#FAF6EC] to-[#F6D9CC]/45 p-3.5 sm:p-4 shadow-[3px_3px_0px_#141414]">
               <Pip
@@ -5530,6 +5767,14 @@ export default function ProperMobileResponsiveChat() {
           </div>
         </div>
       )}
+      {/* New Studio Reel / Project Launch & Memory Lock Modal */}
+      <NewStudioReelModal
+        isOpen={isNewReelModalOpen}
+        onClose={() => setIsNewReelModalOpen(false)}
+        onProjectCreated={handleProjectCreated}
+        activeProject={activeProject}
+      />
+
       {/* On-Demand Video Export Modal (Activated only when Download MP4 is clicked) */}
       <VideoExportModal
         isOpen={isExportModalOpen}
