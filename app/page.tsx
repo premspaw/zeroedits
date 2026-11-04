@@ -2574,7 +2574,9 @@ export default function ProperMobileResponsiveChat() {
             if (statusRes.ok) {
               const statusData = await statusRes.json();
               const curStage = statusData?.state?.currentStage;
-              if (curStage === "MEDIA_VALIDATED") {
+              if (curStage === "UPLOADING") {
+                setGeneratingStep("Receiving and preparing your video...");
+              } else if (curStage === "MEDIA_VALIDATED") {
                 setGeneratingStep("Checking your video");
               } else if (curStage === "TRANSCRIBED") {
                 setGeneratingStep("Listening to your video");

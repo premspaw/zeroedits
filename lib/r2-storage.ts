@@ -27,6 +27,9 @@ export const getR2Client = (): S3Client => {
       accessKeyId: accessKeyId!,
       secretAccessKey: secretAccessKey!,
     },
+    // Prevent AWS SDK v3 from injecting dummy empty CRC32 checksums that break presigned PUT uploads in browsers
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
 };
 
@@ -107,7 +110,10 @@ export async function getPresignedUploadUrl(
     ContentType: contentType,
   });
 
-  const uploadUrl = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+  const uploadUrl = await getSignedUrl(client, command, {
+    expiresIn: expiresInSeconds,
+    unhoistableHeaders: new Set(["x-amz-checksum-crc32", "x-amz-sdk-checksum-algorithm"]),
+  });
   const publicUrl = getPublicOrPresignedUrl(key);
 
   return { uploadUrl, key, publicUrl };

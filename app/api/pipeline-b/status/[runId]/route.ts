@@ -8,19 +8,26 @@ export async function GET(
   req: NextRequest,
   context: { params: Promise<{ runId: string }> | { runId: string } }
 ) {
+  let runId = "unknown";
   try {
     const resolvedParams = await Promise.resolve(context.params);
-    const { runId } = resolvedParams;
+    runId = resolvedParams.runId;
     const state = loadState(runId);
     return NextResponse.json({
       success: true,
       state,
     });
   } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || "Failed to load run state." },
-      { status: 404 }
-    );
+    // If run state is not yet initialized on disk (file upload/transfer still in flight),
+    // return an initial uploading stage with HTTP 200 so polling doesn't spam 404 errors.
+    return NextResponse.json({
+      success: true,
+      state: {
+        runId,
+        currentStage: "UPLOADING",
+        status: "processing",
+      },
+    });
   }
 }
 
