@@ -406,6 +406,7 @@ export default function TalkingHeadExplainerStage({
   const [customWords, setCustomWords] = useState<WordItem[] | null>(null);
   const [customTranscriptInput, setCustomTranscriptInput] = useState<string>("");
   const [showTranscriptPasteBox, setShowTranscriptPasteBox] = useState<boolean>(false);
+  const [recreatingSceneIdx, setRecreatingSceneIdx] = useState<number | null>(null);
 
   // Cutout Positioning & Scale State (25% bigger base, corner default, interactive hold-to-move)
   const [cutoutSide, setCutoutSide] = useState<"left" | "right">("left");
@@ -504,6 +505,18 @@ export default function TalkingHeadExplainerStage({
         ? currentTime <= Number(segment.end || 0) + 0.05
         : currentTime < Number(segment.end || 0))
   );
+  const activeCameraZoom = (() => {
+    const pacing = Array.isArray(activeVisualSegment?.cameraPacing)
+      ? activeVisualSegment.cameraPacing
+      : [];
+    const localTime = Math.max(0, currentTime - Number(activeVisualSegment?.start || 0));
+    let zoom = Number(activeVisualSegment?.cameraZoom) || 1;
+    for (const beat of pacing) {
+      if (Number(beat.time) > localTime) break;
+      if (Number.isFinite(Number(beat.zoom))) zoom = Number(beat.zoom);
+    }
+    return Math.min(1.28, Math.max(1, zoom));
+  })();
   const activeSceneSparkCode = typeof activeVisualSegment?.sparkCode === "string"
     ? activeVisualSegment.sparkCode
     : "";
@@ -1261,6 +1274,7 @@ export default function TalkingHeadExplainerStage({
           className={`absolute inset-0 w-full h-full object-cover pointer-events-none z-0 ${
             activeSparkCode.trim().length > 30 ? "opacity-100" : "opacity-0"
           }`}
+          style={{ transform: `scale(${activeCameraZoom})`, transformOrigin: "center center" }}
         />
 
         {/* 100% Unified Template Canvas Preview */}
@@ -1831,9 +1845,10 @@ export default function TalkingHeadExplainerStage({
                   <div className="flex items-center gap-1.5 ml-1">
                     {(
                       [
-                        ["editorial_warm", "#E4491B", "Warm Orange"],
-                        ["midnight_neon", "#FF5520", "Neon Flame"],
-                        ["cyber_blue", "#38BDF8", "Cyber Blue"],
+                        ["editorial_warm", "#E4491B", "Warm Studio"],
+                        ["emerald_gold", "#FFD700", "Emerald Gold"],
+                        ["cyber_blue", "#38BDF8", "Cyber Sapphire"],
+                        ["titanium_minimal", "#F8FAFC", "Titanium Minimal"],
                         ["emerald_growth", "#10B981", "Emerald Growth"],
                         ["royal_violet", "#A855F7", "Royal Violet"],
                       ] as const
@@ -2180,6 +2195,36 @@ export default function TalkingHeadExplainerStage({
                     >
                       {shotBadge}
                     </button>
+                    {onRecreateScene && (
+                      <button
+                        type="button"
+                        disabled={recreatingSceneIdx !== null}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            setRecreatingSceneIdx(idx);
+                            await onRecreateScene(
+                              idx,
+                              "Recreate animation for this scene with fresh, script-grounded visual layout and motion",
+                              undefined
+                            );
+                          } catch (err) {
+                            console.warn("Failed to recreate scene:", err);
+                          } finally {
+                            setRecreatingSceneIdx(null);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 rounded mono text-[7.5px] font-extrabold bg-amber-500/15 hover:bg-amber-400 hover:text-black text-amber-300 border border-amber-400/40 transition flex items-center gap-0.5 cursor-pointer ml-auto"
+                        title="Recreate animation for this scene only"
+                      >
+                        {recreatingSceneIdx === idx ? (
+                          <Loader2 size={7.5} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={7.5} />
+                        )}
+                        <span>{recreatingSceneIdx === idx ? "..." : "Recreate"}</span>
+                      </button>
+                    )}
                   </div>
                   <span className="text-[9px] font-bold truncate max-w-[105px]">
                     {sc.headlineText || `Scene ${idx + 1}`}

@@ -11,6 +11,7 @@ import { NextRequest } from "next/server";
 import fs from "fs";
 import path from "path";
 import { buildObjectPrompt } from "@meta-sam/parser";
+import { getMetaApiBaseUrl, getMetaApiKey, getMetaModelId } from "@/lib/meta-api";
 
 export const runtime = "nodejs";
 
@@ -28,15 +29,8 @@ export async function POST(req: NextRequest) {
       maskEncoding = "one_bit",
     } = body;
 
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
-
-    const baseUrl = (
-      process.env.MODEL_API_BASE_URL || "https://api.meta.ai/v1"
-    ).replace(/\/+$/, "");
+    const apiKey = getMetaApiKey();
+    const baseUrl = getMetaApiBaseUrl();
 
     // Build input_text: either encode geometric clicks/boxes via @meta-sam/parser buildObjectPrompt or use concept noun phrase
     const inputText =
@@ -92,7 +86,7 @@ export async function POST(req: NextRequest) {
         Accept: "text/event-stream",
       },
       body: JSON.stringify({
-        model: "sam-3.1",
+        model: getMetaModelId("sam", "sam-3.1"),
         stream: true,
         input: [
           {

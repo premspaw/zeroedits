@@ -1,4 +1,5 @@
 import { readModelResponse } from "@/lib/model-response";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import { spawn } from "node:child_process";
 import type { EditPlan, TranscriptSegment } from "../types.ts";
 
@@ -46,7 +47,7 @@ export async function generateSparkVisualOverlay(params: {
   fetchImpl?: typeof fetch;
 }): Promise<string> {
   const { editPlan, transcript, duration, runId, cleanVideoPath, onLogEvent, fetchImpl = fetch } = params;
-  const apiKey = process.env.MODEL_API_KEY || process.env.MUSE_API_KEY || process.env.META_API_KEY || "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+  const apiKey = getMetaApiKey();
   if (!apiKey) throw new Error("Spark 1.3 is not configured. Set MODEL_API_KEY before generating Pipeline B animations.");
 
   const words = (editPlan.editedTranscript || []).map((segment) => ({
@@ -107,7 +108,7 @@ Implement the real objects and actions. Use the scene start/end values as absolu
         image_url: `data:image/jpeg;base64,${referenceFrame.toString("base64")}`,
       });
     }
-    const response = await fetchImpl("https://api.meta.ai/v1/responses", {
+    const response = await fetchImpl(getMetaEndpoint("responses"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -115,7 +116,7 @@ Implement the real objects and actions. Use the scene start/end values as absolu
         Accept: "text/event-stream",
       },
       body: JSON.stringify({
-        model: "muse-spark-1.3",
+        model: getMetaModelId("spark", "muse-spark-1.3"),
         input: [{ role: "user", content: userContent }],
         stream: true,
         temperature: 0.9,

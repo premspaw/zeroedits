@@ -98,3 +98,46 @@
 .animate-popover {
   animation: modalIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+@keyframes memoryWireTrace {
+  0% { stroke-dashoffset: 84; opacity: 0.18; }
+  48% { stroke-dashoffset: 0; opacity: 0.95; }
+  100% { stroke-dashoffset: -84; opacity: 0.22; }
+}
+
+@keyframes memoryBrainPulse {
+  0% { transform: scale(0.5); opacity: 0.72; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+@keyframes memoryNodeBreath {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.memory-brain-wire {
+  animation: memoryWireTrace 3.6s linear infinite;
+}
+
+.memory-brain-pulse {
+  animation: memoryBrainPulse 2.2s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.memory-brain-node-active {
+  animation: memoryNodeBreath 2.1s ease-in-out infinite;
+}
+
+.memory-brain-node-empty {
+  animation: memoryNodeBreath 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-brain-wire,
+  .memory-brain-pulse,
+  .memory-brain-node-active,
+  .memory-brain-node-empty {
+    animation-duration: 8s;
+  }
+}

@@ -2,16 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import type { GalleryMediaItem, LifeCategory } from "@/lib/zee-brain";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const META_API_KEY =
-  process.env.MODEL_API_KEY ||
-  process.env.MUSE_API_KEY ||
-  process.env.META_API_KEY ||
-  "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+const META_API_KEY = getMetaApiKey();
 
 const VIDEO_EXTS = new Set([".mp4", ".mov", ".webm", ".m4v"]);
 
@@ -61,7 +58,7 @@ async function classifyMetadataWithMetaMuse(
 
     const parsed = await withModelRetry(
       async () => {
-        const res = await fetch("https://api.meta.ai/v1/responses", {
+        const res = await fetch(getMetaEndpoint("responses"), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${META_API_KEY}`,
@@ -69,7 +66,7 @@ async function classifyMetadataWithMetaMuse(
             Accept: "text/event-stream",
           },
           body: JSON.stringify({
-            model: "muse-wonder-1.0",
+            model: getMetaModelId("wonder", "muse-wonder-1.0"),
             input: [
               {
                 role: "user",

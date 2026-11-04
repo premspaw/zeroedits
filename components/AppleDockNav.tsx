@@ -126,9 +126,6 @@ function DockItem({ item, isActive, onClick, mouseX }: DockItemProps) {
   });
 
   // Compact height & width with subtle fluid magnification
-  const sizeSync = useTransform(distance, [-100, -50, 0, 50, 100], [30, 34, 39, 34, 30]);
-  const size = useSpring(sizeSync, { mass: 0.08, stiffness: 260, damping: 18 });
-
   const iconScaleSync = useTransform(distance, [-100, -50, 0, 50, 100], [1.0, 1.08, 1.18, 1.08, 1.0]);
   const iconScale = useSpring(iconScaleSync, { mass: 0.08, stiffness: 260, damping: 18 });
 
@@ -136,11 +133,16 @@ function DockItem({ item, isActive, onClick, mouseX }: DockItemProps) {
     <motion.button
       ref={itemRef}
       type="button"
-      onClick={onClick}
-      style={{ width: size, height: size }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      }}
+      style={{ minWidth: 50, minHeight: 48 }}
       whileTap={{ scale: 0.92 }}
-      aria-label={item.label}
-      className={`relative rounded-[11px] flex items-center justify-center cursor-pointer select-none transition-colors duration-200 ${
+      aria-label={`Open ${item.label} page`}
+      title={`Open ${item.label}`}
+      className={`pointer-events-auto touch-manipulation relative rounded-[12px] flex flex-col items-center justify-center gap-1 cursor-pointer select-none transition-colors duration-200 ${
         isActive
           ? "text-[#141414]"
           : "text-[#4A4842] hover:text-[#141414] hover:bg-white/30"
@@ -162,6 +164,7 @@ function DockItem({ item, isActive, onClick, mouseX }: DockItemProps) {
       >
         {item.icon(isActive)}
       </motion.div>
+      <span className={`relative z-10 text-[9px] font-semibold leading-none ${isActive ? "text-[#141414]" : "text-[#6B6962]"}`}>{item.label}</span>
     </motion.button>
   );
 }
@@ -176,9 +179,9 @@ export default function AppleDockNav({
   return (
     <nav
       aria-label="Apple Dynamic Dock Navigation"
-      onMouseMove={(e) => mouseX.set(e.pageX)}
+      onMouseMove={(e) => mouseX.set(e.clientX)}
       onMouseLeave={() => mouseX.set(Infinity)}
-      className={`relative inline-flex items-center justify-center gap-1 px-1.5 py-1 rounded-[16px] bg-gradient-to-b from-white/45 via-white/25 to-white/15 backdrop-blur-2xl backdrop-saturate-150 border border-white/65 shadow-[0_8px_24px_-4px_rgba(20,20,20,0.08),inset_0_1px_0.5px_rgba(255,255,255,0.85)] select-none transition-all ${className}`}
+      className={`relative inline-flex items-center justify-center gap-1 px-1.5 py-1 rounded-[18px] bg-gradient-to-b from-white/70 via-white/55 to-white/40 backdrop-blur-2xl backdrop-saturate-150 border border-white/80 shadow-[0_8px_24px_-4px_rgba(20,20,20,0.12),inset_0_1px_0.5px_rgba(255,255,255,0.95)] select-none transition-all ${className}`}
     >
       {DOCK_TABS.map((tab) => (
         <DockItem

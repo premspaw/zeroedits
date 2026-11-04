@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadState, saveState } from "@/lib/pipeline-b/state";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ runId: string }> | { runId: string } }

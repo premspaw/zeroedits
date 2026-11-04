@@ -5,6 +5,7 @@
 
 import fs from "fs";
 import path from "path";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "../../meta-api.ts";
 
 export interface GenerateImageParams {
   prompt: string;
@@ -32,13 +33,7 @@ export async function generateMuseImage(params: GenerateImageParams): Promise<Ge
     referenceImageDataUri = null,
   } = params;
 
-  const apiKey =
-    process.env.MODEL_API_KEY ||
-    process.env.MUSE_API_KEY ||
-    process.env.META_API_KEY ||
-    "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
-
-  const baseUrl = process.env.MODEL_API_BASE_URL || "https://api.meta.ai/v1";
+  const apiKey = getMetaApiKey();
 
   // Ensure output directories exist in run directory and public folder for immediate serving
   const runAssetsDir = path.join(process.cwd(), "workspace", "pipeline-b", "runs", runId, "assets");
@@ -72,7 +67,7 @@ export async function generateMuseImage(params: GenerateImageParams): Promise<Ge
       });
     }
 
-    const response = await fetch(`${baseUrl}/responses`, {
+    const response = await fetch(getMetaEndpoint("responses"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -86,7 +81,7 @@ export async function generateMuseImage(params: GenerateImageParams): Promise<Ge
           },
         ],
         max_output_tokens: 2048,
-        model: "muse-image-1.0",
+        model: getMetaModelId("image", "muse-image-1.0"),
         store: true,
         stream: false,
         temperature: 0.45,

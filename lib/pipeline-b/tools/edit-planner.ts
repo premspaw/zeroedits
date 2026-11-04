@@ -1231,8 +1231,26 @@ export function assembleFinalEditPlan(params: {
   const allWords = transcript.flatMap((s) => s.words);
   const fullText = allWords.map((w) => w.word).join(" ");
 
+  // A word-level transcript can end a little early, especially on the final word of a
+  // sentence. Keep a small audio handle after the last spoken word and never let an
+  // approved silence/retake cut reach back into it. This guards against clipped endings
+  // even when Whisper's final timestamp or the silence detector is slightly inaccurate.
+  const lastSpokenWord = allWords.reduce<TranscriptWord | undefined>(
+    (latest, word) => (!latest || word.end > latest.end ? word : latest),
+    undefined
+  );
+  const finalSpeechSafeEnd = lastSpokenWord
+    ? Math.min(totalDuration, +(lastSpokenWord.end + 0.24).toFixed(2))
+    : 0;
+  const safeApprovedCuts = editorial.approvedCuts.flatMap((cut) => {
+    if (cut.end <= finalSpeechSafeEnd) return [];
+    if (cut.start >= finalSpeechSafeEnd) return [cut];
+    if (finalSpeechSafeEnd >= totalDuration) return [];
+    return [{ ...cut, start: finalSpeechSafeEnd }];
+  });
+
   // 1. Validate and Merge Overlapping Cuts cleanly without gap deletion
-  const cuts = mergeOverlappingCuts(editorial.approvedCuts, totalDuration, editorial.protectedRanges || [], allWords);
+  const cuts = mergeOverlappingCuts(safeApprovedCuts, totalDuration, editorial.protectedRanges || [], allWords);
 
   // 2. Calculate Keep Segments (Preserve spoken intervals; never create wordless micro-fragments < 0.35s)
   const keepSegments: KeepSegment[] = [];

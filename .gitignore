@@ -19,6 +19,9 @@
 .render-temp/
 workspace/
 scratch/
+*.log
+dev-server.log
+test_cut.mjs
 public/voiceover/
 public/renders/
 public/temp-render/

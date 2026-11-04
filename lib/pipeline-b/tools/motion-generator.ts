@@ -41,7 +41,7 @@ export function generateTalkingHeadMotionCode(params: MotionGeneratorParams): st
   const visualSegments = (editPlan.visualSegments || []).map((seg) => ({
     ...seg,
     // Strictly enforce ZERO static AI images — 100% codebase story animations + SAM 3.1 cutouts
-    assetUrl: null,
+    assetUrl: templateId === "gallery" ? seg.assetUrl : null,
   }));
 
   const visualOverlays = editPlan.visualPlan || [];
@@ -410,6 +410,14 @@ export const TalkingHeadReel: React.FC = () => {
               }}
             >
               {seg.assetUrl ? (
+                seg.galleryClipKind === "video" ? (
+                  <Video
+                    src={seg.assetUrl}
+                    startFrom={Math.round((seg.assetStart || 0) * fps)}
+                    endAt={Math.round(((seg.assetStart || 0) + (seg.assetDuration || (seg.end - seg.start))) * fps)}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: \`scale(\${1.02 + timeIn * 0.02}) translateY(\${-timeIn * 5}px)\`, filter: "saturate(1.08) contrast(1.04)" }}
+                  />
+                ) : (
                 <img
                   src={seg.assetUrl}
                   alt={seg.headlineText || "Visual Scene"}
@@ -423,6 +431,7 @@ export const TalkingHeadReel: React.FC = () => {
                     transition: "transform 0.1s linear",
                   }}
                 />
+                )
               ) : (
                 <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at center, #231C2D 0%, #0A0A0F 100%)" }} />
               )}

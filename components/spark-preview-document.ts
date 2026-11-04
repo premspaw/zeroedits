@@ -93,7 +93,7 @@ window.addEventListener('unhandledrejection', function(event) { failPreview(even
 <script data-spark-runtime="React DOM" src="/api/preview-runtime?module=react-dom"></script>
 <script data-spark-runtime="Framer Motion" src="/api/preview-runtime?module=framer-motion"></script>
 <script data-spark-runtime="Lucide icons" src="/api/preview-runtime?module=lucide-react"></script>
-<script data-spark-runtime="the animation compiler" src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+<script data-spark-runtime="the animation compiler" src="/api/preview-runtime?module=babel" onerror="this.onerror=null;this.src='https://unpkg.com/@babel/standalone@7.24.0/babel.min.js'"></script>
 </head><body><div id="stage-container"><div id="root"></div></div>
 <script>
 (function() {

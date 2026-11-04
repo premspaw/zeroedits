@@ -391,6 +391,12 @@ export async function executePipelineB(
         userScript: state.userScript,
         runId,
         mode: state.mode || "wonder-ai",
+        galleryAssets: (state.galleryAssets || []).map((asset) => ({
+          ...asset,
+          frameDataUrl: asset.thumbnailPath && fs.existsSync(asset.thumbnailPath)
+            ? `data:image/jpeg;base64,${fs.readFileSync(asset.thumbnailPath).toString("base64")}`
+            : undefined,
+        })),
         onLogEvent: logEvent,
         fetchImpl: options?.fetchImpl,
       });
@@ -400,6 +406,51 @@ export async function executePipelineB(
       state.editPlan!.visualSegments = creativePlan.visualSegments;
       state.editPlan!.visualPlan = creativePlan.visualPlan;
       state.editPlan!.notes = `${state.editPlan!.notes} | ${creativePlan.editorialNotes}`;
+
+      // Gallery is an explicit edit template: place only clips with a meaningful
+      // spoken-word match. Never rotate unrelated gallery media into a scene.
+      if (state.templateId === "gallery" && state.galleryAssets?.length) {
+        const used = new Set<string>();
+        let previousWasGalleryCutaway = false;
+        for (const [index, segment] of (state.editPlan!.visualSegments || []).entries()) {
+          if (index === 0 || previousWasGalleryCutaway || segment.end - segment.start < 1.25) {
+            previousWasGalleryCutaway = false;
+            continue;
+          }
+          const spokenTokens = new Set(`${segment.spokenReference} ${segment.headlineText || ""}`
+            .toLowerCase().replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter((word) => word.length > 2));
+          const ranked = state.galleryAssets.map((asset) => {
+            const tags = asset.tags.map((tag) => tag.toLowerCase());
+            const score = tags.reduce((sum, tag) => {
+              if (spokenTokens.has(tag)) return sum + 3;
+              return sum + ([...spokenTokens].some((word) => word.length > 3 && (word.startsWith(tag) || tag.startsWith(word))) ? 1 : 0);
+            }, 0);
+            return { asset, score: used.has(asset.id) ? 0 : score };
+          }).sort((a, b) => b.score - a.score);
+          const aiSelectedId = segment.galleryAssetId;
+          const aiSelected = aiSelectedId ? state.galleryAssets.find((asset) => asset.id === aiSelectedId) : undefined;
+          const match = aiSelected && !used.has(aiSelected.id)
+            ? { asset: aiSelected, score: 10 }
+            : ranked[0];
+          // Require a real semantic hit. A mismatched cutaway is worse than A-roll.
+          if (!match || match.score < 3) {
+            previousWasGalleryCutaway = false;
+            continue;
+          }
+          used.add(match.asset.id);
+          segment.assetUrl = match.asset.url;
+          segment.galleryClipName = match.asset.name;
+          segment.galleryClipKind = match.asset.kind;
+          segment.assetStart = match.asset.duration && match.asset.duration > segment.end - segment.start
+            ? Math.min(match.asset.duration - (segment.end - segment.start), Math.max(0, (match.asset.duration - (segment.end - segment.start)) * 0.5))
+            : 0;
+          segment.assetDuration = Math.min(segment.end - segment.start, match.asset.duration || segment.end - segment.start);
+          segment.layoutType = "broll_takeover";
+          segment.technique = "broll_clip";
+          segment.layerArrangement = "foreground";
+          previousWasGalleryCutaway = true;
+        }
+      }
 
       recordStageSuccess(state, "VISUAL_PLAN_CREATED", {
         planId: creativePlan.planId,
@@ -422,7 +473,7 @@ export async function executePipelineB(
         if (seg.technique === "generated_image") {
           seg.technique = seg.layoutType === "sam_cutout" ? "sam_cutout_pop" : "procedural_graphic";
         }
-        delete (seg as any).assetUrl;
+        if (state.templateId !== "gallery") delete (seg as any).assetUrl;
       }
 
       const isCutoutTemplate =

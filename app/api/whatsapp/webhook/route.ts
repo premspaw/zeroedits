@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
 import { readModelResponse } from "@/lib/model-response";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import { withModelRetry } from "@/lib/model-retry";
 import { BANK_DIR, ensureBankDir } from "@/lib/story-bank";
 import {
@@ -12,23 +13,23 @@ import {
   type MemoryBankItem,
   type WhatsAppChatTurn,
   type WhatsAppScriptBeat,
-} from "@/lib/zee-brain";
+} from "@/lib/zee-brain-core";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 const WHATSAPP_STORE_FILE = path.join(BANK_DIR, "whatsapp-sessions.json");
 
-const META_API_KEY =
-  process.env.MODEL_API_KEY ||
-  process.env.MUSE_API_KEY ||
-  process.env.META_API_KEY ||
-  "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+const META_API_KEY = getMetaApiKey();
 
 const WHATSAPP_VERIFY_TOKEN =
-  process.env.WHATSAPP_VERIFY_TOKEN || "muse_whatsapp_verify_2026";
+  process.env.WHATSAPP_VERIFY_TOKEN || "";
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || "";
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+// The browser sync bridge is available only for the single-owner local studio by
+// default. A public deployment must add real user authentication before enabling it.
+const ALLOW_LOCAL_WHATSAPP_MEMORY_SYNC =
+  process.env.NODE_ENV !== "production" || process.env.WHATSAPP_MEMORY_SYNC_ENABLED === "true";
 
 export interface WhatsAppUserSession {
   userPhone: string;
@@ -70,6 +71,60 @@ function saveWhatsAppStore(data: WhatsAppStoreData): void {
     fs.writeFileSync(WHATSAPP_STORE_FILE, JSON.stringify(data, null, 2), "utf-8");
   } catch (err) {
     console.warn("Could not write whatsapp-sessions.json:", err);
+  }
+}
+
+async function downloadWhatsAppAudioAndTranscribe(mediaId: string): Promise<string> {
+  if (!WHATSAPP_ACCESS_TOKEN || !mediaId) return "";
+  try {
+    // 1. Get the media URL from Meta Graph API
+    const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
+    });
+    if (!metaRes.ok) return "";
+    const metaData = await metaRes.json();
+    const mediaUrl = metaData?.url;
+    if (!mediaUrl) return "";
+
+    // 2. Download the binary audio data
+    const audioRes = await fetch(mediaUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
+    });
+    if (!audioRes.ok) return "";
+    const arrayBuffer = await audioRes.arrayBuffer();
+    const audioBuffer = Buffer.from(arrayBuffer);
+
+    // Save temporary audio file for potential local processing
+    const tempDir = path.join(process.cwd(), "workspace", "whatsapp-audio");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    const tempOgg = path.join(tempDir, `${mediaId}.ogg`);
+    fs.writeFileSync(tempOgg, audioBuffer);
+
+    // 3. Transcribe via Whisper API if OPENAI_API_KEY is available
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      const formData = new FormData();
+      const blob = new Blob([audioBuffer], { type: "audio/ogg" });
+      formData.append("file", blob, `${mediaId}.ogg`);
+      formData.append("model", "whisper-1");
+      formData.append("language", "en");
+
+      const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openaiKey}` },
+        body: formData,
+      });
+      if (whisperRes.ok) {
+        const whisperData = await whisperRes.json();
+        if (whisperData?.text) {
+          return whisperData.text.trim();
+        }
+      }
+    }
+    return "Voice note received via WhatsApp.";
+  } catch (err) {
+    console.warn("Could not download/transcribe WhatsApp audio:", err);
+    return "Voice note received via WhatsApp.";
   }
 }
 
@@ -204,14 +259,14 @@ async function analyzeWhatsAppConversationWithMetaAI(
 
     const response = await withModelRetry(
       () =>
-        fetch("https://api.avalai.ir/v1/responses", {
+        fetch(getMetaEndpoint("responses"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${META_API_KEY}`,
           },
           body: JSON.stringify({
-            model: "muse-wonder-1.0",
+            model: getMetaModelId("wonder", "muse-wonder-1.0"),
             instructions: WHATSAPP_DECODER_PROMPT,
             input: [
               {
@@ -324,17 +379,18 @@ async function analyzeWhatsAppConversationWithMetaAI(
 /**
  * GET /api/whatsapp/webhook
  * 1) Handles Meta WhatsApp Cloud API Webhook Verification (`hub.mode=subscribe` & `hub.challenge`)
- * 2) When called from the browser UI (`?mode=sync`), returns all WhatsApp sessions & segregated stories
+ * 2) Reports connection readiness, or syncs one phone's story bank in local development
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const hubMode = searchParams.get("hub.mode");
   const hubVerifyToken = searchParams.get("hub.verify_token");
   const hubChallenge = searchParams.get("hub.challenge");
+  const mode = searchParams.get("mode");
 
   // 1. Official Meta Developer Dashboard Webhook Verification
   if (hubMode === "subscribe" && hubChallenge) {
-    if (hubVerifyToken === WHATSAPP_VERIFY_TOKEN) {
+    if (WHATSAPP_VERIFY_TOKEN && hubVerifyToken === WHATSAPP_VERIFY_TOKEN) {
       return new NextResponse(hubChallenge, {
         status: 200,
         headers: { "Content-Type": "text/plain" },
@@ -346,15 +402,44 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 2. Browser UI Live Sync (`GET /api/whatsapp/webhook?mode=sync`)
-  const store = loadWhatsAppStore();
-  return NextResponse.json({
-    success: true,
-    verifyTokenConfigured: WHATSAPP_VERIFY_TOKEN,
-    cloudApiConnected: Boolean(WHATSAPP_ACCESS_TOKEN && WHATSAPP_PHONE_NUMBER_ID),
-    sessions: store.sessions,
-    allSegregatedMemories: store.allSegregatedMemories,
-  });
+  if (mode === "status") {
+    return NextResponse.json({
+      configured: Boolean(WHATSAPP_VERIFY_TOKEN && WHATSAPP_ACCESS_TOKEN && WHATSAPP_PHONE_NUMBER_ID),
+      memorySyncEnabled: ALLOW_LOCAL_WHATSAPP_MEMORY_SYNC,
+      webhookUrl: `${new URL(req.url).origin}/api/whatsapp/webhook`,
+      missing: [
+        !WHATSAPP_VERIFY_TOKEN ? "WHATSAPP_VERIFY_TOKEN" : null,
+        !WHATSAPP_ACCESS_TOKEN ? "WHATSAPP_ACCESS_TOKEN" : null,
+        !WHATSAPP_PHONE_NUMBER_ID ? "WHATSAPP_PHONE_NUMBER_ID" : null,
+      ].filter(Boolean),
+    });
+  }
+
+  if (mode === "sync") {
+    if (!ALLOW_LOCAL_WHATSAPP_MEMORY_SYNC) {
+      return NextResponse.json({ error: "WhatsApp memory sync needs an authenticated owner session in production." }, { status: 403 });
+    }
+    const userPhone = String(searchParams.get("phone") || "").trim();
+    if (!userPhone) return NextResponse.json({ error: "A phone number is required to sync this WhatsApp inbox." }, { status: 400 });
+    const store = loadWhatsAppStore();
+    const normalizedPhone = normalizePhone(userPhone);
+    const sessionEntry = Object.entries(store.sessions).find(([phone]) => normalizePhone(phone) === normalizedPhone);
+    const session = sessionEntry?.[1];
+    return NextResponse.json({
+      success: true,
+      memories: session?.segregatedStories || [],
+      lastUpdated: session?.lastUpdated || null,
+    });
+  }
+
+  // Session data contains private stories and phone numbers. Never expose it
+  // through an unauthenticated public endpoint.
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
+}
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits ? `+${digits}` : "";
 }
 
 /**
@@ -586,9 +671,13 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const transcriptText =
-        message.audio.transcript ||
-        "Shared a voice note via WhatsApp Cloud API.";
+      let transcriptText = message.audio.transcript || "";
+      if (!transcriptText && message.audio.id) {
+        transcriptText = await downloadWhatsAppAudioAndTranscribe(message.audio.id);
+      }
+      if (!transcriptText) {
+        transcriptText = "Shared a voice memo via WhatsApp.";
+      }
 
       existingSession.activeThread.push({
         id: message.id || `wa-audio-${Date.now()}`,

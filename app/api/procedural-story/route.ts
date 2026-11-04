@@ -6,6 +6,7 @@ import util from "util";
 import { transcribeAudio } from "@/lib/pipeline-b/tools/transcription";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import {
   validateSceneScript,
   generateProceduralSparkCode,
@@ -418,11 +419,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── STEP 2: Story-to-SceneScript LLM Call (Wonder AI muse-wonder-1.0) ──
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+    const apiKey = getMetaApiKey();
 
     const storyInputPayload = {
       storyPrompt:
@@ -445,7 +442,7 @@ export async function POST(req: NextRequest) {
       try {
         llmRawScript = await withModelRetry(
           async () => {
-            const response = await fetch("https://api.meta.ai/v1/responses", {
+            const response = await fetch(getMetaEndpoint("responses"), {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${apiKey}`,
@@ -453,7 +450,7 @@ export async function POST(req: NextRequest) {
                 Accept: "text/event-stream",
               },
               body: JSON.stringify({
-                model: "muse-wonder-1.0",
+                model: getMetaModelId("wonder", "muse-wonder-1.0"),
                 input: [
                   {
                     role: "user",

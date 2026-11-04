@@ -27,6 +27,7 @@ import {
   Sparkles,
   Undo2,
   Edit3,
+  Zap,
 } from "lucide-react";
 
 interface StoryboardBeat {
@@ -125,6 +126,7 @@ export default function WonderStoryboard({
   const [recreateStartSec, setRecreateStartSec] = useState("");
   const [recreateEndSec, setRecreateEndSec] = useState("");
   const [isRecreatingScene, setIsRecreatingScene] = useState(false);
+  const [fastPacedEdit, setFastPacedEdit] = useState(false);
   const [recreateError, setRecreateError] = useState("");
   const [sceneSuggestions, setSceneSuggestions] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -219,9 +221,12 @@ export default function WonderStoryboard({
     try {
       const start = parseFloat(recreateStartSec);
       const end = parseFloat(recreateEndSec);
+      const sceneInstruction = fastPacedEdit
+        ? `${instruction.trim()}\n\n[FAST_PACED_EDIT]`.trim()
+        : instruction;
       const result = await onRecreateScene(
         activeIndex,
-        instruction,
+        sceneInstruction,
         Number.isFinite(start) ? start : undefined,
         Number.isFinite(end) ? end : undefined,
         "auto"
@@ -1047,6 +1052,7 @@ export default function WonderStoryboard({
                     } else {
                       setRecreateOpenForScene(activeIndex);
                       setRecreatePrompt("");
+                      setFastPacedEdit(false);
                       setRecreateStartSec(
                         typeof activeScene.start === "number" ? String(activeScene.start) : ""
                       );
@@ -1101,6 +1107,7 @@ export default function WonderStoryboard({
                         } else {
                           setRecreateOpenForScene(activeIndex);
                           setRecreatePrompt("");
+                          setFastPacedEdit(false);
                           setRecreateStartSec(
                             typeof activeScene.start === "number" ? String(activeScene.start) : ""
                           );
@@ -1153,8 +1160,23 @@ export default function WonderStoryboard({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] text-[#52504A]">Wonder suggests ideas for this scene. Select one to generate it in the preview.</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] text-[#52504A]">Wonder suggests ideas for this scene. Select one to generate it in the preview.</p>
+                        {isPipelineB && (
+                          <button
+                            type="button"
+                            aria-pressed={fastPacedEdit}
+                            disabled={disabled || isRecreatingScene}
+                            onClick={() => setFastPacedEdit((value) => !value)}
+                            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 mono text-[9px] font-bold transition disabled:opacity-50 ${fastPacedEdit ? "border-[#141414] bg-[#FFE600] text-[#141414] shadow-[1px_1px_0px_#141414]" : "border-[#D5D2C8] bg-white text-[#52504A] hover:border-[#E4491B] hover:text-[#141414]"}`}
+                            title="Add rapid punch-in and pull-out cuts for this scene"
+                          >
+                            <Zap size={11} />
+                            {fastPacedEdit ? "Fast-paced edit ON" : "Fast-paced edit"}
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         disabled={disabled || isLoadingSuggestions || isRecreatingScene}

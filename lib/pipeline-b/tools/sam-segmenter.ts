@@ -25,6 +25,7 @@ import {
   type SegmentationMaskRecord,
 } from "@meta-sam/parser";
 import { SAMCutoutBox } from "../types";
+import { getMetaApiBaseUrl, getMetaApiKey, getMetaModelId } from "../../meta-api";
 
 try {
   dns.setDefaultResultOrder("ipv4first");
@@ -135,15 +136,8 @@ export async function segmentSpeakerWithSam(params: {
     Math.min(sampleTimestampSec, Math.max(0.2, videoDuration * 0.4))
   );
 
-  const apiKey =
-    process.env.MODEL_API_KEY ||
-    process.env.MUSE_API_KEY ||
-    process.env.META_API_KEY ||
-    "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
-
-  const baseUrl = (
-    process.env.MODEL_API_BASE_URL || "https://api.meta.ai/v1"
-  ).replace(/\/+$/, "");
+  const apiKey = getMetaApiKey();
+  const baseUrl = getMetaApiBaseUrl();
 
   const runAssetsDir = path.join(
     process.cwd(),
@@ -276,7 +270,7 @@ export async function segmentSpeakerWithSam(params: {
               Accept: "text/event-stream",
             },
             body: JSON.stringify({
-              model: "sam-3.1",
+              model: getMetaModelId("sam", "sam-3.1"),
               stream: true,
               input: [
                 {
@@ -383,7 +377,7 @@ export async function segmentSpeakerWithSam(params: {
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          model: "sam-3.1",
+          model: getMetaModelId("sam", "sam-3.1"),
           stream: true,
           input: [
             {

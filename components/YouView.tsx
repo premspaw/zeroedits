@@ -17,7 +17,6 @@ import {
   Users,
   Compass,
   Lightbulb,
-  CheckCircle2,
   RefreshCw,
   Upload,
   Wand2,
@@ -42,9 +41,6 @@ import {
   Play,
   Eye,
   Search,
-  Quote,
-  BookOpen,
-  Rocket,
   Bot,
   Plus,
   Smartphone,
@@ -56,11 +52,11 @@ import {
   Zap,
 } from "lucide-react";
 import Pip, { type PipMood } from "./Pip";
+import BrandIdentityPanel from "./BrandIdentityPanel";
 import type { HeaderTab } from "./AppleDockNav";
 import {
   useZeeBrain,
   CATEGORY_META,
-  buildDigitalAssetsForItem,
   buildScriptBeatsForStory,
   inferSubSegment,
   getDynamicZeeMemoryPrompt,
@@ -118,6 +114,7 @@ export default function YouView({
     updateBrain,
     addSpokenOrTypedMemory,
     addGalleryItems,
+    importWhatsAppMemories,
     toggleSourceConnection,
     scanLikedReel,
   } = useZeeBrain();
@@ -133,12 +130,18 @@ export default function YouView({
   >("studio_mic");
 
   // WhatsApp Input Channel state (connected directly to the same Digital Brain & Bottom Connection Dock)
-  const [waUserPhone, setWaUserPhone] = useState("+91 98450 24110");
+  const [waUserPhone, setWaUserPhone] = useState("");
   const [waSimDurationSec, setWaSimDurationSec] = useState<number>(84);
   const [waIsProcessing, setWaIsProcessing] = useState(false);
   const [waGuardAlert, setWaGuardAlert] = useState<string | null>(null);
   const [waLastBotReply, setWaLastBotReply] = useState<string | null>(null);
-  const [waConnected, setWaConnected] = useState<boolean>(true);
+  const [waSetup, setWaSetup] = useState<{ configured: boolean; memorySyncEnabled: boolean; webhookUrl: string; missing: string[] }>({
+    configured: false,
+    memorySyncEnabled: false,
+    webhookUrl: "/api/whatsapp/webhook",
+    missing: [],
+  });
+  const [waSyncMessage, setWaSyncMessage] = useState("");
 
   // Admin Mode toggle — ONLY shows {{user.*}} variables & Variable Matrix when Admin is enabled
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -147,6 +150,9 @@ export default function YouView({
   const [selectedPromptCategory, setSelectedPromptCategory] =
     useState<LifeCategory>("insight");
   const [spokenOrTypedInput, setSpokenOrTypedInput] = useState("");
+  const [replyingToMemoryId, setReplyingToMemoryId] = useState<string | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [hasRecordedAudio, setHasRecordedAudio] = useState(false);
   const [isListeningMic, setIsListeningMic] = useState(false);
   const [recordingSec, setRecordingSec] = useState(0);
   const [isAnalyzingBrain, setIsAnalyzingBrain] = useState(false);
@@ -163,13 +169,6 @@ export default function YouView({
   const [selectedStreamItemId, setSelectedStreamItemId] = useState<string>(
     brain.memories[0]?.id || "mem-insight-1"
   );
-  const [activeAssetTab, setActiveAssetTab] = useState<
-    "quote" | "book" | "business" | "assistant"
-  >("quote");
-  const [studioCardTheme, setStudioCardTheme] = useState<
-    "paperCard" | "blackNeon" | "duolingoDark" | "warmAmber"
-  >("paperCard");
-  const [copiedAssetLabel, setCopiedAssetLabel] = useState<string | null>(null);
   const [activeWordIdx, setActiveWordIdx] = useState<number>(-1);
   const [radialTicks, setRadialTicks] = useState<number[]>(() =>
     Array.from({ length: 48 }, (_, i) => 10 + ((i * 7) % 14))
@@ -177,12 +176,6 @@ export default function YouView({
   const [leftSidebarMode, setLeftSidebarMode] = useState<"stream" | "taste">(
     "stream"
   );
-  const [approxQuoteInput, setApproxQuoteInput] = useState("");
-  const [quoteVariationIdx, setQuoteVariationIdx] = useState(0);
-  const [customQuoteOverride, setCustomQuoteOverride] = useState<
-    Record<string, string>
-  >({});
-
   // "Hey, I'm liking this reel" Taste Decoder state
   const [reelScanInput, setReelScanInput] = useState("");
   const [isScanningReel, setIsScanningReel] = useState(false);
@@ -225,6 +218,41 @@ export default function YouView({
   const recordedBlobRef = useRef<Blob | null>(null);
   const recordingFinishedRef = useRef<Promise<void> | null>(null);
   const resolveRecordingFinishedRef = useRef<(() => void) | null>(null);
+  const autoStopTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/whatsapp/webhook?mode=status")
+      .then((response) => response.json())
+      .then((status) => { if (!cancelled) setWaSetup((previous) => ({ ...previous, ...status })); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  const syncWhatsAppStories = async () => {
+    if (!waSetup.memorySyncEnabled) {
+      setWaSyncMessage("Private WhatsApp memory sync is available in the local owner workspace.");
+      return;
+    }
+    const phone = waUserPhone.replace(/[^0-9]/g, "");
+    if (!phone) {
+      setWaSyncMessage("Add the WhatsApp number you used, then sync again.");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/whatsapp/webhook?mode=sync&phone=${encodeURIComponent(`+${phone}`)}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) throw new Error(payload?.error || "WhatsApp memories could not be synced.");
+      const imported = importWhatsAppMemories(Array.isArray(payload.memories) ? payload.memories : []);
+      setWaSyncMessage(imported ? `Added ${imported} ${imported === 1 ? "story" : "stories"} to your memory gallery.` : "Your WhatsApp stories are already up to date.");
+      if (imported) {
+        setActiveSubTab("personalize");
+        setMemoryFilter("all");
+      }
+    } catch (error: any) {
+      setWaSyncMessage(error?.message || "WhatsApp memories could not be synced.");
+    }
+  };
 
   const finishMicrophoneCapture = async () => {
     if (recognitionRef.current) {
@@ -287,14 +315,28 @@ export default function YouView({
 
     // Start recording
     recordedBlobRef.current = null;
+    setHasRecordedAudio(false);
+    autoStopTriggeredRef.current = false;
     audioChunksRef.current = [];
     setRecordingSec(0);
     setIsListeningMic(true);
     setPipMood("listening");
-    setMetaVoiceStatus("Listening to Prem's voice (Meta STT + Live Stream)...");
+    setMetaVoiceStatus("Listening to your voice...");
 
     recordTimerRef.current = setInterval(() => {
-      setRecordingSec((s) => s + 1);
+      setRecordingSec((seconds) => {
+        const next = Math.min(120, seconds + 1);
+        if (next >= 120 && !autoStopTriggeredRef.current) {
+          autoStopTriggeredRef.current = true;
+          window.setTimeout(async () => {
+            await finishMicrophoneCapture();
+            setIsListeningMic(false);
+            setMetaVoiceStatus("Two-minute recording ready. Save it to your memory gallery.");
+            setPipMood("thinking");
+          }, 0);
+        }
+        return next;
+      });
     }, 1000);
 
     // 1. Start MediaRecorder for backend Whisper + Meta API pipeline
@@ -317,6 +359,7 @@ export default function YouView({
           if (audioChunksRef.current.length > 0) {
             const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
             recordedBlobRef.current = blob;
+            setHasRecordedAudio(true);
           }
           resolveRecordingFinishedRef.current?.();
           resolveRecordingFinishedRef.current = null;
@@ -365,7 +408,7 @@ export default function YouView({
     }
   };
 
-  // Send Voice / Text to Meta API (`/api/you/voice-brain`) and update Prem's Digital Brain
+  // Send voice or text to the story listener and save its response into memory
   const handleAnalyzeAndSaveToMemory = async () => {
     // Stop mic if still active
     if (isListeningMic) {
@@ -378,15 +421,29 @@ export default function YouView({
 
     if (!trimmed && !hasAudioBlob) return;
     if (isAnalyzingBrain) return;
+    const replyToId = replyingToMemoryId || selectedStreamItemId || brain.memories[0]?.id;
+    const parentMemory = replyToId
+      ? brain.memories.find((memory) => memory.id === replyToId)
+      : undefined;
+    const conversationId = parentMemory?.conversationId || parentMemory?.id;
+    const identityContext = JSON.stringify({
+      name: brain.virtualYou.userName || "",
+      voice: {
+        cadence: brain.virtualYou.voiceCadence,
+        thinkingStyle: brain.virtualYou.thinkingStyle,
+        signaturePhrases: brain.virtualYou.signaturePhrases,
+      },
+      brand: brain.brandProfile,
+    });
 
     setIsAnalyzingBrain(true);
     setPipMood("reading");
     setAnalysisStepText(
       hasAudioBlob
-        ? "Meta Speech-to-Text transcribing Prem's voice & acoustic cadence..."
+        ? "Transcribing your voice note..."
         : "Connecting to Meta Muse (muse-wonder-1.0) Digital Brain..."
     );
-    setMetaVoiceStatus("Meta API (muse-wonder-1.0) synthesizing Prem's thought...");
+    setMetaVoiceStatus("Zee is listening to your story...");
 
     try {
       let res: Response;
@@ -394,6 +451,7 @@ export default function YouView({
         const form = new FormData();
         form.append("audio", recordedBlobRef.current, "prem-voice.webm");
         form.append("category", selectedPromptCategory);
+        form.append("identityContext", identityContext);
         if (trimmed) {
           form.append("fallbackTranscript", trimmed);
         }
@@ -409,13 +467,14 @@ export default function YouView({
             text: trimmed,
             category: selectedPromptCategory,
             mode: "memory",
+            identityContext,
           }),
         });
       }
 
       setPipMood("thinking");
       setAnalysisStepText(
-        "Weaving Prem's insight, workplace context & warmth into your Second Mind..."
+        "Understanding the moment and preparing a follow-up..."
       );
 
       const json = await res.json().catch(() => null);
@@ -431,12 +490,15 @@ export default function YouView({
           selectedPromptCategory,
           "voice_mic",
           metaAnalysis,
-          audioUrl
+          audioUrl,
+          conversationId
         );
 
         setIsAnalyzingBrain(false);
         setAnalysisStepText("");
         setSpokenOrTypedInput("");
+        setHasRecordedAudio(false);
+        setReplyingToMemoryId(null);
         setPipMood("excited");
         setMetaVoiceStatus("Synced via Meta Muse API (muse-wonder-1.0)");
         setJustSavedMemoryId(created.id);
@@ -449,18 +511,30 @@ export default function YouView({
       console.warn("Meta API fallback to local brain synthesis:", err);
     }
 
+    // Never replace an untranscribed recording with placeholder text.
+    if (hasAudioBlob && !trimmed) {
+      setIsAnalyzingBrain(false);
+      setAnalysisStepText("");
+      setPipMood("thinking");
+      setMetaVoiceStatus("I saved the recording, but couldn’t transcribe it. Add a few words or retry when speech recognition is available.");
+      return;
+    }
+
     // Resilient local fallback if offline
     const created = addSpokenOrTypedMemory(
-      trimmed ||
-        "In the studio today, we focused on building with real human warmth instead of autopilot templates.",
+      trimmed,
       selectedPromptCategory,
-      "voice_mic"
+      "voice_mic",
+      undefined,
+      conversationId
     );
     setIsAnalyzingBrain(false);
     setAnalysisStepText("");
     setSpokenOrTypedInput("");
+    setHasRecordedAudio(false);
+    setReplyingToMemoryId(null);
     setPipMood("excited");
-    setMetaVoiceStatus("Synced to Prem's Digital Brain");
+    setMetaVoiceStatus("Saved to your memory");
     setJustSavedMemoryId(created.id);
     setSelectedStreamItemId(created.id);
     setMemoryFilter("all");
@@ -476,6 +550,10 @@ export default function YouView({
     const textToSend = (opts?.overrideText ?? spokenOrTypedInput).trim();
     const durationSec = opts?.overrideDurationSec ?? waSimDurationSec;
 
+    if (!waUserPhone.trim()) {
+      setWaGuardAlert("Enter the WhatsApp number that sent the story before syncing it.");
+      return;
+    }
     if (!textToSend && !opts?.forceSegregate) return;
     if (waIsProcessing || isAnalyzingBrain) return;
 
@@ -732,9 +810,9 @@ export default function YouView({
     setPipMood("reading");
 
     const sourceNames: Record<typeof sourceId, string> = {
-      apple_photos: "Prem's Apple Photos (iCloud Vault)",
+      apple_photos: "Apple Photos (iCloud Vault)",
       google_drive: "Google Drive Vault",
-      local_computer: "Prem's Laptop Folder",
+      local_computer: "Laptop Folder",
     };
 
     handleOneClickOrganizeGallery(
@@ -973,7 +1051,7 @@ export default function YouView({
     setConnectingSourceId("google_drive");
 
     handleOneClickOrganizeGallery(
-      "Linking Prem's Google Drive URL in Web App — streaming directly from Google CDN with Meta Muse..."
+      "Linking your Google Drive in Web App — streaming directly from Google CDN with Meta Muse..."
     );
 
     try {
@@ -1065,10 +1143,21 @@ export default function YouView({
     );
   }, [brain.memories, selectedStreamItemId, filteredMemories]);
 
-  const activeDigitalAssets = useMemo(() => {
-    if (!activeStreamItem) return null;
-    return buildDigitalAssetsForItem(activeStreamItem);
-  }, [activeStreamItem]);
+  const activeConversationItems = useMemo(() => {
+    if (!activeStreamItem) return [];
+    const threadId = activeStreamItem.conversationId || activeStreamItem.id;
+    return brain.memories
+      .filter((memory) => (memory.conversationId || memory.id) === threadId)
+      .filter((memory) => memory.id !== activeStreamItem.id)
+      .slice(0, 3)
+      .reverse();
+  }, [brain.memories, activeStreamItem]);
+
+  useEffect(() => {
+    const chat = chatScrollRef.current;
+    if (!chat) return;
+    chat.scrollTop = chat.scrollHeight;
+  }, [activeStreamItem?.id, activeConversationItems.length, isAnalyzingBrain]);
 
   const dynamicZeePrompt = useMemo(() => {
     return getDynamicZeeMemoryPrompt(
@@ -1085,70 +1174,6 @@ export default function YouView({
       activeStreamItem
     );
   }, [brain, activeStreamItem, selectedPromptCategory]);
-
-  const activeQuoteVariations = useMemo(() => {
-    if (!activeStreamItem || !activeDigitalAssets) return [];
-    const baseQuote =
-      customQuoteOverride[activeStreamItem.id] ||
-      activeDigitalAssets.quoteAsset.quote;
-    const rawCore = activeStreamItem.story
-      .split(/[.!?]/)[0]
-      ?.replace(/^(um|uh|so|like|hey zee|today i realized|i was thinking)\s+/i, "")
-      .trim();
-    return [
-      {
-        label: "Signature Lens",
-        text: baseQuote,
-      },
-      {
-        label: "Sharp Aphorism",
-        text: rawCore
-          ? `${rawCore.charAt(0).toUpperCase()}${rawCore.slice(1)} — and that single truth outlasts every template.`
-          : baseQuote,
-      },
-      {
-        label: "Book Epigraph",
-        text: `"${activeStreamItem.title}." When you build from lived honesty instead of noise, your work carries a pulse that cannot be faked.`,
-      },
-    ];
-  }, [activeStreamItem, activeDigitalAssets, customQuoteOverride]);
-
-  const handleConvertApproxToQuote = () => {
-    const raw = approxQuoteInput.trim();
-    if (!raw || !activeStreamItem) return;
-    // Distill approximate / random thought into a polished quote
-    const cleaned = raw
-      .replace(/^(um|uh|so|like|maybe|i think|approximately|kind of|sort of|hey zee)\s+/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    const capitalized =
-      cleaned.charAt(0).toUpperCase() + cleaned.slice(1).replace(/[.!?]+$/, "");
-    const distilled = `${capitalized}. What starts as a casual thought between friends becomes undeniable when you live it.`;
-
-    setCustomQuoteOverride((prev) => ({
-      ...prev,
-      [activeStreamItem.id]: distilled,
-    }));
-    setQuoteVariationIdx(0);
-    updateBrain((prev) => ({
-      ...prev,
-      virtualYou: {
-        ...prev.virtualYou,
-        signaturePhrases: [
-          distilled,
-          ...prev.virtualYou.signaturePhrases.filter((p) => p !== distilled),
-        ].slice(0, 8),
-      },
-    }));
-    setApproxQuoteInput("");
-    setPipMood("excited");
-  };
-
-  const handleCopyDigitalAsset = (label: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedAssetLabel(label);
-    setTimeout(() => setCopiedAssetLabel(null), 2200);
-  };
 
   // Enrich every gallery item with its resolved Smart Folder Wallet metadata
   const enrichedGallery = useMemo(() => {
@@ -1325,7 +1350,7 @@ export default function YouView({
   };
 
   return (
-    <div className="mx-auto max-w-[1440px] w-full min-h-[calc(100vh-60px)] px-4 pt-0 pb-12 sm:px-8 sm:pt-0 sm:pb-14 -mt-1.5 animate-fade-in">
+    <div className="mx-auto w-full max-w-[1500px] min-h-[calc(100vh-60px)] px-3 pb-16 pt-[5px] sm:px-6 sm:pb-20 sm:pt-[5px] animate-fade-in">
       {/* Hidden File Input & Complete Folder Input (webkitdirectory) */}
       <input
         ref={fileInputRef}
@@ -1344,147 +1369,39 @@ export default function YouView({
         onChange={(e) => handleFilesSelected(e.target.files)}
       />
 
-      {/* TOP IDENTITY BAR + SUB-TAB SWITCHER (Lifted up to match Apple Dock Nav) */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 pb-2.5 border-b-2 border-[#141414]/15 mb-3.5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl border-2 border-[#141414] bg-[#E4491B] text-white flex items-center justify-center shadow-[2px_2px_0px_#141414] font-black serif text-lg shrink-0">
-            {brain.virtualYou.userName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="mono text-[10px] font-bold text-[#E4491B] uppercase tracking-wider">
-                Hey {brain.virtualYou.userName}, I Am Your Digital Brain
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-600/30 text-emerald-800 mono text-[9px] font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Meta Neural Link {brain.virtualYou.twinSyncScore}%
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {editingName ? (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={tempNameInput}
-                    onChange={(e) => setTempNameInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSaveUserName()}
-                    className="px-2 py-0.5 rounded-lg border-2 border-[#141414] bg-white serif text-lg font-bold text-[#141414] focus:outline-none"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveUserName}
-                    className="px-2 py-0.5 rounded-lg bg-[#141414] text-white mono text-[10px] font-bold cursor-pointer"
-                  >
-                    Save
-                  </button>
-                </div>
-              ) : (
-                <h1
-                  onClick={() => {
-                    setTempNameInput(brain.virtualYou.userName);
-                    setEditingName(true);
-                  }}
-                  title="Click to edit name"
-                  className="serif text-xl sm:text-2xl font-bold text-[#141414] cursor-pointer hover:text-[#E4491B] transition leading-tight"
-                >
-                  {brain.virtualYou.userName}&apos;s Second Mind & Living Memory Studio
-                </h1>
-              )}
-              <span className="text-xs text-[#6B6A64] hidden sm:inline">
-                • {brain.virtualYou.personaTitle}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Sub-Tab Switcher (Apple Pill Style) + Discreet Admin Toggle */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex p-1 rounded-full border-2 border-[#141414] bg-[#FAF8F3] shadow-[2px_2px_0px_#141414]">
-            <button
-              type="button"
-              onClick={() => setActiveSubTab("personalize")}
-              className={`px-3.5 py-1.5 rounded-full mono text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeSubTab === "personalize"
-                  ? "bg-[#141414] text-white shadow-xs"
-                  : "text-[#4A4842] hover:text-[#141414]"
-              }`}
-            >
-              <Brain
-                size={13}
-                className={activeSubTab === "personalize" ? "text-[#E4491B]" : ""}
-              />
-              <span>Digital Brain & Voice</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-white/15 text-[10px]">
-                {brain.memories.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSubTab("gallery")}
-              className={`px-3.5 py-1.5 rounded-full mono text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeSubTab === "gallery"
-                  ? "bg-[#141414] text-white shadow-xs"
-                  : "text-[#4A4842] hover:text-[#141414]"
-              }`}
-            >
-              <ImageIcon
-                size={13}
-                className={activeSubTab === "gallery" ? "text-[#E4491B]" : ""}
-              />
-              <span>Creative Gallery Wallet</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-white/15 text-[10px]">
-                {brain.gallery.length}
-              </span>
-            </button>
-          </div>
-
-          {/* Admin-Only Toggle for Variables */}
-          <button
-            type="button"
-            onClick={() => setIsAdminMode((prev) => !prev)}
-            title="Toggle Admin Variable Inspector (Admin Only)"
-            className={`px-3 py-1.5 rounded-full border-2 mono text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
-              isAdminMode
-                ? "border-[#E4491B] bg-[#141414] text-[#FFE17D] shadow-[2px_2px_0px_#E4491B]"
-                : "border-[#D5D2C8] bg-white/70 text-[#6B6A64] hover:text-[#141414] hover:border-[#141414]"
-            }`}
-          >
-            {isAdminMode ? <Unlock size={12} /> : <Lock size={12} />}
-            <span>{isAdminMode ? "Admin Vars: ON" : "Admin"}</span>
-          </button>
-        </div>
-      </div>
-
       {/* =====================================================================
           SUB-TAB 1: ZEE INTERACTIVE VOICE BRAIN & COLORFUL MEMORY STUDIO
           Top 3-Column Studio:
-            - Left: Colorful Differentiated Memory Stream (Personal Life, Business, Travel, Family, Bonds, Spark)
-            - Center: Animated Zee Character + 48-Bar Radial Voice Mic (Human-to-Human Conversation)
-            - Right: Zee's Live Replies, Follow-Up Questions & Deep Story Analysis
-          Bottom Expanded Section:
-            - Quote Alchemist, 3-Chapter Book, Business & Venture Ideas, Personal Taste
+            - Left: Personal story and visual archive
+            - Center: One compact voice, text, and WhatsApp capture surface
+            - Right: Zee's story reflection, follow-up, and conversation history
+          Lower section:
+            - Saved influence patterns and original story formats
          ===================================================================== */}
       {activeSubTab === "personalize" ? (
         <div className="space-y-7">
           {/* 3-COLUMN INTERACTIVE STUDIO CONTAINER */}
-          <div className="rounded-3xl border-2 border-[#141414] bg-[#FFFEFB] shadow-[6px_6px_0px_#141414] overflow-hidden">
-            <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr_420px] min-h-[720px] divide-y lg:divide-y-0 lg:divide-x divide-[#1E1E1C]/12">
+          <div className="overflow-hidden rounded-[28px] border border-[#e5ddd1] bg-[#fffdfa] shadow-[0_18px_55px_rgba(54,42,28,0.06)]">
+            <div className="grid min-h-[620px] grid-cols-1 divide-y divide-[#eee7dd] lg:grid-cols-[300px_minmax(340px,1fr)_340px] lg:divide-x lg:divide-y-0">
               {/* ===============================================================
                   LEFT COLUMN: COLORFUL DIFFERENTIATED LIFE & BUSINESS MEMORY STREAM
                  =============================================================== */}
-              <aside className="flex flex-col bg-gradient-to-b from-[#FAF8F3] via-[#F5F1E8]/70 to-[#F6D9CC]/25 h-full max-h-[820px]">
-                <div className="p-4 border-b border-[#1E1E1C]/10">
+              <aside className="flex h-full max-h-[760px] flex-col bg-gradient-to-b from-[#fbf8f2] via-[#f8f4ed] to-[#f6e7dc]/60">
+                <div className="px-4 pb-4 pt-1.5 border-b border-[#1E1E1C]/10">
+                  <div className="mb-4">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]">{brain.memories.length} stories / {brain.gallery.length} visuals</p>
+                    <h1 className="mt-1 font-serif text-[25px] leading-none tracking-tight text-[#25231f]">Living memory</h1>
+                    <div className="mt-1 flex items-center gap-1.5 text-[10px] text-[#746b60]">
+                      {editingName ? <input autoFocus aria-label="Your name" value={tempNameInput} onChange={(event) => setTempNameInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") handleSaveUserName(); }} onBlur={handleSaveUserName} placeholder="Add your name" className="w-28 border-b border-[#a6573d]/40 bg-transparent outline-none" /> : <span>{brain.virtualYou.userName ? `of ${brain.virtualYou.userName}` : "Stories, voice and point of view"}</span>}
+                      {!editingName && <button type="button" onClick={() => { setTempNameInput(brain.virtualYou.userName); setEditingName(true); }} className="rounded-full border border-[#ded5c9] bg-white px-2 py-0.5 text-[9px] hover:border-[#b58d71]">{brain.virtualYou.userName ? "Edit" : "Add name"}</button>}
+                    </div>
+                  </div>
                   <div className="flex items-center justify-between mb-2.5">
                     <div>
                       <span className="mono text-[10px] font-bold uppercase tracking-widest text-[#E4491B] block">
                         Personal Life • Business • Horizons
                       </span>
-                      <h2 className="serif text-xl font-bold text-[#141414] tracking-tight">
-                        {brain.virtualYou.userName}&apos;s Living Stories
-                      </h2>
+                      <h2 className="serif text-xl font-bold text-[#141414] tracking-tight">Living Stories</h2>
                     </div>
                     <span className="mono text-[11px] px-2.5 py-0.5 rounded-full bg-[#141414] text-[#FFE17D] font-bold">
                       {brain.memories.length} Saved
@@ -1551,6 +1468,7 @@ export default function YouView({
 
                 {/* Colorful Differentiated Story Cards with Category Waveforms */}
                 <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
+                  {filteredMemories.length === 0 && <div className="rounded-2xl border border-dashed border-[#d9c9b9] bg-white/65 p-4"><p className="font-serif text-lg text-[#332d27]">Your stories start here.</p><p className="mt-1 text-[10px] leading-4 text-[#786e64]">Share a turning point, a person who shaped you, what you are building, or what you want people to understand.</p></div>}
                   {filteredMemories.map((mem) => {
                     const meta = CATEGORY_META[mem.category];
                     const isSelected = activeStreamItem?.id === mem.id;
@@ -1579,8 +1497,8 @@ export default function YouView({
                         }}
                         className={`w-full text-left p-3.5 rounded-2xl transition-all duration-200 border-2 relative group cursor-pointer overflow-hidden ${
                           isSelected
-                            ? "bg-white border-[#141414] shadow-[4px_4px_0px_#141414] -translate-y-0.5"
-                            : "bg-white/85 border-[#141414]/15 hover:bg-white hover:border-[#141414]/40"
+                            ? "bg-white border-[#b88268] shadow-[0_10px_26px_rgba(71,48,34,0.11)] -translate-y-0.5"
+                            : "bg-white/75 border-[#e7dfd5] hover:-translate-y-0.5 hover:bg-white hover:border-[#cdb6a5] hover:shadow-[0_8px_22px_rgba(71,48,34,0.07)]"
                         }`}
                       >
                         {/* Top Color Bar Differentiator */}
@@ -1658,11 +1576,11 @@ export default function YouView({
               </aside>
 
               {/* ===============================================================
-                  CENTER COLUMN: ANIMATED ZEE TALKING TO PREM + RADIAL VOICE MIC
+                  CENTER COLUMN: ZEE'S SINGLE VOICE AND STORY CAPTURE SURFACE
                   (With Integrated Input Channel Switcher: Studio Mic vs WhatsApp Channel)
                  =============================================================== */}
               <section
-                className="flex flex-col justify-between p-5 sm:p-6 relative overflow-hidden transition-colors duration-500"
+                className="relative flex min-h-[620px] flex-col overflow-hidden p-0 transition-colors duration-500 lg:h-[calc(100vh-60px)] lg:min-h-[620px] lg:max-h-[calc(100vh-52px)]"
                 style={{
                   background:
                     inputChannel === "whatsapp_channel"
@@ -1671,7 +1589,7 @@ export default function YouView({
                 }}
               >
                 {/* INPUT CHANNEL SWITCHER PILL BAR (Studio Voice Mic vs WhatsApp Cloud Channel) */}
-                <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pb-3 mb-2 border-b border-[#141414]/10">
+                <div className="order-1 relative z-10 flex flex-wrap items-center justify-between gap-2 border-b border-[#141414]/10 px-3 py-2">
                   <div className="inline-flex p-1 rounded-full border-2 border-[#141414] bg-white shadow-[2px_2px_0px_#141414]">
                     <button
                       type="button"
@@ -1698,7 +1616,7 @@ export default function YouView({
                       }`}
                     >
                       <Smartphone size={11} className="text-[#25D366]" />
-                      <span>WhatsApp Channel (2m API)</span>
+                      <span>WhatsApp inbox · 2m limit</span>
                     </button>
                   </div>
 
@@ -1731,153 +1649,100 @@ export default function YouView({
                   )}
                 </div>
 
-                {/* Top Animated Zee Companion Stage — Zee Talks & Asks Questions */}
-                <div className="relative z-10 rounded-2xl border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_#141414]">
-                  <div className="flex items-start gap-3.5">
-                    {/* Animated Zee Character with Pulsing Aura */}
-                    <div className="relative shrink-0">
-                      <motion.div
-                        animate={{
-                          scale: isListeningMic ? [1, 1.12, 1] : [1, 1.04, 1],
-                        }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="rounded-2xl p-1 border-2 border-[#141414] bg-gradient-to-br from-[#F6D9CC] via-[#FEF3C7] to-[#DBEAFE]"
+                {/* One capture surface for voice, typing, and WhatsApp notes. */}
+                <div className="order-3 relative z-10 mx-0 rounded-none border-x-0 border-b-0 border-t border-[#e5ddd1] bg-white/95 px-3 pb-3 pt-2 shadow-none">
+                  <div className="flex items-center gap-3">
+                    <div className="flex shrink-0 flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleToggleMic}
+                        aria-label={isListeningMic ? "Stop recording" : "Tap to talk"}
+                        aria-pressed={isListeningMic}
+                        className="relative grid h-[76px] w-[76px] place-items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a6573d]"
                       >
-                        <Pip
-                          mood={isListeningMic ? "listening" : pipMood}
-                          size={62}
-                          interactive={true}
-                          showDialogue={false}
-                        />
-                      </motion.div>
-                      <span
-                        className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full mono text-[8px] font-bold uppercase ${
-                          inputChannel === "whatsapp_channel"
-                            ? "bg-[#075E54] text-[#25D366]"
-                            : "bg-[#141414] text-[#FFE17D]"
-                        }`}
-                      >
-                        {inputChannel === "whatsapp_channel"
-                          ? "WA Bot"
-                          : "Zee Live"}
-                      </span>
+                        {radialTicks.slice(0, 32).map((tick, index) => (
+                          <span
+                            key={index}
+                            aria-hidden="true"
+                            className={`absolute left-1/2 top-1/2 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${isListeningMic ? "bg-[#a6573d]" : "bg-[#d9c6b8]"}`}
+                            style={{
+                              height: `${Math.max(7, Math.round(tick * 0.55))}px`,
+                              transform: `rotate(${index * 11.25}deg) translateY(-31px)`,
+                            }}
+                          />
+                        ))}
+                        <span className={`relative z-10 grid h-11 w-11 place-items-center rounded-full text-white shadow-md transition ${isListeningMic ? "scale-110 bg-[#292722]" : "bg-[#a6573d] hover:bg-[#87462f]"}`}>
+                          <Mic size={19} />
+                        </span>
+                      </button>
+                      <span className="text-[9px] font-semibold text-[#796d62]">{isListeningMic ? "Listening" : "Tap to talk"}</span>
                     </div>
-
-                    {/* Zee's Animated Human-to-Human Question Bubble */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
-                        <span
-                          className={`mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
-                            inputChannel === "whatsapp_channel"
-                              ? "text-[#075E54]"
-                              : "text-[#E4491B]"
-                          }`}
-                        >
-                          <Radio size={11} className="animate-pulse" />
-                          <span>
-                            {inputChannel === "whatsapp_channel"
-                              ? `WhatsApp Bot • Connected to ${waUserPhone}`
-                              : `Zee • Talking with ${brain.virtualYou.userName}`}
-                          </span>
-                        </span>
-                        <span
-                          className="mono text-[10px] font-bold px-2 py-0.5 rounded-full border"
-                          style={{
-                            backgroundColor:
-                              CATEGORY_META[selectedPromptCategory].bg,
-                            color: CATEGORY_META[selectedPromptCategory].color,
-                            borderColor:
-                              CATEGORY_META[selectedPromptCategory].color,
-                          }}
-                        >
-                          {selectedPromptCategory === "work"
-                            ? "Business & Work"
-                            : selectedPromptCategory === "personal"
-                            ? "Personal Life"
-                            : CATEGORY_META[selectedPromptCategory].label}
-                        </span>
-                      </div>
-
-                      <motion.h3
-                        key={`${selectedPromptCategory}-${activeStreamItem?.id || "default"}-${inputChannel}`}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="serif text-base sm:text-lg font-bold text-[#141414] leading-snug"
-                      >
-                        &ldquo;
-                        {inputChannel === "whatsapp_channel" && waLastBotReply
-                          ? waLastBotReply
-                          : dynamicZeePrompt.memoryAwareQuestion}
-                        &rdquo;
-                      </motion.h3>
-
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#FAF8F3] border border-[#D5D2C8] mono text-[9.5px] font-bold text-[#4A4842]">
-                          <Sparkles size={10} className="text-[#E4491B]" />
-                          <span>
-                            {inputChannel === "whatsapp_channel"
-                              ? "Auto-Segregates into Business / Breakup / Family / Travel"
-                              : `Memory-Adopted Prompt • ${dynamicZeePrompt.matchedGalleryPlaceOrFolder}`}
-                          </span>
-                        </span>
-                        {isAdminMode && (
-                          <span className="px-2 py-0.5 rounded-md bg-[#141414] text-[#FFE17D] mono text-[9px] font-bold">
-                            {`{{${dynamicZeePrompt.variableKey}}}`}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Interactive Question Switcher Pills (Personal Life, Business, Travel, Family, Bonds, Spark) */}
-                      <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                        {LIFE_CATEGORIES.map((cat) => {
-                          const meta = CATEGORY_META[cat];
-                          const isSelected = selectedPromptCategory === cat;
-                          const label =
-                            cat === "work"
-                              ? "Business"
-                              : cat === "relationships"
-                              ? "Breakup & Bonds"
-                              : cat === "personal"
-                              ? "Personal Life"
-                              : meta.shortLabel;
-                          return (
-                            <button
-                              key={cat}
-                              type="button"
-                              onClick={() => {
-                                setSelectedPromptCategory(cat);
-                                setPipMood("idea");
-                              }}
-                              className="px-2.5 py-1 rounded-full mono text-[10px] font-bold flex items-center gap-1 border transition cursor-pointer"
-                              style={{
-                                backgroundColor: isSelected
-                                  ? meta.color
-                                  : "#FAF8F3",
-                                color: isSelected ? "#FFFFFF" : "#141414",
-                                borderColor: isSelected
-                                  ? "#141414"
-                                  : `${meta.color}66`,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  color: isSelected ? "#FFE17D" : meta.color,
-                                }}
-                              >
-                                {CATEGORY_ICONS[cat]}
-                              </span>
-                              <span>{label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                    <textarea
+                      rows={3}
+                      value={spokenOrTypedInput}
+                      onChange={(event) => setSpokenOrTypedInput(event.target.value)}
+                      placeholder={inputChannel === "whatsapp_channel" ? "Add the moment or reply you want saved..." : brain.virtualYou.userName ? `Tell Zee what happened, ${brain.virtualYou.userName}...` : "Tell Zee what happened..."}
+                      className="min-h-[76px] w-full resize-y bg-transparent px-1 py-2 text-sm leading-5 text-[#292722] outline-none placeholder:text-[#a39a8e]"
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#eee7dd] pt-2">
+                    <span className="flex items-center gap-2 text-[10px] text-[#81786c]">
+                      {isListeningMic ? <><span className="h-2 w-2 animate-pulse rounded-full bg-[#a6573d]" />Listening {Math.floor(recordingSec / 60)}:{String(recordingSec % 60).padStart(2, "0")}</> : hasRecordedAudio ? "Voice note ready" : isAnalyzingBrain ? analysisStepText || "Zee is listening..." : "Speak, type, or answer Zee"}
+                    </span>
+                    <div className="flex gap-2">
+                      <button type="button" disabled={(!spokenOrTypedInput.trim() && !hasRecordedAudio && !isListeningMic) || isAnalyzingBrain || waIsProcessing || (inputChannel === "whatsapp_channel" && !waUserPhone.trim())} onClick={() => inputChannel === "whatsapp_channel" ? void handleSendWhatsAppChannel({ forceSegregate: true }) : void handleAnalyzeAndSaveToMemory()} className="inline-flex items-center gap-1.5 rounded-xl bg-[#20211d] px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-[#3d3b34] disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={13} />{isAnalyzingBrain || waIsProcessing ? "Saving..." : inputChannel === "whatsapp_channel" ? "Save inbox story" : "Save & ask Zee"}</button>
                     </div>
                   </div>
                 </div>
 
+                {/* Conversation surface: the user's memories and Zee's replies live in one chat thread. */}
+                <div className="order-2 relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden bg-white/45">
+                  <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#e5ddd1] px-3 py-2">
+                    {LIFE_CATEGORIES.map((cat) => {
+                      const meta = CATEGORY_META[cat];
+                      const selected = selectedPromptCategory === cat;
+                      return (
+                        <button key={cat} type="button" onClick={() => setSelectedPromptCategory(cat)} className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition" style={{ backgroundColor: selected ? meta.color : "white", color: selected ? "white" : meta.color, borderColor: meta.color }}>
+                          {CATEGORY_ICONS[cat]} {cat === "work" ? "Work" : meta.shortLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div ref={chatScrollRef} aria-live="polite" className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+                    {activeConversationItems.map((turn) => (
+                      <div key={turn.id} className="space-y-2.5">
+                        <div className="ml-auto max-w-[86%] rounded-2xl rounded-br-sm bg-[#a6573d] px-3.5 py-2.5 text-xs leading-5 text-white shadow-sm">
+                          <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-white/70">You</span>{turn.story}
+                        </div>
+                        <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-[#e9e0d7] bg-white px-3.5 py-2.5 text-xs leading-5 text-[#37312b] shadow-sm">
+                          <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span>{turn.zeeAnalysis}
+                        </div>
+                      </div>
+                    ))}
+
+                    {activeStreamItem ? (
+                      <div className="space-y-2.5">
+                        <div className="ml-auto max-w-[86%] rounded-2xl rounded-br-sm bg-[#a6573d] px-3.5 py-2.5 text-xs leading-5 text-white shadow-sm">
+                          <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-white/70">You</span>{activeStreamItem.story}
+                        </div>
+                        <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-[#e9e0d7] bg-white px-3.5 py-2.5 text-xs leading-5 text-[#37312b] shadow-sm">
+                          <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span>
+                          <p>{activeStreamItem.zeeAnalysis}</p>
+                          <p className="mt-2 border-t border-[#eee7dd] pt-2 font-semibold text-[#554338]">{activeStreamItem.followUpQuestion || activeItemPrompt.followUpQuestion}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-[#e9e0d7] bg-white px-3.5 py-2.5 text-xs leading-5 text-[#37312b] shadow-sm">
+                        <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span>{dynamicZeePrompt.memoryAwareQuestion}
+                      </div>
+                    )}
+                    {isAnalyzingBrain && <div className="flex items-center gap-2 text-[10px] text-[#81786c]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#a6573d]" />{analysisStepText || "Zee is listening..."}</div>}
+                  </div>
+                </div>
                 {/* 2-Min WhatsApp Guard Alert if > 120s */}
                 {waGuardAlert && (
-                  <div className="my-1.5 px-3.5 py-2 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-900 text-xs font-bold flex items-center justify-between gap-2">
+                  <div className="order-2 mx-3 mt-2 flex items-center justify-between gap-2 rounded-xl border-2 border-rose-600 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-900">
                     <span className="flex items-center gap-1.5">
                       <AlertTriangle size={14} className="text-rose-600 shrink-0" />
                       <span>{waGuardAlert}</span>
@@ -1895,335 +1760,6 @@ export default function YouView({
                   </div>
                 )}
 
-                {/* COLORFUL 48-BAR CIRCULAR RADIAL VOICE DIAL & MIC */}
-                <div className="my-3 flex flex-col items-center justify-center">
-                  <div className="relative w-52 h-52 sm:w-56 sm:h-56 flex items-center justify-center">
-                    {/* Colorful Soft Glow Behind Dial */}
-                    <div
-                      className="absolute inset-4 rounded-full blur-xl opacity-45 pointer-events-none transition-all duration-500"
-                      style={{
-                        background:
-                          inputChannel === "whatsapp_channel"
-                            ? "radial-gradient(circle, #25D366, #075E54, transparent 70%)"
-                            : `radial-gradient(circle, ${CATEGORY_META[selectedPromptCategory].color}, transparent 70%)`,
-                      }}
-                    />
-
-                    {/* 48 Radial Soundwave Bars around the perimeter */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      {radialTicks.map((heightPx, idx) => {
-                        const deg = (idx / 48) * 360;
-                        const activeColor =
-                          inputChannel === "whatsapp_channel"
-                            ? idx % 2 === 0
-                              ? "#25D366"
-                              : "#075E54"
-                            : idx % 3 === 0
-                            ? CATEGORY_META[selectedPromptCategory].color
-                            : idx % 3 === 1
-                            ? "#E4491B"
-                            : "#F59E0B";
-                        return (
-                          <div
-                            key={idx}
-                            className="absolute w-1.5 rounded-full origin-center transition-all duration-100"
-                            style={{
-                              height: `${isListeningMic ? heightPx + 4 : 13}px`,
-                              backgroundColor: isListeningMic
-                                ? activeColor
-                                : inputChannel === "whatsapp_channel"
-                                ? "#075E5488"
-                                : `${CATEGORY_META[selectedPromptCategory].color}66`,
-                              transform: `rotate(${deg}deg) translateY(-86px)`,
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-
-                    {/* Pulsing Halo Rings when speaking */}
-                    {isListeningMic && (
-                      <>
-                        <div
-                          className="absolute inset-5 rounded-full border-2 border-[#E4491B]/45 animate-ping"
-                          style={{ animationDuration: "1.8s" }}
-                        />
-                        <div
-                          className="absolute inset-9 rounded-full border-2 border-amber-500/40 animate-ping"
-                          style={{ animationDuration: "2.4s" }}
-                        />
-                      </>
-                    )}
-
-                    {/* Center Circular Mic Button */}
-                    <button
-                      type="button"
-                      onClick={handleToggleMic}
-                      className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all duration-300 cursor-pointer border-3 border-[#141414] shadow-[4px_4px_0px_#141414] ${
-                        isListeningMic
-                          ? "bg-[#E4491B] text-white scale-105"
-                          : inputChannel === "whatsapp_channel"
-                          ? "bg-[#075E54] text-white hover:bg-[#25D366] hover:text-[#141414] hover:scale-105"
-                          : "bg-[#141414] text-white hover:bg-[#E4491B] hover:scale-105"
-                      }`}
-                    >
-                      {isListeningMic ? (
-                        <MicOff className="w-8 h-8 mb-1" />
-                      ) : (
-                        <Mic
-                          className={`w-8 h-8 mb-1 ${
-                            inputChannel === "whatsapp_channel"
-                              ? "text-[#25D366]"
-                              : "text-[#FFE17D]"
-                          }`}
-                        />
-                      )}
-                      <span className="mono text-[9px] uppercase tracking-widest font-bold">
-                        {isListeningMic
-                          ? "Listening"
-                          : inputChannel === "whatsapp_channel"
-                          ? "WA Voice"
-                          : "Tap to Talk"}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Timer + Action Buttons */}
-                  <div className="text-center mt-1">
-                    <div className="serif text-3xl font-bold tracking-tight text-[#141414]">
-                      {isListeningMic
-                        ? `${Math.floor(recordingSec / 60)}:${String(
-                            recordingSec % 60
-                          ).padStart(2, "0")}`
-                        : inputChannel === "whatsapp_channel"
-                        ? `${Math.floor(waSimDurationSec / 60)}:${String(
-                            waSimDurationSec % 60
-                          ).padStart(2, "0")} / 2:00`
-                        : activeStreamItem?.durationLabel || "2:00"}
-                    </div>
-
-                    {inputChannel === "whatsapp_channel" ? (
-                      <div className="mt-1 flex items-center justify-center gap-2 max-w-xs mx-auto">
-                        <span className="mono text-[9.5px] font-bold text-[#075E54]">
-                          Voice Length:
-                        </span>
-                        <input
-                          type="range"
-                          min={20}
-                          max={150}
-                          step={5}
-                          value={waSimDurationSec}
-                          onChange={(e) =>
-                            setWaSimDurationSec(Number(e.target.value))
-                          }
-                          className="w-28 accent-[#075E54] cursor-pointer"
-                        />
-                        <span
-                          className={`mono text-[9.5px] font-bold px-1.5 py-0.5 rounded ${
-                            waSimDurationSec > 120
-                              ? "bg-rose-600 text-white"
-                              : "bg-[#DCF8C6] text-[#075E54]"
-                          }`}
-                        >
-                          {waSimDurationSec}s {waSimDurationSec > 120 ? "(>2m!)" : "✓"}
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-[#4A4842] mt-0.5 max-w-md mx-auto">
-                        Talk to Zee like a real friend about what happened today in your{" "}
-                        <strong className="text-[#141414]">Personal Life</strong>{" "}
-                        or <strong className="text-[#141414]">Business</strong>.
-                      </p>
-                    )}
-
-                    <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleToggleMic}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold mono uppercase tracking-wider inline-flex items-center gap-1.5 transition-all cursor-pointer border-2 border-[#141414] ${
-                          isListeningMic
-                            ? "bg-[#141414] text-white"
-                            : inputChannel === "whatsapp_channel"
-                            ? "bg-[#075E54] text-white hover:bg-[#054c44] shadow-[3px_3px_0px_#141414]"
-                            : "bg-[#E4491B] text-white hover:bg-[#C93D14] shadow-[3px_3px_0px_#141414]"
-                        }`}
-                      >
-                        <Mic className="w-3.5 h-3.5" />
-                        <span>
-                          {isListeningMic
-                            ? "Pause Mic"
-                            : inputChannel === "whatsapp_channel"
-                            ? "Record WA Voice"
-                            : "Speak to Zee"}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={
-                          (!spokenOrTypedInput.trim() && !isListeningMic) ||
-                          isAnalyzingBrain
-                        }
-                        onClick={() =>
-                          inputChannel === "whatsapp_channel"
-                            ? handleSendWhatsAppChannel({ forceSegregate: true })
-                            : handleAnalyzeAndSaveToMemory()
-                        }
-                        className={`px-4 py-2 rounded-xl text-xs font-bold mono uppercase tracking-wider inline-flex items-center gap-1.5 transition-all cursor-pointer border-2 border-[#141414] ${
-                          (spokenOrTypedInput.trim() || isListeningMic) &&
-                          !isAnalyzingBrain
-                            ? "bg-[#FFE17D] text-[#141414] hover:bg-[#FFD447] shadow-[3px_3px_0px_#141414]"
-                            : "bg-[#ECEAE3] text-[#8E8B82] border-[#D5D2C8] cursor-not-allowed"
-                        }`}
-                      >
-                        {isAnalyzingBrain ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Decoding & Segregating...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-3.5 h-3.5 text-[#E4491B]" />
-                            <span>
-                              {inputChannel === "whatsapp_channel"
-                                ? "Decode & Segregate WA Story"
-                                : "Save & Analyze with Zee"}
-                            </span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* LIVE SPOKEN STREAM & ZEE QUESTION PROMPTS */}
-                <div className="bg-white border-2 border-[#141414] rounded-2xl p-3.5 shadow-[3px_3px_0px_#141414]">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span
-                      className={`mono text-[10px] uppercase tracking-widest font-bold flex items-center gap-1.5 ${
-                        inputChannel === "whatsapp_channel"
-                          ? "text-[#075E54]"
-                          : "text-[#E4491B]"
-                      }`}
-                    >
-                      <Volume2 size={12} />
-                      <span>
-                        {spokenOrTypedInput.trim()
-                          ? inputChannel === "whatsapp_channel"
-                            ? `WhatsApp Input (${waUserPhone})...`
-                            : "Speaking to Zee..."
-                          : `Active Story • ${activeStreamItem?.title || "Prem's Story"}`}
-                      </span>
-                    </span>
-                    <span className="mono text-[10px] text-[#6E6A63] font-bold">
-                      {(spokenOrTypedInput.trim() || activeStreamItem?.story || "")
-                        .split(/\s+/)
-                        .filter(Boolean).length}{" "}
-                      words
-                    </span>
-                  </div>
-
-                  <textarea
-                    rows={2}
-                    value={spokenOrTypedInput}
-                    onChange={(e) => setSpokenOrTypedInput(e.target.value)}
-                    placeholder={
-                      inputChannel === "whatsapp_channel"
-                        ? `Send a 2-min WhatsApp voice story or reply from ${waUserPhone} (Business, Breakup, Family...)`
-                        : `Speak with the mic or tell Zee what happened today, ${brain.virtualYou.userName}...`
-                    }
-                    className="w-full resize-none bg-transparent serif text-base text-[#141414] placeholder:text-[#6E6A63]/60 focus:outline-none leading-relaxed"
-                  />
-
-                  <div className="mt-2 pt-2 border-t border-[#1E1E1C]/10 flex flex-wrap items-center gap-1.5">
-                    <span className="mono text-[9px] font-bold uppercase text-[#6E6A63]">
-                      {inputChannel === "whatsapp_channel"
-                        ? "1-Click WA Voice Channel Starters:"
-                        : "Memory-Adopted Starters:"}
-                    </span>
-                    {inputChannel === "whatsapp_channel" ? (
-                      <>
-                        {[
-                          {
-                            cat: "work" as LifeCategory,
-                            label: "💼 Business Pitch (1:32)",
-                            dur: 92,
-                            text: "At 11pm our biggest enterprise client asked for 5 manual video revisions before morning. That night I decided we would never edit manually again and built our automated AI studio workflow.",
-                          },
-                          {
-                            cat: "relationships" as LifeCategory,
-                            label: "💔 Breakup / 2AM (1:48)",
-                            dur: 108,
-                            text: "After the breakup, I sat in my car at 2 AM looking at old voice notes and realized people don't fall in love with perfection—they connect with the unfiltered parts we usually hide.",
-                          },
-                          {
-                            cat: "family" as LifeCategory,
-                            label: "🏡 Family Dinner (1:18)",
-                            dur: 78,
-                            text: "At Sunday dinner my dad looked at my laptop and said: you are building tools for millions of strangers, just don't forget the four people sitting at this table.",
-                          },
-                        ].map((waChip) => (
-                          <button
-                            key={waChip.label}
-                            type="button"
-                            onClick={() => {
-                              setSelectedPromptCategory(waChip.cat);
-                              setWaSimDurationSec(waChip.dur);
-                              setSpokenOrTypedInput(waChip.text);
-                              handleSendWhatsAppChannel({
-                                overrideText: waChip.text,
-                                overrideDurationSec: waChip.dur,
-                                forceSegregate: true,
-                              });
-                            }}
-                            className="px-2.5 py-1 rounded-full border border-[#075E54]/40 bg-[#DCF8C6] hover:bg-[#25D366] text-[10px] font-bold text-[#075E54] hover:text-[#141414] transition cursor-pointer"
-                          >
-                            {waChip.label}
-                          </button>
-                        ))}
-                      </>
-                    ) : (
-                      (
-                        [
-                          {
-                            cat: "personal" as LifeCategory,
-                            label: "🌿 Personal Life Memory",
-                          },
-                          {
-                            cat: "work" as LifeCategory,
-                            label: "💼 Business Memory",
-                          },
-                          {
-                            cat: "travel" as LifeCategory,
-                            label: "🧭 Gokarna & Horizons",
-                          },
-                        ] as const
-                      ).map((chip) => {
-                        const chipPrompt = getDynamicZeeMemoryPrompt(
-                          brain,
-                          chip.cat,
-                          activeStreamItem
-                        );
-                        return (
-                          <button
-                            key={chip.label}
-                            type="button"
-                            onClick={() => {
-                              setSelectedPromptCategory(chip.cat);
-                              setSpokenOrTypedInput(
-                                chipPrompt.quickSpokenStarter
-                              );
-                              setPipMood("excited");
-                            }}
-                            className="px-2.5 py-1 rounded-full border border-[#141414]/25 bg-[#FAF8F3] hover:bg-[#F6D9CC] text-[10px] font-bold text-[#141414] transition cursor-pointer"
-                          >
-                            {chip.label}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
               </section>
 
               {/* ===============================================================
@@ -2231,7 +1767,7 @@ export default function YouView({
                   (Zee responds like a friend, asks follow-ups & breaks down the story)
                  =============================================================== */}
               <aside className="flex flex-col bg-gradient-to-b from-[#FAF8F3] to-[#F5F1E8]/60 h-full max-h-[820px]">
-                <div className="p-4 border-b border-[#1E1E1C]/10 flex items-center justify-between">
+                <div className="px-4 pb-4 pt-1.5 border-b border-[#1E1E1C]/10 flex items-center justify-between">
                   <div>
                     <span className="mono text-[10px] font-bold uppercase tracking-widest text-[#E4491B] block">
                       Human-to-Human Analysis
@@ -2240,12 +1776,12 @@ export default function YouView({
                       Zee&apos;s Reply & Story Breakdown
                     </h2>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-600/30 text-emerald-800 mono text-[10px] font-bold">
-                    Live Companion
-                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-[#f6e6dc] text-[#925339] mono text-[10px] font-bold">Story partner</span>
                 </div>
 
-                {activeStreamItem && activeDigitalAssets ? (
+                {isAnalyzingBrain && <div aria-live="polite" className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-[#e5ddd1] bg-white/80 px-3 py-2 text-[10px] text-[#776d62]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#a6573d]" />Zee is listening to this story and preparing a thoughtful follow-up...</div>}
+
+                {activeStreamItem ? (
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {/* 1. ZEE'S CONVERSATIONAL REPLY & FOLLOW-UP QUESTION */}
                     <div className="rounded-2xl border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_#141414] relative">
@@ -2260,33 +1796,34 @@ export default function YouView({
                         </div>
                         <div>
                           <div className="mono text-[10px] font-bold uppercase text-[#E4491B]">
-                            Zee&apos;s Personal Reply to {brain.virtualYou.userName}
+                            {brain.virtualYou.userName ? `Zee’s reply to ${brain.virtualYou.userName}` : "Zee’s reply to your story"}
                           </div>
                           <div className="serif text-base font-bold text-[#141414]">
-                            &ldquo;I felt the pulse in this one,{" "}
-                            {brain.virtualYou.userName}!&rdquo;
+                            Here is what I understood
                           </div>
                         </div>
                       </div>
 
                       <p className="text-xs text-[#1E1E1C] leading-relaxed bg-[#FAF8F3] p-3 rounded-xl border border-[#D5D2C8]">
-                        {activeDigitalAssets.assistantAsset.friendReply}
+                        {activeStreamItem.zeeAnalysis}
                       </p>
 
                       {/* Zee's Memory-Aware Follow-Up Question to Keep the Conversation Flowing */}
                       <div className="mt-3 p-3 rounded-xl bg-gradient-to-r from-[#F6D9CC]/60 to-[#FEF3C7]/60 border border-[#E4491B]/35">
                         <div className="mono text-[9px] font-bold uppercase text-[#E4491B] mb-1">
-                          💬 Zee&apos;s Memory-Aware Follow-Up for {brain.virtualYou.userName}:
+                          A useful next question
                         </div>
                         <p className="serif text-sm font-bold text-[#141414] leading-snug">
-                          &ldquo;{activeItemPrompt.followUpQuestion}&rdquo;
+                          &ldquo;{activeStreamItem.followUpQuestion || activeItemPrompt.followUpQuestion}&rdquo;
                         </p>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => {
                               setSelectedPromptCategory(activeStreamItem.category);
-                              setSpokenOrTypedInput(activeItemPrompt.quickSpokenStarter);
+                              setInputChannel("studio_mic");
+                              setReplyingToMemoryId(activeStreamItem.id);
+                              setSpokenOrTypedInput("");
                               handleToggleMic();
                             }}
                             className="px-3 py-1 rounded-lg bg-[#141414] hover:bg-[#E4491B] text-white mono text-[10px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
@@ -2301,51 +1838,21 @@ export default function YouView({
                       </div>
                     </div>
 
-                    {/* 2. COLORFUL STORY DNA & EMOTIONAL PULSE */}
-                    <div
-                      className="rounded-2xl border-2 border-[#141414] p-4 shadow-[3px_3px_0px_#141414]"
-                      style={{
-                        backgroundColor:
-                          CATEGORY_META[activeStreamItem.category].bg,
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span
-                          className="mono text-[10px] font-bold uppercase tracking-wider"
-                          style={{
-                            color:
-                              CATEGORY_META[activeStreamItem.category].color,
-                          }}
-                        >
-                          Story DNA •{" "}
-                          {activeStreamItem.category === "work"
-                            ? "Business & Work"
-                            : activeStreamItem.category === "personal"
-                            ? "Personal Life"
-                            : CATEGORY_META[activeStreamItem.category].label}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-white border border-[#141414]/20 mono text-[10px] font-bold text-[#141414]">
-                          {activeStreamItem.emotionTone}
-                        </span>
+                    {activeConversationItems.length > 0 && (
+                      <div className="rounded-2xl border border-[#e7dfd5] bg-white/75 p-3">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8a7e70]">Earlier in this conversation</p>
+                        <div className="mt-2 space-y-2">
+                          {activeConversationItems.map((turn) => (
+                            <div key={turn.id} className="border-l-2 border-[#d9a485] pl-2.5">
+                              <p className="text-[10px] font-semibold text-[#554b41]">{turn.title}</p>
+                              <p className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-[#766d63]">{turn.story}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
+                    )}
 
-                      <p className="text-xs text-[#141414] font-medium leading-relaxed bg-white/85 p-3 rounded-xl border border-[#141414]/15">
-                        {activeStreamItem.zeeAnalysis}
-                      </p>
-
-                      <div className="flex flex-wrap gap-1.5 mt-2.5">
-                        {activeStreamItem.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="px-2.5 py-0.5 rounded-full bg-white border border-[#141414]/20 mono text-[10px] font-bold text-[#141414]"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 3. STORYTELLING HOOK & NARRATIVE SEED (Extracted from Prem's Life) */}
+                    {/* 2. STORYTELLING HOOK & NARRATIVE SEED (From your lived experience) */}
                     <div className="rounded-2xl border-2 border-[#141414] bg-white p-4 shadow-[3px_3px_0px_#141414] space-y-2.5">
                       <div className="flex items-center justify-between">
                         <span className="mono text-[10px] font-bold uppercase tracking-wider text-[#E4491B]">
@@ -2416,598 +1923,90 @@ export default function YouView({
                         </div>
                       </div>
 
-                      <div className="space-y-1.5 pt-1">
-                        <div className="mono text-[10px] font-bold uppercase text-[#6E6A63]">
-                          What Zee Unlocks Below from This Story:
-                        </div>
-                        {activeDigitalAssets.assistantAsset.nextMoves.map(
-                          (move, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-start gap-2 text-xs text-[#141414] bg-[#FAF8F3] p-2 rounded-lg border border-[#D5D2C8]"
-                            >
-                              <CheckCircle2
-                                size={13}
-                                className="text-emerald-600 shrink-0 mt-0.5"
-                              />
-                              <span>{move}</span>
-                            </div>
-                          )
-                        )}
-                      </div>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="m-4 rounded-2xl border border-[#e5ddd1] bg-white/80 p-4">
+                    <p className="font-serif text-lg text-[#292722]">Zee is ready to learn from you.</p>
+                    <p className="mt-2 text-xs leading-5 text-[#766d63]">Share a real moment. Zee will reflect what happened, ask one useful follow-up, and connect your answer to the same conversation.</p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">{["Turning points", "People and relationships", "Work and craft", "Goals and ideas", "Voice and boundaries", "Visual taste"].map((topic) => <span key={topic} className="rounded-full border border-[#e8e1d7] bg-[#fbf9f5] px-2.5 py-1 text-[9px] text-[#73685d]">{topic}</span>)}</div>
+                  </div>
+                )}
               </aside>
             </div>
           </div>
 
-          {/* =================================================================
-              BOTTOM EXPANDED SECTION: DIGITAL ASSETS & PERSONAL TASTE DECK
-              (Quote Alchemist | 3-Chapter Book | Business Ideas | Personal Taste)
-             ================================================================= */}
-          {activeStreamItem && activeDigitalAssets && (
-            <div className="rounded-3xl border-2 border-[#141414] bg-gradient-to-br from-[#FAF8F3] via-[#FFFEFB] to-[#F6D9CC]/30 p-6 sm:p-7 shadow-[5px_5px_0px_#141414]">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b-2 border-[#141414]/12 mb-6">
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#141414] text-[#FFE17D] mono text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                    <Sparkles size={11} />
-                    <span>
-                      Expanded Digital Asset Studio • Built from{" "}
-                      {brain.virtualYou.userName}&apos;s Talk
-                    </span>
-                  </div>
-                  <h3 className="serif text-2xl sm:text-3xl font-bold text-[#141414]">
-                    Quotes, Book Chapters, Business Ideas & Personal Taste
-                  </h3>
+          <section className="overflow-hidden rounded-[26px] border border-[#e5ddd1] bg-[#fffdfa] shadow-[0_16px_48px_rgba(54,42,28,0.06)]">
+            <div className="grid gap-0 lg:grid-cols-[0.8fr_1.2fr]">
+              <div className="bg-[#20211d] p-5 text-white sm:p-7">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#e6ad82]">Influence, then make it yours</p>
+                <h2 className="mt-2 max-w-sm font-serif text-3xl leading-tight">Borrow the shape. Tell your story.</h2>
+                <p className="mt-2 max-w-md text-xs leading-5 text-white/65">Describe what you like about a format, or add a reference link with your notes. Muse saves broad patterns in hooks, pacing and visual rhythm, then builds a fresh version from your own memories and point of view.</p>
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+                  <input type="text" value={reelScanInput} onChange={(event) => setReelScanInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handleScanLikedReel(); }} placeholder="Describe the hook, pace or visual rhythm you like" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#e6ad82]" />
+                  <button type="button" onClick={() => void handleScanLikedReel()} disabled={!reelScanInput.trim() || isScanningReel} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#e6ad82] px-4 py-2.5 text-xs font-semibold text-[#20211d] transition hover:bg-[#f0bf9a] disabled:cursor-not-allowed disabled:opacity-45"><Sparkles size={13} />{isScanningReel ? "Reading patterns..." : "Save style notes"}</button>
                 </div>
-
-                {/* 4 Digital Asset Tabs at the Bottom */}
-                <div className="inline-flex flex-wrap gap-1.5 p-1.5 bg-[#141414] rounded-2xl shadow-[3px_3px_0px_#E4491B]">
-                  {(
-                    [
-                      {
-                        id: "quote",
-                        label: "Signature Quote",
-                        icon: <Quote size={13} />,
-                      },
-                      {
-                        id: "book",
-                        label: "3-Chapter Book",
-                        icon: <BookOpen size={13} />,
-                      },
-                      {
-                        id: "business",
-                        label: "Business Ideas",
-                        icon: <Rocket size={13} />,
-                      },
-                      {
-                        id: "assistant",
-                        label: "Personal Taste & Refs",
-                        icon: <Heart size={13} />,
-                      },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveAssetTab(tab.id)}
-                      className={`px-3.5 py-2 rounded-xl mono text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                        activeAssetTab === tab.id
-                          ? "bg-[#FFE17D] text-[#141414]"
-                          : "text-white/80 hover:text-white"
-                      }`}
-                    >
-                      {tab.icon}
-                      <span>{tab.label}</span>
+                <p className="mt-2 text-[10px] leading-4 text-white/45">Reference notes are private to this workspace. The generated work keeps your voice and does not name or copy the source creator.</p>
+              </div>
+              <div className="p-5 sm:p-7">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div><p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]">From memory to making</p><h3 className="mt-1 font-serif text-2xl text-[#25231f]">What are we shaping next?</h3></div>
+                  <span className="text-[10px] text-[#8c8378]">{brain.memories.length} lived stories available</span>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {[
+                    { title: "One short story", kind: "reel", note: "A complete, spoken Instagram reel from one real moment." },
+                    { title: "A story series", kind: "series", note: "A premise, connected episode angles and a first episode draft." },
+                    { title: "A documentary", kind: "documentary", note: "A narrated treatment that connects moments, people and change." },
+                  ].map((output) => (
+                    <button key={output.kind} type="button" disabled={!activeStreamItem} onClick={() => {
+                      if (!activeStreamItem) return;
+                      const direction = output.kind === "series"
+                        ? "Develop this into an original short-form storytelling series. Give me a series premise, three distinct episode angles, and a complete spoken script for episode one."
+                        : output.kind === "documentary"
+                        ? "Shape this into an original short documentary narration with a clear point of view, scene progression and an emotionally earned ending."
+                        : "Write one complete, natural spoken short-form story from this real memory, with a strong opening, a clear turning point and an honest ending.";
+                      onSelectTopicForScript?.(`${direction}\n\nUse this lived memory as the factual source. Keep first-person details accurate, preserve the meaning, and adapt broad structural patterns from my saved style references without mentioning or imitating any creator.\n\nMemory: ${activeStreamItem.story}`);
+                    }} className="group rounded-2xl border border-[#e8e1d7] bg-[#fbf9f5] p-4 text-left transition hover:-translate-y-0.5 hover:border-[#c8a08a] hover:bg-white hover:shadow-[0_10px_24px_rgba(71,48,34,0.08)] disabled:cursor-not-allowed disabled:opacity-50">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f1e2d6] text-[#9c563c] transition group-hover:bg-[#20211d] group-hover:text-white">{output.kind === "series" ? <Layers size={16} /> : output.kind === "documentary" ? <Film size={16} /> : <Clapperboard size={16} />}</div>
+                      <h4 className="mt-3 font-serif text-lg text-[#25231f]">{output.title}</h4><p className="mt-1 text-[10px] leading-4 text-[#756d63]">{output.note}</p>
+                      <span className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold text-[#a6573d]">Take to Script <ArrowRight size={12} /></span>
                     </button>
                   ))}
                 </div>
-              </div>
-
-              {/* TAB 1: QUOTE ALCHEMIST */}
-              {activeAssetTab === "quote" && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-                  <div className="lg:col-span-7">
-                    <div
-                      className="p-7 rounded-2xl transition-all duration-300 relative overflow-hidden border-2 border-[#141414] shadow-[4px_4px_0px_#141414]"
-                      style={{
-                        backgroundColor:
-                          studioCardTheme === "blackNeon"
-                            ? "#0D0D12"
-                            : studioCardTheme === "duolingoDark"
-                            ? "#131F24"
-                            : studioCardTheme === "warmAmber"
-                            ? "#FFF8EB"
-                            : "#F5F1E8",
-                        color:
-                          studioCardTheme === "blackNeon" ||
-                          studioCardTheme === "duolingoDark"
-                            ? "#FAF8F5"
-                            : "#1E1E1C",
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="mono text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full border border-current/30">
-                          {activeDigitalAssets.quoteAsset.styleTag}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {(
-                            [
-                              { id: "paperCard", bg: "#F5F1E8" },
-                              { id: "blackNeon", bg: "#0D0D12" },
-                              { id: "duolingoDark", bg: "#131F24" },
-                              { id: "warmAmber", bg: "#FFF8EB" },
-                            ] as const
-                          ).map((t) => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => setStudioCardTheme(t.id)}
-                              className={`w-4 h-4 rounded-full border border-current/40 cursor-pointer ${
-                                studioCardTheme === t.id
-                                  ? "ring-2 ring-[#E4491B]"
-                                  : ""
-                              }`}
-                              style={{ backgroundColor: t.bg }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      <blockquote className="serif text-2xl sm:text-3xl leading-relaxed font-normal mb-4">
-                        &ldquo;
-                        {activeQuoteVariations[quoteVariationIdx]?.text ||
-                          activeDigitalAssets.quoteAsset.quote}
-                        &rdquo;
-                      </blockquote>
-
-                      <p className="text-xs opacity-75 mb-4">
-                        {activeDigitalAssets.quoteAsset.subtext}
-                      </p>
-
-                      <div className="flex items-center justify-between pt-3 border-t border-current/15 text-xs mono">
-                        <span className="font-bold">
-                          — {brain.virtualYou.userName}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCopyDigitalAsset(
-                              "quote",
-                              `"${
-                                activeQuoteVariations[quoteVariationIdx]
-                                  ?.text ||
-                                activeDigitalAssets.quoteAsset.quote
-                              }" — ${brain.virtualYou.userName}`
-                            )
-                          }
-                          className="px-3 py-1.5 rounded-xl bg-[#E4491B] text-white mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer"
-                        >
-                          {copiedAssetLabel === "quote" ? (
-                            <>
-                              <Check size={12} />
-                              <span>Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy size={12} />
-                              <span>Copy Quote</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="lg:col-span-5 space-y-4">
-                    <div className="p-5 rounded-2xl border-2 border-[#141414] bg-white shadow-[3px_3px_0px_#141414] space-y-3">
-                      <div className="mono text-[10px] font-bold uppercase text-[#E4491B] flex items-center gap-1.5">
-                        <Wand2 size={13} />
-                        <span>
-                          Approximate Thought → Signature Quote Converter
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#4A4842]">
-                        Tell Zee any approximate or random thought — Zee polishes it into a timeless quote signed by{" "}
-                        {brain.virtualYou.userName}.
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={approxQuoteInput}
-                          onChange={(e) => setApproxQuoteInput(e.target.value)}
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && handleConvertApproxToQuote()
-                          }
-                          placeholder="Type a rough thought to convert into a quote..."
-                          className="flex-1 px-3 py-2 rounded-xl border-2 border-[#141414]/20 bg-[#FAF8F3] text-xs text-[#141414] focus:outline-none focus:border-[#E4491B]"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleConvertApproxToQuote}
-                          disabled={!approxQuoteInput.trim()}
-                          className="px-4 py-2 rounded-xl bg-[#141414] text-white mono text-xs font-bold hover:bg-[#E4491B] transition cursor-pointer disabled:opacity-40"
-                        >
-                          Convert
-                        </button>
-                      </div>
-
-                      {activeQuoteVariations.length > 0 && (
-                        <div className="pt-2 flex flex-wrap gap-1.5">
-                          {activeQuoteVariations.map((v, idx) => (
-                            <button
-                              key={v.label}
-                              type="button"
-                              onClick={() => setQuoteVariationIdx(idx)}
-                              className={`px-3 py-1 rounded-lg mono text-[10px] font-bold transition cursor-pointer ${
-                                quoteVariationIdx === idx
-                                  ? "bg-[#141414] text-[#FFE17D]"
-                                  : "bg-[#FAF8F3] text-[#6E6A63] border border-[#D5D2C8]"
-                              }`}
-                            >
-                              {v.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: 3-CHAPTER PERSONAL BOOK / ESSAY */}
-              {activeAssetTab === "book" && (
-                <div className="bg-white border-2 border-[#141414] rounded-2xl p-6 sm:p-8 shadow-[4px_4px_0px_#141414]">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1E1E1C]/10 pb-4 mb-5">
-                    <div>
-                      <span className="mono text-[10px] uppercase tracking-widest text-[#E4491B] font-bold">
-                        Personal Book Manuscript •{" "}
-                        {CATEGORY_META[activeStreamItem.category].label}
-                      </span>
-                      <h4 className="serif text-2xl sm:text-3xl font-bold text-[#141414] mt-0.5">
-                        {activeDigitalAssets.bookAsset.title}
-                      </h4>
-                      <p className="text-xs text-[#6E6A63] italic">
-                        {activeDigitalAssets.bookAsset.subtitle}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopyDigitalAsset(
-                          "book",
-                          `# ${activeDigitalAssets.bookAsset.title}\n${activeDigitalAssets.bookAsset.subtitle}\n\n${activeDigitalAssets.bookAsset.chapters.join(
-                            "\n\n"
-                          )}`
-                        )
-                      }
-                      className="px-4 py-2 rounded-xl bg-[#141414] text-white mono text-xs font-bold flex items-center gap-1.5 hover:bg-[#E4491B] transition cursor-pointer self-start"
-                    >
-                      {copiedAssetLabel === "book" ? (
-                        <>
-                          <Check size={13} />
-                          <span>Copied Chapter</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={13} />
-                          <span>Export Book Chapter</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 serif text-base leading-relaxed text-[#1E1E1C]">
-                    {activeDigitalAssets.bookAsset.chapters.map(
-                      (paragraph, idx) => (
-                        <div
-                          key={idx}
-                          className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#D5D2C8]"
-                        >
-                          <div className="mono text-[10px] font-bold uppercase text-[#E4491B] mb-2">
-                            Chapter 0{idx + 1}
-                          </div>
-                          <p>{paragraph}</p>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 3: BUSINESS & VENTURE IDEAS */}
-              {activeAssetTab === "business" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl border-2 border-[#141414] bg-[#141414] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="mono text-[10px] font-bold uppercase tracking-widest text-[#FFE17D] block">
-                        Zee Business & Venture Architect
-                      </span>
-                      <h4 className="serif text-xl font-bold text-white">
-                        {activeDigitalAssets.businessAsset.headline}
-                      </h4>
-                      <p className="text-xs text-white/75 mt-0.5">
-                        {activeDigitalAssets.businessAsset.marketAngle}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopyDigitalAsset(
-                          "business",
-                          activeDigitalAssets.businessAsset.ideas
-                            .map(
-                              (i, idx) =>
-                                `${idx + 1}. ${i.name}: ${i.pitch} (Next: ${i.firstStep})`
-                            )
-                            .join("\n")
-                        )
-                      }
-                      className="px-4 py-2 rounded-xl bg-[#E4491B] text-white mono text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
-                    >
-                      {copiedAssetLabel === "business" ? (
-                        <>
-                          <Check size={13} />
-                          <span>Copied Blueprint</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={13} />
-                          <span>Copy Business Ideas</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {activeDigitalAssets.businessAsset.ideas.map(
-                      (idea, idx) => (
-                        <div
-                          key={idx}
-                          className="p-5 rounded-2xl border-2 border-[#141414] bg-white shadow-[3px_3px_0px_#141414] flex flex-col justify-between"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <span className="mono text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-[#DBEAFE] text-[#2563EB] border border-[#2563EB]/30">
-                                Business Idea 0{idx + 1}
-                              </span>
-                              <Rocket size={14} className="text-[#2563EB]" />
-                            </div>
-                            <h5 className="serif text-lg font-bold text-[#141414]">
-                              {idea.name}
-                            </h5>
-                            <p className="text-xs text-[#4A4842] mt-1.5 leading-relaxed">
-                              {idea.pitch}
-                            </p>
-                          </div>
-                          <div className="mt-3 pt-2.5 border-t border-[#ECEAE3] text-[11px] text-[#141414]">
-                            <strong className="mono text-[10px] uppercase text-emerald-700">
-                              First Move:{" "}
-                            </strong>
-                            {idea.firstStep}
-                          </div>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: PERSONAL TASTE & REFERENCES */}
-              {activeAssetTab === "assistant" && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  <div className="lg:col-span-6 p-5 rounded-2xl border-2 border-[#141414] bg-white shadow-[3px_3px_0px_#141414] space-y-3">
-                    <div className="mono text-[10px] font-bold uppercase text-[#E4491B]">
-                      {brain.virtualYou.userName}&apos;s Saved Signature Quotes
-                    </div>
-                    <div className="space-y-2">
-                      {brain.virtualYou.signaturePhrases.map((q, idx) => (
-                        <div
-                          key={idx}
-                          className="p-3 rounded-xl bg-[#FAF8F3] border border-[#D5D2C8] serif text-sm text-[#141414]"
-                        >
-                          &ldquo;{q}&rdquo;
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="lg:col-span-6 p-5 rounded-2xl border-2 border-[#141414] bg-white shadow-[3px_3px_0px_#141414] space-y-3">
-                    <div className="mono text-[10px] font-bold uppercase text-[#2563EB]">
-                      Add New Personal Taste, Quote or Reference
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={reelScanInput}
-                        onChange={(e) => setReelScanInput(e.target.value)}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && handleScanLikedReel()
-                        }
-                        placeholder="Drop a book note, quote, or creator style reference..."
-                        className="flex-1 px-3 py-2 rounded-xl border-2 border-[#141414]/20 bg-[#FAF8F3] text-xs text-[#141414] focus:outline-none focus:border-[#E4491B]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleScanLikedReel()}
-                        disabled={!reelScanInput.trim() || isScanningReel}
-                        className="px-4 py-2 rounded-xl bg-[#141414] text-white mono text-xs font-bold hover:bg-[#E4491B] transition cursor-pointer disabled:opacity-40"
-                      >
-                        {isScanningReel ? "Saving..." : "+ Save Taste"}
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 pt-1">
-                      {brain.likedReels.slice(0, 3).map((ref) => (
-                        <div
-                          key={ref.id}
-                          className="p-3 rounded-xl bg-[#FAF8F3] border border-[#D5D2C8] text-xs"
-                        >
-                          <div className="font-bold text-[#141414]">
-                            {ref.creatorStyle}
-                          </div>
-                          <div className="text-[11px] text-[#6E6A63] mt-0.5">
-                            {ref.readingPatternMatch}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* BOTTOM INPUT CHANNELS & CONNECTIONS DOCK (WhatsApp Channel + Cloud & Folder Channels on the same main page!) */}
-          <div className="rounded-3xl border-2 border-[#141414] bg-gradient-to-r from-[#FAF8F3] via-[#FFFEFB] to-[#DCF8C6]/45 p-5 sm:p-6 shadow-[4px_4px_0px_#141414]">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
-              <div>
-                <span className="mono text-[10px] font-bold uppercase tracking-wider text-[#075E54] flex items-center gap-1.5">
-                  <Link2 size={12} />
-                  <span>Connected Input Channels • Same Brain, Any Channel</span>
-                </span>
-                <h3 className="serif text-xl sm:text-2xl font-bold text-[#141414]">
-                  Connect WhatsApp, Studio Mic & Cloud Vaults
-                </h3>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#DCF8C6] border border-[#25D366] text-[#075E54] mono text-[10px] font-bold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#075E54] animate-pulse" />
-                  <span>WhatsApp Webhook: /api/whatsapp/webhook</span>
-                </span>
+                {brain.likedReels.length > 0 && <div className="mt-4 border-t border-[#eee7dd] pt-3"><p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8a7e70]">Saved structure references</p><div className="mt-2 flex flex-wrap gap-2">{brain.likedReels.slice(0, 4).map((reference) => <span key={reference.id} title={`${reference.hookPattern} / ${reference.pacingBpm}`} className="rounded-full border border-[#e8e1d7] bg-white px-3 py-1.5 text-[10px] text-[#675d52]">{reference.detectedFormat} / reusable structure</span>)}</div></div>}
               </div>
             </div>
+          </section>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* CHANNEL 1: WHATSAPP CLOUD API INPUT CHANNEL */}
-              <div
-                className={`p-4 rounded-2xl border-2 transition flex flex-col justify-between gap-3 ${
-                  inputChannel === "whatsapp_channel"
-                    ? "border-[#075E54] bg-[#F0FDF4] shadow-[3px_3px_0px_#075E54]"
-                    : "border-[#141414] bg-white shadow-[2px_2px_0px_#141414]"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
-                      <Smartphone size={14} className="text-[#075E54]" />
-                      <span>1. WhatsApp Voice & Chat</span>
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-[#DCF8C6] text-[#075E54] mono text-[9.5px] font-bold">
-                      Max 2m (120s)
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[#55534E] mb-2">
-                    Send 2-min voice notes or chat on WhatsApp → Zee interviews, decodes & segregates into Business, Breakup, or Family above.
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={waUserPhone}
-                      onChange={(e) => setWaUserPhone(e.target.value)}
-                      placeholder="+91 98450 24110"
-                      className="flex-1 px-3 py-1.5 rounded-xl border border-[#075E54]/40 bg-white mono text-xs font-bold text-[#141414] focus:outline-none"
-                    />
-                  </div>
-                </div>
+          <BrandIdentityPanel />
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWaConnected(true);
-                    setInputChannel(
-                      inputChannel === "whatsapp_channel"
-                        ? "studio_mic"
-                        : "whatsapp_channel"
-                    );
-                  }}
-                  className={`w-full py-2 px-3 rounded-xl border-2 border-[#141414] mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    inputChannel === "whatsapp_channel"
-                      ? "bg-[#25D366] text-[#141414]"
-                      : "bg-[#075E54] hover:bg-[#25D366] text-white hover:text-[#141414]"
-                  }`}
-                >
-                  <Smartphone size={12} />
-                  <span>
-                    {inputChannel === "whatsapp_channel"
-                      ? "✓ WhatsApp Channel Active Above"
-                      : "Switch Input to WhatsApp Channel"}
+          <section className="rounded-[26px] border border-[#e5ddd1] bg-white p-5 shadow-[0_12px_40px_rgba(54,42,28,0.05)] sm:p-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="max-w-2xl">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#71695f]">
+                  <Smartphone size={13} className="text-[#55775b]" /> WhatsApp memory route
+                  <span className={`rounded-full px-2.5 py-1 text-[9px] tracking-normal ${waSetup.configured ? "bg-[#eef7ee] text-[#55775b]" : "bg-[#f7f1e8] text-[#96744f]"}`}>
+                    {waSetup.configured ? "Webhook configured" : "Setup pending"}
                   </span>
-                </button>
-              </div>
-
-              {/* CHANNEL 2: STUDIO LIVE VOICE MIC CHANNEL */}
-              <div
-                className={`p-4 rounded-2xl border-2 transition flex flex-col justify-between gap-3 ${
-                  inputChannel === "studio_mic"
-                    ? "border-[#E4491B] bg-[#FFF8F5] shadow-[3px_3px_0px_#E4491B]"
-                    : "border-[#141414] bg-white shadow-[2px_2px_0px_#141414]"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
-                      <Mic size={14} className="text-[#E4491B]" />
-                      <span>2. Studio Voice Mic</span>
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-[#F6D9CC] text-[#E4491B] mono text-[9.5px] font-bold">
-                      Meta STT Live
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[#55534E]">
-                    Speak directly into the 48-bar radial dial above. Uses the exact same Zee Brain, Story DNA, and 4-Beat Script pipeline.
-                  </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setInputChannel("studio_mic")}
-                  className={`w-full py-2 px-3 rounded-xl border-2 border-[#141414] mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    inputChannel === "studio_mic"
-                      ? "bg-[#FFE17D] text-[#141414]"
-                      : "bg-[#141414] text-white hover:bg-[#E4491B]"
-                  }`}
-                >
-                  <Mic size={12} />
-                  <span>
-                    {inputChannel === "studio_mic"
-                      ? "✓ Studio Mic Active Above"
-                      : "Switch Input to Studio Mic"}
-                  </span>
-                </button>
+                <h3 className="mt-2 font-serif text-2xl text-[#25231f]">A voice note can become a saved story.</h3>
+                <p className="mt-1 text-xs leading-5 text-[#746b60]">
+                  Incoming WhatsApp messages enter the story organizer at <code className="rounded bg-[#f6f2eb] px-1.5 py-0.5 text-[10px]">{waSetup.webhookUrl}</code>. Once the owner connection is set up, sync the sorted stories into this same memory gallery.
+                </p>
               </div>
-
-              {/* CHANNEL 3: GOOGLE DRIVE & LOCAL EXIF FOLDER VAULT */}
-              <div className="p-4 rounded-2xl border-2 border-[#141414] bg-white flex flex-col justify-between gap-3 shadow-[2px_2px_0px_#141414]">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="font-bold text-sm text-[#141414] flex items-center gap-1.5">
-                      <FolderOpen size={14} className="text-[#2563EB]" />
-                      <span>3. Visual Gallery Channels</span>
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-[#DBEAFE] text-[#2563EB] mono text-[9.5px] font-bold">
-                      {brain.gallery.length} Visuals
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[#55534E]">
-                    Link Google Drive, Partner Photos, or Laptop EXIF folders to auto-pair B-roll with your WhatsApp & voice stories.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveSubTab("gallery")}
-                  className="w-full py-2 px-3 rounded-xl border-2 border-[#141414] bg-[#FAF8F3] hover:bg-[#141414] hover:text-white text-[#141414] mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                >
-                  <ImageIcon size={12} />
-                  <span>Open Visual Gallery Connections →</span>
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                <button type="button" onClick={() => { setActiveSubTab("personalize"); setInputChannel("whatsapp_channel"); }} className="rounded-xl border border-[#ded5c9] bg-[#faf8f4] px-4 py-2.5 text-xs font-semibold text-[#51483e] transition hover:border-[#b58d71] hover:bg-white">
+                  Open inbox
+                </button>
+                <button type="button" onClick={() => void syncWhatsAppStories()} disabled={!waSetup.memorySyncEnabled} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#315f4d] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#274d3e] disabled:cursor-not-allowed disabled:opacity-45">
+                  <RefreshCw size={13} /> Sync stories
                 </button>
               </div>
             </div>
-          </div>
-
+            {waSyncMessage && <p aria-live="polite" className="mt-3 text-xs text-[#746b60]">{waSyncMessage}</p>}
+            {!waSetup.configured && <p className="mt-3 text-[10px] leading-4 text-[#978e82]">The route is in place. Add the WhatsApp Cloud API credentials to enable real incoming messages; the editor’s inbox preview does not claim a live WhatsApp connection.</p>}
+          </section>
           {/* ADMIN-ONLY VARIABLES REGISTRY (Hidden unless Admin Mode is toggled ON) */}
           <AnimatePresence>
             {isAdminMode && (
@@ -3027,7 +2026,7 @@ export default function YouView({
                       Matched Variables Registry (`ZeeMatchedVariables`)
                     </h3>
                     <p className="text-xs text-white/70">
-                      Visible only in Admin Mode. These variables bind Prem&apos;s Digital Brain across Scripting, Editing, and Publishing.
+                      Visible only in Admin Mode. These variables bind your saved context across Scripting, Editing, and Publishing.
                     </p>
                   </div>
                 </div>
@@ -3959,7 +2958,7 @@ export default function YouView({
                       handleConnectGallerySource("apple_photos");
                       if (val) {
                         setSyncSuccessMessage(
-                          `Linked Partner Sharing (${val}) into Prem's Creative Gallery Wallet!`
+                          `Linked Partner Sharing (${val}) into your Creative Gallery Wallet!`
                         );
                         setLocalFolderPathInput("");
                       }
@@ -3988,7 +2987,7 @@ export default function YouView({
                       <span>4. WhatsApp Channel</span>
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-[#DCF8C6] border border-[#25D366] text-[#075E54] mono text-[10px] font-bold">
-                      {waConnected ? "2m API Live" : "Ready"}
+                      {waSetup.configured ? "Webhook connected" : "Setup pending"}
                     </span>
                   </div>
                   <input
@@ -4003,11 +3002,10 @@ export default function YouView({
                 <button
                   type="button"
                   onClick={() => {
-                    setWaConnected(true);
                     setInputChannel("whatsapp_channel");
                     setActiveSubTab("personalize");
                     setSyncSuccessMessage(
-                      `Connected WhatsApp Channel (${waUserPhone}) → Switched input channel to WhatsApp!`
+                      `WhatsApp inbox selected. Incoming stories are routed through ${waSetup.webhookUrl}.`
                     );
                   }}
                   className="w-full py-2 px-3 rounded-xl border-2 border-[#141414] bg-[#075E54] hover:bg-[#25D366] hover:text-[#141414] text-white mono text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"

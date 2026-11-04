@@ -137,6 +137,8 @@ async function renderVideoRequest(
       sceneOverlayCode,
       sceneOverlayStart = 0,
       sceneOverlayDuration = 0,
+      sceneCameraPacing = [],
+      galleryBrollSegments = [],
     } = body;
 
     let resolvedBackgroundVideoUrl = "";
@@ -203,12 +205,42 @@ async function renderVideoRequest(
 
     const totalFrames = Math.max(1, Math.round(Number(duration) * Number(fps)));
     const safeFps = Math.min(60, Math.max(1, Number(fps)));
+    const safeGalleryBrollSegments = Array.isArray(galleryBrollSegments)
+      ? galleryBrollSegments.flatMap((segment: any) => {
+          try {
+            const start = Math.max(0, Number(segment?.start) || 0);
+            const end = Math.min(Number(duration) || 0, Number(segment?.end) || 0);
+            const parsed = new URL(String(segment?.assetUrl || ""), req.nextUrl.origin);
+            if (parsed.origin !== req.nextUrl.origin || !parsed.pathname.startsWith("/gallery-assets/") || parsed.pathname.split("/").includes("..") || end <= start) return [];
+            const assetPath = path.resolve(process.cwd(), "public", `.${decodeURIComponent(parsed.pathname)}`);
+            const galleryRoot = path.resolve(process.cwd(), "public", "gallery-assets") + path.sep;
+            if (!assetPath.startsWith(galleryRoot) || !fs.existsSync(assetPath)) return [];
+            return [{
+              start,
+              end,
+              assetUrl: parsed.toString(),
+              kind: segment.galleryClipKind === "image" ? "image" : "video",
+              assetStart: Math.max(0, Number(segment.assetStart) || 0),
+              name: String(segment.galleryClipName || "Gallery clip").slice(0, 100),
+            }];
+          } catch { return []; }
+        })
+      : [];
+    const safeSceneCameraPacing = Array.isArray(sceneCameraPacing)
+      ? sceneCameraPacing
+          .filter((beat: any) => Number.isFinite(Number(beat?.time)) && Number.isFinite(Number(beat?.zoom)))
+          .map((beat: any) => ({
+            time: Math.max(0, Math.min(Number(sceneOverlayDuration) || 0, Number(beat.time))),
+            zoom: Math.max(1, Math.min(1.28, Number(beat.zoom))),
+          }))
+          .sort((a: { time: number }, b: { time: number }) => a.time - b.time)
+      : [];
 
     // Remotion entry point — wraps SparkComponent in a Remotion Composition
     const entryFile = path.join(renderDir, "index.tsx");
     const entryContent = [
       'import React from "react";',
-      'import { registerRoot, Composition, Video, useCurrentFrame, useVideoConfig } from "remotion";',
+      'import { registerRoot, Composition, Video, Img, useCurrentFrame, useVideoConfig } from "remotion";',
       'import * as SparkModule from "./SparkComponent";',
       ...(hasSceneOverlay ? ['import * as SceneOverlayModule from "./SceneOverlay";'] : []),
       "",
@@ -226,6 +258,8 @@ async function renderVideoRequest(
       ...(hasSceneOverlay ? [`const SceneOverlayComponent: React.ComponentType<any> = ${sceneOverlayRef};`] : []),
       `const SCENE_OVERLAY_START = ${Math.max(0, Number(sceneOverlayStart) || 0)};`,
       `const SCENE_OVERLAY_DURATION = ${Math.max(0, Number(sceneOverlayDuration) || 0)};`,
+      `const SCENE_CAMERA_PACING = ${JSON.stringify(safeSceneCameraPacing)};`,
+      `const GALLERY_BROLL_SEGMENTS = ${JSON.stringify(safeGalleryBrollSegments)};`,
       "",
       // Mirror the preview iframe's #root stage exactly (spark-preview-document.ts)
       `const STAGE_BG = ${JSON.stringify(resolvedBackgroundVideoUrl ? "transparent" : String(background))};`,
@@ -241,6 +275,9 @@ async function renderVideoRequest(
       "  const currentTime = Math.min(duration, frame / fps);",
       "  const sceneOverlayActive = SCENE_OVERLAY_DURATION > 0 && currentTime >= SCENE_OVERLAY_START && currentTime < SCENE_OVERLAY_START + SCENE_OVERLAY_DURATION;",
       "  const sceneLocalTime = Math.max(0, currentTime - SCENE_OVERLAY_START);",
+      "  const activeGalleryBroll = GALLERY_BROLL_SEGMENTS.find((segment:any) => currentTime >= segment.start && currentTime < segment.end);",
+      "  let sceneCameraZoom = 1;",
+      "  for (const beat of SCENE_CAMERA_PACING) { if (sceneLocalTime < beat.time) break; sceneCameraZoom = beat.zoom; }",
       "  return React.createElement(",
       "    'div',",
       "    {",
@@ -248,7 +285,8 @@ async function renderVideoRequest(
       "      style: { position: 'absolute', inset: 0, width, height, overflow: 'hidden', background: STAGE_BG, color: STAGE_INK, fontFamily: 'Inter, system-ui, sans-serif' },",
       "    },",
       "    React.createElement('style', null, STAGE_CSS),",
-      "    BASE_VIDEO_URL ? React.createElement(Video, { src: BASE_VIDEO_URL, startFrom: BASE_VIDEO_START_FRAME, endAt: BASE_VIDEO_START_FRAME + durationInFrames, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } }) : null,",
+      "    BASE_VIDEO_URL ? React.createElement(Video, { src: BASE_VIDEO_URL, startFrom: BASE_VIDEO_START_FRAME, endAt: BASE_VIDEO_START_FRAME + durationInFrames, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: activeGalleryBroll ? 0 : 1, transform: sceneOverlayActive ? `scale(${sceneCameraZoom})` : 'scale(1)', transformOrigin: 'center center' } }) : null,",
+      "    activeGalleryBroll ? (activeGalleryBroll.kind === 'image' ? React.createElement(Img, { src: activeGalleryBroll.assetUrl, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'saturate(1.08) contrast(1.04)' } }) : React.createElement(Video, { src: activeGalleryBroll.assetUrl, startFrom: Math.round(activeGalleryBroll.assetStart * fps), endAt: Math.round((activeGalleryBroll.assetStart + activeGalleryBroll.end - activeGalleryBroll.start) * fps), style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'saturate(1.08) contrast(1.04)' } })) : null,",
       "    React.createElement(React.Fragment, null,",
       "      !sceneOverlayActive ? React.createElement(SparkComponent, { currentTime, time: currentTime, duration, fps, frame, width, height, isPlaying: false }) : null,",
       hasSceneOverlay

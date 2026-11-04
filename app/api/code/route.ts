@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readModelResponse } from "@/lib/model-response";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 
 export const maxDuration = 180;
 
@@ -469,7 +470,7 @@ export async function POST(req: NextRequest) {
           voiceover: scene.spokenReference || "",
           visualDesc: scene.visualRecipe?.metaphor || scene.motionIntent || "",
           motion: scene.motionIntent || "",
-          camera: `${scene.visualRecipe?.style || "procedural"}; camera zoom ${scene.cameraZoom || 1}`,
+          camera: `${scene.visualRecipe?.style || "procedural"}; camera zoom ${scene.cameraZoom || 1}${Array.isArray(scene.cameraPacing) && scene.cameraPacing.length ? `; fast camera punch rhythm ${JSON.stringify(scene.cameraPacing)}` : ""}`,
           layout: "Full-frame 9:16 scene cutaway",
           transition: "Pop in, then resolve back to the speaker",
           sound: "Optional subtle scene-matched pop sound cue",
@@ -492,11 +493,7 @@ export async function POST(req: NextRequest) {
       format = "storyExplainer";
     }
 
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+    const apiKey = getMetaApiKey();
 
     // Support dedicated topic-aware custom procedural SVG synthesis via Spark 1.3
     if (body.mode === "custom_svg" || body.type === "custom_svg") {
@@ -508,7 +505,7 @@ The component MUST accept { currentTime: number, scale?: number } and derive all
 Return ONLY raw executable TSX component code exporting CustomTopicGraphic as default. No markdown fences.`;
 
       const payload = {
-        model: "muse-spark-1.3",
+        model: getMetaModelId("spark", "muse-spark-1.3"),
         input: [{ role: "user", content: svgPrompt }],
         stream: true,
         temperature: 0.8,
@@ -518,7 +515,7 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
       };
 
       try {
-        const response = await fetch("https://api.meta.ai/v1/responses", {
+        const response = await fetch(getMetaEndpoint("responses"), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -766,7 +763,7 @@ Return ONLY raw executable TSX component code exporting CustomTopicGraphic as de
 
     // Payload structured for muse-spark-1.3 with full validated storyboard
     const payload = {
-      model: "muse-spark-1.3",
+      model: getMetaModelId("spark", "muse-spark-1.3"),
       input: [
         {
           role: "user",
@@ -805,7 +802,7 @@ Return ONLY the raw executable TSX source code starting with imports and default
 
     if (apiKey) {
       try {
-        const response = await fetch("https://api.meta.ai/v1/responses", {
+        const response = await fetch(getMetaEndpoint("responses"), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,

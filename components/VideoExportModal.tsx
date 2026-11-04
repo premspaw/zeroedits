@@ -53,6 +53,8 @@ interface VideoExportModalProps {
   regeneratedSceneDuration?: number;
   pipelineBVideoUrl?: string;
   regeneratedSceneStart?: number;
+  regeneratedSceneCameraPacing?: Array<{ time: number; zoom: number }>;
+  galleryBrollSegments?: Array<{ start: number; end: number; assetUrl?: string; galleryClipKind?: "video" | "image"; assetStart?: number; galleryClipName?: string }>;
 }
 
 export default function VideoExportModal({
@@ -72,6 +74,8 @@ export default function VideoExportModal({
   regeneratedSceneDuration,
   pipelineBVideoUrl,
   regeneratedSceneStart = 0,
+  regeneratedSceneCameraPacing = [],
+  galleryBrollSegments = [],
 }: VideoExportModalProps) {
   // Locally composed code (when the reel arrived without animation code).
   // Effective code drives PATH A; the canvas fallback only runs if composing fails.
@@ -808,6 +812,8 @@ export default function VideoExportModal({
             sceneOverlayCode: regeneratedSceneCode || undefined,
             sceneOverlayStart: regeneratedSceneCode ? regeneratedSceneStart : undefined,
             sceneOverlayDuration: regeneratedSceneCode ? regeneratedSceneDuration : undefined,
+            sceneCameraPacing: regeneratedSceneCode ? regeneratedSceneCameraPacing : undefined,
+            galleryBrollSegments: galleryBrollSegments.filter((segment) => segment.assetUrl),
             duration: totalDuration,
             fps: 30, // 30fps for faster server render (still silky smooth)
             topic,

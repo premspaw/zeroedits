@@ -6,6 +6,7 @@ import util from "util";
 import { transcribeAudio } from "@/lib/pipeline-b/tools/transcription";
 import { generateMuseImage } from "@/lib/pipeline-b/tools/image-generator";
 import { readModelResponse } from "@/lib/model-response";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 import { withModelRetry } from "@/lib/model-retry";
 
 const execFileAsync = util.promisify(execFile);
@@ -496,12 +497,7 @@ export async function POST(req: NextRequest) {
     let characterAndWorldBible = "";
     let artStylePromptLock = "";
 
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
-    const baseUrl = process.env.MODEL_API_BASE_URL || "https://api.meta.ai/v1";
+    const apiKey = getMetaApiKey();
 
     const timedTranscriptSummary =
       clauses.length > 0
@@ -571,7 +567,7 @@ Return valid JSON strictly matching the schema.`;
       }
 
       const wonderPayload = {
-        model: "muse-wonder-1.0",
+        model: getMetaModelId("wonder", "muse-wonder-1.0"),
         input: [{ role: "user", content: userContentBlocks }],
         instructions: wonderSystemInstructions,
         stream: true,
@@ -593,7 +589,7 @@ Return valid JSON strictly matching the schema.`;
 
       const parsed = await withModelRetry(
         async () => {
-          const wonderRes = await fetch(`${baseUrl}/responses`, {
+          const wonderRes = await fetch(getMetaEndpoint("responses"), {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,

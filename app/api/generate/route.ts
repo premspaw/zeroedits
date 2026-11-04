@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 
 export const maxDuration = 120; // Extended time for high reasoning model
 
@@ -784,11 +785,7 @@ export async function POST(req: NextRequest) {
     const styleHint = extractStyleHint(topic || "");
     const formatUsed = template?.id || format || (styleHint !== "none" ? styleHint : "auto");
 
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+    const apiKey = getMetaApiKey();
 
     const voiceLanguageName =
       language === "HI" ? "Hindi" : language === "KN" ? "Kannada" : "English";
@@ -832,7 +829,7 @@ export async function POST(req: NextRequest) {
 
     // Payload configured with structured schema and maximum reasoning capability
     const payload: any = {
-      model: "muse-wonder-1.0",
+      model: getMetaModelId("wonder", "muse-wonder-1.0"),
       input: [
         {
           role: "user",
@@ -871,7 +868,7 @@ export async function POST(req: NextRequest) {
       try {
         metaResult = await withModelRetry(
           async () => {
-            const response = await fetch("https://api.meta.ai/v1/responses", {
+            const response = await fetch(getMetaEndpoint("responses"), {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${apiKey}`,

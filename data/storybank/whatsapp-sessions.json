@@ -1,0 +1,338 @@
+{
+  "sessions": {
+    "+1 555 019 2834": {
+      "userPhone": "+1 555 019 2834",
+      "userName": "Hemanth",
+      "activeThread": [],
+      "segregatedStories": [
+        {
+          "id": "mem-1793734800309-15lh",
+          "category": "relationships",
+          "title": "Yesterday I had a brutal pitch meeting at 11pm",
+          "story": "Yesterday I had a brutal pitch meeting at 11pm. The client demanded 5 revisions while I was editing manually until 2am. That is when I realized our whole workflow was broken.",
+          "zeeAnalysis": "Decoded & segregated into [2AM Bonds & Love] (Bonds & People • raw & vulnerable). Your 4-beat script and B-roll cues are ready.",
+          "date": "2026-11-03",
+          "emotionTone": "Raw & Vulnerable",
+          "tags": [
+            "2AM Bonds & Love",
+            "From +1 555 019 2834",
+            "2AM",
+            "Bonds"
+          ],
+          "variableKey": "user.relationshipView",
+          "reelHookIdea": "The most honest lesson about love & letting go I've lived lately: Yesterday I had a brutal pitch meeting at 11pm",
+          "source": "whatsapp_chat",
+          "metaPowered": true,
+          "userPhone": "+1 555 019 2834",
+          "subSegment": "2AM Bonds & Love",
+          "scriptBeats": [
+            {
+              "id": 1,
+              "label": "HOOK",
+              "range": "0–3s",
+              "text": "The most honest lesson about love & letting go I've lived lately: Yesterday I had a brutal pitch meeting at 11pm.",
+              "visual": "Tactile paper-cut reveal of \"Yesterday I had a brutal pitch meeting at 11pm\" — raw close-up with WhatsApp voice waveform stamp.",
+              "motion": "whip-pan + paper tear pop",
+              "voice": "unfiltered, immediate — like a 2AM voice note",
+              "coaching": "Start right on the first syllable, zero pause.",
+              "durationSec": 3
+            },
+            {
+              "id": 2,
+              "label": "TRANSFORM",
+              "range": "3–7s",
+              "text": "The client demanded 5 revisions while I was editing manually until 2am.",
+              "visual": "Split paper collage: before vs the turning point in RELATIONSHIPS.",
+              "motion": "paper slide left + ink bleed",
+              "voice": "honest, confiding",
+              "coaching": "Drop your shoulders and speak like you're texting a close friend.",
+              "durationSec": 4
+            },
+            {
+              "id": 3,
+              "label": "MAGIC",
+              "range": "7–11s",
+              "text": "That is when I realized our whole workflow was broken.",
+              "visual": "Handwritten note morphs into kinetic typography + B-roll proof from your Gallery Wallet.",
+              "motion": "snap zoom + highlight burst",
+              "voice": "clear, grounded conviction",
+              "coaching": "Emphasize the turning word so captions pop on beat.",
+              "durationSec": 4
+            },
+            {
+              "id": 4,
+              "label": "PAYOFF",
+              "range": "11–15s",
+              "text": "If you've ever had a 2 AM realization like this, save this for tonight.",
+              "visual": "Warm studio sign-off card with taped paper CTA badge.",
+              "motion": "dolly-in + subtle card tilt",
+              "voice": "warm, direct sign-off",
+              "coaching": "Hold eye contact for half a beat at the end.",
+              "durationSec": 4
+            }
+          ],
+          "whatsappThread": [
+            {
+              "id": "wa-user-1793734792222",
+              "role": "user",
+              "type": "text",
+              "text": "Yesterday I had a brutal pitch meeting at 11pm. The client demanded 5 revisions while I was editing manually until 2am. That is when I realized our whole workflow was broken.",
+              "timestamp": "01:09 am"
+            },
+            {
+              "id": "wa-bot-1793734800309",
+              "role": "zee_bot",
+              "type": "text",
+              "text": "✅ Decoded & Segregated! Placed \"Yesterday I had a brutal pitch meeting at 11pm\" into [2AM Bonds & Love] (RELATIONSHIPS) in your You Page Memory Bank with your 4-beat script ready.",
+              "timestamp": "01:10 am"
+            }
+          ],
+          "durationLabel": "0:45",
+          "waveform": [
+            57,
+            86,
+            55,
+            73,
+            75,
+            43,
+            46,
+            60,
+            39,
+            91,
+            87,
+            63,
+            90,
+            38,
+            58,
+            69,
+            89,
+            41,
+            62,
+            33,
+            53,
+            69,
+            67,
+            33,
+            36,
+            71,
+            81,
+            47,
+            47,
+            69
+          ],
+          "quoteAsset": {
+            "quote": "Yesterday I had a brutal pitch meeting at 11pm. What feels approximate in conversation becomes undeniable when you build from lived truth.",
+            "subtext": "Distilled by Zee from Prem's casual reflection • Bonds & People",
+            "styleTag": "Bonds • Signature Quote"
+          },
+          "bookAsset": {
+            "title": "Yesterday I had a brutal pitch meeting at 11pm",
+            "subtitle": "A Personal Chapter from Prem's Bonds & People Stream",
+            "chapters": [
+              "Yesterday I had a brutal pitch meeting at 11pm. The client demanded 5 revisions while I was editing manually until 2am. That is when I realized our whole workflow was broken. When you say a thought out loud to a friend without trying to sound impressive, the real architecture of what you believe finally surfaces. Most great work begins exactly like this—not as a formal thesis, but as an observation you couldn't shake.",
+              "Looking closer through the lens of bonds & people, a deeper pattern emerges. We often underestimate our casual remarks because they come naturally to us, forgetting that our specific intersection of workplace craft, personal taste, and lived experience is impossible to replicate on autopilot.",
+              "The move now is to treat this spoken spark as a permanent brick in your body of work. Turn the conversation into a page, the page into a blueprint, and let the honesty of the original moment carry the weight."
+            ],
+            "wordCount": 157
+          },
+          "businessAsset": {
+            "headline": "Bonds Venture & Digital Asset Blueprint",
+            "marketAngle": "Convert Prem's spoken perspective on \"Yesterday I had a brutal pitch meeting at 11pm\" into high-leverage products, writing, and business systems.",
+            "ideas": [
+              {
+                "name": "The \"Yesterday I had a brutal pit\" Micro-Product / Essay",
+                "pitch": "Package this exact insight into a signature visual essay or founder playbook for people who resonate with bonds & people.",
+                "firstStep": "Share the distilled Quote Card above with your inner circle and track which phrase gets quoted back."
+              },
+              {
+                "name": "Personal Taste & Advisory Workflow",
+                "pitch": "Turn the way you naturally solve bonds problems into a repeatable framework or studio product.",
+                "firstStep": "Record two more 90-second voice notes on this theme so Zee can link them into a 3-part series."
+              },
+              {
+                "name": "Physical / Digital Monograph Edition",
+                "pitch": "Compile your spoken chapters and Gallery Wallet frames into a curated quarterly book edition.",
+                "firstStep": "Pair this chapter with a matching frame from your Creative Gallery Wallet."
+              }
+            ]
+          },
+          "assistantAsset": {
+            "friendReply": "Prem, I heard what you were getting at right away—even from a casual thought, there's a super clear philosophy here. I polished your words into a signature Quote Card, wrote a 3-chapter book draft around it, and mapped out 3 business angles.",
+            "nextMoves": [
+              "Save or copy the distilled Quote Card for your personal archive.",
+              "Review Chapter 1–3 in the Book tab—you already have 157 words drafted from just talking out loud.",
+              "Whenever you want to turn this into a video story, jump to the Scripting tab next door where I've synced this variable."
+            ],
+            "tasteConnection": "Calibrated to Prem's Raw & Vulnerable tone and warm editorial paper taste (#FAF8F3)."
+          }
+        }
+      ],
+      "lastUpdated": "2026-11-03T19:40:00.308Z",
+      "status": "segregated",
+      "lastBotReply": "✅ Decoded & Segregated! Placed \"Yesterday I had a brutal pitch meeting at 11pm\" into [2AM Bonds & Love] (RELATIONSHIPS) in your You Page Memory Bank with your 4-beat script ready."
+    }
+  },
+  "allSegregatedMemories": [
+    {
+      "id": "mem-1793734800309-15lh",
+      "category": "relationships",
+      "title": "Yesterday I had a brutal pitch meeting at 11pm",
+      "story": "Yesterday I had a brutal pitch meeting at 11pm. The client demanded 5 revisions while I was editing manually until 2am. That is when I realized our whole workflow was broken.",
+      "zeeAnalysis": "Decoded & segregated into [2AM Bonds & Love] (Bonds & People • raw & vulnerable). Your 4-beat script and B-roll cues are ready.",
+      "date": "2026-11-03",
+      "emotionTone": "Raw & Vulnerable",
+      "tags": [
+        "2AM Bonds & Love",
+        "From +1 555 019 2834",
+        "2AM",
+        "Bonds"
+      ],
+      "variableKey": "user.relationshipView",
+      "reelHookIdea": "The most honest lesson about love & letting go I've lived lately: Yesterday I had a brutal pitch meeting at 11pm",
+      "source": "whatsapp_chat",
+      "metaPowered": true,
+      "userPhone": "+1 555 019 2834",
+      "subSegment": "2AM Bonds & Love",
+      "scriptBeats": [
+        {
+          "id": 1,
+          "label": "HOOK",
+          "range": "0–3s",
+          "text": "The most honest lesson about love & letting go I've lived lately: Yesterday I had a brutal pitch meeting at 11pm.",
+          "visual": "Tactile paper-cut reveal of \"Yesterday I had a brutal pitch meeting at 11pm\" — raw close-up with WhatsApp voice waveform stamp.",
+          "motion": "whip-pan + paper tear pop",
+          "voice": "unfiltered, immediate — like a 2AM voice note",
+          "coaching": "Start right on the first syllable, zero pause.",
+          "durationSec": 3
+        },
+        {
+          "id": 2,
+          "label": "TRANSFORM",
+          "range": "3–7s",
+          "text": "The client demanded 5 revisions while I was editing manually until 2am.",
+          "visual": "Split paper collage: before vs the turning point in RELATIONSHIPS.",
+          "motion": "paper slide left + ink bleed",
+          "voice": "honest, confiding",
+          "coaching": "Drop your shoulders and speak like you're texting a close friend.",
+          "durationSec": 4
+        },
+        {
+          "id": 3,
+          "label": "MAGIC",
+          "range": "7–11s",
+          "text": "That is when I realized our whole workflow was broken.",
+          "visual": "Handwritten note morphs into kinetic typography + B-roll proof from your Gallery Wallet.",
+          "motion": "snap zoom + highlight burst",
+          "voice": "clear, grounded conviction",
+          "coaching": "Emphasize the turning word so captions pop on beat.",
+          "durationSec": 4
+        },
+        {
+          "id": 4,
+          "label": "PAYOFF",
+          "range": "11–15s",
+          "text": "If you've ever had a 2 AM realization like this, save this for tonight.",
+          "visual": "Warm studio sign-off card with taped paper CTA badge.",
+          "motion": "dolly-in + subtle card tilt",
+          "voice": "warm, direct sign-off",
+          "coaching": "Hold eye contact for half a beat at the end.",
+          "durationSec": 4
+        }
+      ],
+      "whatsappThread": [
+        {
+          "id": "wa-user-1793734792222",
+          "role": "user",
+          "type": "text",
+          "text": "Yesterday I had a brutal pitch meeting at 11pm. The client demanded 5 revisions while I was editing manually until 2am. That is when I realized our whole workflow was broken.",
+          "timestamp": "01:09 am"
+        },
+        {
+          "id": "wa-bot-1793734800309",
+          "role": "zee_bot",
+          "type": "text",
+          "text": "✅ Decoded & Segregated! Placed \"Yesterday I had a brutal pitch meeting at 11pm\" into [2AM Bonds & Love] (RELATIONSHIPS) in your You Page Memory Bank with your 4-beat script ready.",
+          "timestamp": "01:10 am"
+        }
+      ],
+      "durationLabel": "0:45",
+      "waveform": [
+        57,
+        86,
+        55,
+        73,
+        75,
+        43,
+        46,
+        60,
+        39,
+        91,
+        87,
+        63,
+        90,
+        38,
+        58,
+        69,
+        89,
+        41,
+        62,
+        33,
+        53,
+        69,
+        67,
+        33,
+        36,
+        71,
+        81,
+        47,
+        47,
+        69
+      ],
+      "quoteAsset": {
+        "quote": "Yesterday I had a brutal pitch meeting at 11pm. What feels approximate in conversation becomes undeniable when you build from lived truth.",
+        "subtext": "Distilled by Zee from Prem's casual reflection • Bonds & People",
+        "styleTag": "Bonds • Signature Quote"
+      },
+      "bookAsset": {
+        "title": "Yesterday I had a brutal pitch meeting at 11pm",
+        "subtitle": "A Personal Chapter from Prem's Bonds & People Stream",
+        "chapters": [
+          "Yesterday I had a brutal pitch meeting at 11pm. The client demanded 5 revisions while I was editing manually until 2am. That is when I realized our whole workflow was broken. When you say a thought out loud to a friend without trying to sound impressive, the real architecture of what you believe finally surfaces. Most great work begins exactly like this—not as a formal thesis, but as an observation you couldn't shake.",
+          "Looking closer through the lens of bonds & people, a deeper pattern emerges. We often underestimate our casual remarks because they come naturally to us, forgetting that our specific intersection of workplace craft, personal taste, and lived experience is impossible to replicate on autopilot.",
+          "The move now is to treat this spoken spark as a permanent brick in your body of work. Turn the conversation into a page, the page into a blueprint, and let the honesty of the original moment carry the weight."
+        ],
+        "wordCount": 157
+      },
+      "businessAsset": {
+        "headline": "Bonds Venture & Digital Asset Blueprint",
+        "marketAngle": "Convert Prem's spoken perspective on \"Yesterday I had a brutal pitch meeting at 11pm\" into high-leverage products, writing, and business systems.",
+        "ideas": [
+          {
+            "name": "The \"Yesterday I had a brutal pit\" Micro-Product / Essay",
+            "pitch": "Package this exact insight into a signature visual essay or founder playbook for people who resonate with bonds & people.",
+            "firstStep": "Share the distilled Quote Card above with your inner circle and track which phrase gets quoted back."
+          },
+          {
+            "name": "Personal Taste & Advisory Workflow",
+            "pitch": "Turn the way you naturally solve bonds problems into a repeatable framework or studio product.",
+            "firstStep": "Record two more 90-second voice notes on this theme so Zee can link them into a 3-part series."
+          },
+          {
+            "name": "Physical / Digital Monograph Edition",
+            "pitch": "Compile your spoken chapters and Gallery Wallet frames into a curated quarterly book edition.",
+            "firstStep": "Pair this chapter with a matching frame from your Creative Gallery Wallet."
+          }
+        ]
+      },
+      "assistantAsset": {
+        "friendReply": "Prem, I heard what you were getting at right away—even from a casual thought, there's a super clear philosophy here. I polished your words into a signature Quote Card, wrote a 3-chapter book draft around it, and mapped out 3 business angles.",
+        "nextMoves": [
+          "Save or copy the distilled Quote Card for your personal archive.",
+          "Review Chapter 1–3 in the Book tab—you already have 157 words drafted from just talking out loud.",
+          "Whenever you want to turn this into a video story, jump to the Scripting tab next door where I've synced this variable."
+        ],
+        "tasteConnection": "Calibrated to Prem's Raw & Vulnerable tone and warm editorial paper taste (#FAF8F3)."
+      }
+    }
+  ]
+}

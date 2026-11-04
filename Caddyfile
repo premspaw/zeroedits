@@ -1,0 +1,13 @@
+{$APP_DOMAIN} {
+    encode gzip
+    request_body {
+        max_size 1GB
+    }
+    reverse_proxy paper-studio:3000 {
+        transport http {
+            read_timeout 10m
+            write_timeout 10m
+            response_header_timeout 10m
+        }
+    }
+}

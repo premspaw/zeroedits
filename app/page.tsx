@@ -44,7 +44,7 @@ import {
 import SparkLiveRunner from "@/components/SparkLiveRunner";
 import WonderStoryboard from "@/components/WonderStoryboard";
 import VideoExportModal from "@/components/VideoExportModal";
-import StoryBankView from "@/components/StoryBankView";
+import ScriptRoom from "@/components/ScriptRoom";
 import TalkingHeadExplainerStage from "@/components/TalkingHeadExplainerStage";
 import {
   extractGalleryTagsFromName,
@@ -356,9 +356,9 @@ const AUTO_EDIT_TEMPLATE_OPTIONS: {
   },
   {
     id: "gallery",
-    label: "Connect Gallery (Personal B-Roll)",
+    label: "Gallery B-Roll Director",
     swatch: "linear-gradient(135deg, #10B981 0%, #E4491B 50%, #F59E0B 100%)",
-    desc: "Scans your connected gallery folder & inserts matching videos/photos as B-roll",
+    desc: "AI matches sampled gallery frames to spoken scenes, with relevant clips trimmed into B-roll",
   },
   {
     id: "clay3d",
@@ -1434,6 +1434,7 @@ export default function ProperMobileResponsiveChat() {
   const referenceImageFileRef = useRef<File | null>(null);
   const referenceImageInputRef = useRef<HTMLInputElement | null>(null);
   const [galleryClips, setGalleryClips] = useState<GalleryClipItem[]>([]);
+  const galleryFilesByIdRef = useRef<Map<string, File>>(new Map());
   const [galleryFolderName, setGalleryFolderName] = useState<string | null>(null);
   const galleryFolderInputRef = useRef<HTMLInputElement | null>(null);
   const galleryFilesInputRef = useRef<HTMLInputElement | null>(null);
@@ -1458,8 +1459,10 @@ export default function ProperMobileResponsiveChat() {
       const subFolder = relPath ? relPath.split("/").slice(0, -1).join(" ") : "";
       const tags = extractGalleryTagsFromName(file.name, subFolder);
       const rawUrl = URL.createObjectURL(file);
+      const id = `gal-${Date.now()}-${idx}-${file.name.replace(/[^a-zA-Z0-9]/g, "")}`;
+      galleryFilesByIdRef.current.set(id, file);
       items.push({
-        id: `gal-${Date.now()}-${idx}-${file.name.replace(/[^a-zA-Z0-9]/g, "")}`,
+        id,
         name: file.name,
         folderName: detectedFolder || undefined,
         url: isVideo ? `${rawUrl}#gallery-video` : rawUrl,
@@ -1645,6 +1648,7 @@ export default function ProperMobileResponsiveChat() {
   const [regeneratedSceneCode, setRegeneratedSceneCode] = useState("");
   const [regeneratedSceneDuration, setRegeneratedSceneDuration] = useState(0);
   const [regeneratedSceneStart, setRegeneratedSceneStart] = useState(0);
+  const [regeneratedSceneCameraPacing, setRegeneratedSceneCameraPacing] = useState<Array<{ time: number; zoom: number }>>([]);
   const [codeModalBeat, setCodeModalBeat] = useState<Beat | null>(null);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [isCodeCopied, setIsCodeCopied] = useState(false);
@@ -2171,6 +2175,7 @@ export default function ProperMobileResponsiveChat() {
           setRegeneratedSceneCode(data.updatedMotionCode);
           setRegeneratedSceneDuration(Math.max(0.5, data.updatedVisualSegment.end - data.updatedVisualSegment.start));
           setRegeneratedSceneStart(Math.max(0, data.updatedVisualSegment.start));
+          setRegeneratedSceneCameraPacing(Array.isArray(data.updatedVisualSegment.cameraPacing) ? data.updatedVisualSegment.cameraPacing : []);
           setIsFullReelMode(false);
           setCodeModalBeat(nextBeats[sceneIndex]);
           setIsCodeModalOpen(true);
@@ -2431,6 +2436,12 @@ export default function ProperMobileResponsiveChat() {
           formData.append("stopAtStage", "EDIT_PLANNED");
         }
         formData.append("templateId", autoEditTemplate === "auto" ? "storyExplainer" : autoEditTemplate);
+        if (autoEditTemplate === "gallery") {
+          for (const clip of galleryClips) {
+            const file = galleryFilesByIdRef.current.get(clip.id);
+            if (file) formData.append("galleryAsset", file, file.name);
+          }
+        }
 
         setGeneratingStep("Analyzing your video...");
 
@@ -2516,6 +2527,9 @@ export default function ProperMobileResponsiveChat() {
 
         const runId = data.runId || clientRunId;
         const state = data.state;
+        if (Array.isArray(state?.galleryAssets) && state.galleryAssets.length) {
+          setGalleryClips(state.galleryAssets.map((asset: any) => ({ ...asset, folderName: galleryFolderName || "Connected Gallery" })));
+        }
         const keepSegments = state?.editPlan?.keepSegments || [];
         const cutDuration = Number(state?.editPlan?.cutSilenceDuration ?? 0).toFixed(1);
         const cutCount = state?.editPlan?.cutSilenceSegmentsCount || 0;
@@ -3060,7 +3074,7 @@ export default function ProperMobileResponsiveChat() {
       suppressHydrationWarning
       className="min-h-screen w-full bg-[#ECEAE3] studio-ambient text-[#141414] antialiased overflow-x-clip selection:bg-[#F6D9CC] selection:text-[#E4491B]"
       style={{
-        paddingTop: "var(--safe-area-inset-top)",
+        paddingTop: 0,
       }}
     >
       {/* Mobile Drawer */}
@@ -3163,10 +3177,10 @@ export default function ProperMobileResponsiveChat() {
 
       {/* Apple-Style Floating Dock Navigation Bar (Replaces traditional header) */}
       <div
-        className="sticky top-1 z-40 w-full px-3 pointer-events-none flex items-center justify-center -mb-2"
-        style={{ top: "max(0.25rem, env(safe-area-inset-top, 0.25rem))" }}
+        className={activeHeaderTab === "script" ? "fixed inset-x-0 top-1 z-[1000] w-full px-3 pointer-events-auto flex items-center justify-center" : "sticky top-1 z-[1000] w-full px-3 pointer-events-auto flex items-center justify-center -mb-2"}
+        style={{ top: activeHeaderTab === "script" ? "0.25rem" : "max(0.25rem, env(safe-area-inset-top, 0.25rem))" }}
       >
-        <div className="pointer-events-auto flex items-center justify-center gap-2">
+        <div className="pointer-events-auto relative flex items-center justify-center gap-2">
           {/* Mobile drawer trigger for small screens */}
           <button
             onClick={() => setIsMobileDrawerOpen(true)}
@@ -3210,9 +3224,8 @@ export default function ProperMobileResponsiveChat() {
           }}
         />
       ) : activeHeaderTab === "script" ? (
-        <div className="w-full max-w-[1600px] mx-auto px-1 sm:px-2 pt-0 pb-2">
-          <StoryBankView
-            hideHeader={true}
+        <div className="w-full max-w-[1600px] mx-auto px-0 pt-0 pb-0">
+          <ScriptRoom
             initialTopicFromYou={input}
             onSwitchToStudio={(fullScriptText, title) => {
               if (fullScriptText) {
@@ -3549,7 +3562,7 @@ export default function ProperMobileResponsiveChat() {
               ) : (
                 <>
                   <p className="mono text-[9.5px] text-[#6B6A64] mt-1.5 leading-[1.35]">
-                    Only scans your gallery folder & adds B-roll when you choose the Connect Gallery template.
+                    AI samples connected gallery clips, matches relevant footage to the spoken scenes, and keeps the speaker's audio under each cutaway.
                   </p>
                   <button
                     type="button"
@@ -5535,6 +5548,8 @@ export default function ProperMobileResponsiveChat() {
         regeneratedSceneCode={regeneratedSceneCode}
         regeneratedSceneDuration={regeneratedSceneDuration}
         regeneratedSceneStart={regeneratedSceneStart}
+        regeneratedSceneCameraPacing={regeneratedSceneCameraPacing}
+        galleryBrollSegments={activeMessage?.editPlan?.templateId === "gallery" ? (activeMessage?.editPlan?.visualSegments || []) : []}
         pipelineBVideoUrl={activeMessage?.videoUrl}
       />
 

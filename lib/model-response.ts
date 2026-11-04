@@ -7,16 +7,35 @@ function outputText(response: any): string {
     .join("");
 }
 
+function providerFailure(response: any): string {
+  const candidates = [
+    response?.error?.message,
+    typeof response?.error === "string" ? response.error : "",
+    response?.incomplete_details?.reason,
+    response?.message,
+  ];
+  const detail = candidates.find((value) => typeof value === "string" && value.trim());
+  return detail ? String(detail).trim().slice(0, 320) : "";
+}
+
 export async function readModelResponse(response: Response): Promise<string> {
   if (!response.ok) {
-    throw new Error(`The model service returned HTTP ${response.status}. Please retry.`);
+    const body = await response.text().catch(() => "");
+    let detail = "";
+    try {
+      detail = providerFailure(JSON.parse(body));
+    } catch {
+      detail = body.trim().slice(0, 320);
+    }
+    throw new Error(`The model service returned HTTP ${response.status}${detail ? `: ${detail}` : ". Please retry."}`);
   }
   if (!response.body) throw new Error("The model service returned an empty response.");
 
   if (response.headers.get("content-type")?.includes("application/json")) {
     const result = await response.json();
     if (result.error || result.status === "failed" || result.status === "incomplete") {
-      throw new Error("The model did not finish its response. Please retry.");
+      const detail = providerFailure(result);
+      throw new Error(detail ? `The model did not finish: ${detail}` : "The model did not finish its response. Please retry.");
     }
     if (Array.isArray(result.beats)) return JSON.stringify(result);
     const text = outputText(result);
@@ -50,7 +69,8 @@ export async function readModelResponse(response: Response): Promise<string> {
       throw new Error("The model stream contained an incomplete or invalid event. Please retry.");
     }
     if (event.type === "error" || event.type === "response.failed" || event.type === "response.incomplete" || event.error) {
-      throw new Error("The model did not finish its response. Please retry.");
+      const detail = providerFailure(event);
+      throw new Error(detail ? `The model did not finish: ${detail}` : "The model did not finish its response. Please retry.");
     }
     const partKey = `${event.output_index ?? 0}:${event.content_index ?? 0}`;
     if (event.type === "response.output_text.delta" && typeof event.delta === "string") {

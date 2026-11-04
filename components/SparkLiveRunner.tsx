@@ -108,7 +108,7 @@ export default function SparkLiveRunner({
       if (!mounted && !failed && code && !isGenerating && !errorMessage) {
         fail("The preview took too long to load. Check the connection, then reload the preview.");
       }
-    }, 30000);
+    }, 60000);
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow || event.data?.previewId !== previewId) return;
       if (event.data.type === "SPARK_MOUNTED" && !failed) {

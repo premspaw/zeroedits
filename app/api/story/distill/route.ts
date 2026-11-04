@@ -4,6 +4,7 @@ import fs from "fs";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
 import { ensureBankDir } from "@/lib/story-bank";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "@/lib/meta-api";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -38,17 +39,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Empty transcript." }, { status: 400 });
     }
 
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
+    const apiKey = getMetaApiKey();
 
     let parsed: any = null;
     if (apiKey) {
       parsed = await withModelRetry(
         async () => {
-          const response = await fetch("https://api.meta.ai/v1/responses", {
+          const response = await fetch(getMetaEndpoint("responses"), {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,
@@ -56,7 +53,7 @@ export async function POST(req: NextRequest) {
               Accept: "text/event-stream",
             },
             body: JSON.stringify({
-              model: "muse-wonder-1.0",
+              model: getMetaModelId("wonder", "muse-wonder-1.0"),
               input: [
                 {
                   role: "user",

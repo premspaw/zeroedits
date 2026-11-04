@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import type { EditPlan, KeepSegment, TranscriptSegment } from "../types.ts";
 import { getPipelineBTemplate } from "../templates/registry.ts";
+import { writeEditSoundEffectsWav } from "./sound-effects.ts";
 
 const execFileAsync = util.promisify(execFile);
 
@@ -403,6 +404,7 @@ export async function exportFinalVideo(params: {
   fs.writeFileSync(assPath, assLines.join("\n"), "utf-8");
 
   const tmpOutputPath = `${outputPath}.tmp.mp4`;
+  const soundEffectsPath = path.join(outputDir, "edit_sound_effects.wav");
   try {
     const fontsDir = path
       .resolve(process.cwd(), "public/fonts")
@@ -411,14 +413,24 @@ export async function exportFinalVideo(params: {
     const escapedAssPath = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
     const filters: string[] = [`ass='${escapedAssPath}':fontsdir='${fontsDir}'`];
 
-    await execFileAsync(
-      "ffmpeg",
-      [
+    const soundEffectCount = writeEditSoundEffectsWav(editPlan, soundEffectsPath);
+    const ffmpegArgs = [
         "-y",
         "-i",
         cleanVideoPath,
+        ...(soundEffectCount > 0 ? ["-i", soundEffectsPath] : []),
         "-vf",
         filters.join(","),
+        ...(soundEffectCount > 0
+          ? [
+              "-filter_complex",
+              "[0:a]aresample=44100[voice];[1:a]volume=0.72[sfx];[voice][sfx]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.97[aout]",
+              "-map",
+              "0:v:0",
+              "-map",
+              "[aout]",
+            ]
+          : []),
         "-c:v",
         "libx264",
         "-profile:v",
@@ -444,18 +456,21 @@ export async function exportFinalVideo(params: {
         "-movflags",
         "+faststart",
         tmpOutputPath,
-      ],
-      { maxBuffer: 20 * 1024 * 1024 }
-    );
+      ];
+    await execFileAsync("ffmpeg", ffmpegArgs, { maxBuffer: 20 * 1024 * 1024 });
 
     if (fs.existsSync(tmpOutputPath)) {
       fs.renameSync(tmpOutputPath, outputPath);
     }
+    if (fs.existsSync(soundEffectsPath)) fs.unlinkSync(soundEffectsPath);
 
     return outputPath;
   } catch (err) {
     if (fs.existsSync(tmpOutputPath)) {
       try { fs.unlinkSync(tmpOutputPath); } catch {}
+    }
+    if (fs.existsSync(soundEffectsPath)) {
+      try { fs.unlinkSync(soundEffectsPath); } catch {}
     }
     console.error("FFmpeg final video export error:", err);
     throw new Error(`Failed to export final reel with burned subtitles: ${(err as Error).message}`);

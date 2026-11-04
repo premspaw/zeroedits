@@ -165,6 +165,22 @@ export const PIPELINE_B_TEMPLATES: Record<string, PipelineBTemplate> = {
     enablePaperBadge: true,
     aspectRatio: "9:16",
   },
+  gallery: {
+    id: "gallery",
+    name: "Gallery B-Roll Director",
+    tagline: "Matches connected personal footage to spoken beats, trims useful moments, and keeps the speaker's voice continuous",
+    fontFamily: "Montserrat, Anton, sans-serif",
+    primaryColor: "#10B981",
+    highlightColor: "#F59E0B",
+    textColor: "#FFFFFF",
+    cardBg: "rgba(10, 14, 24, 0.94)",
+    punchInFrequency: "medium",
+    captionStyle: "word_by_word",
+    enableSfx: false,
+    enableProgressBar: true,
+    enablePaperBadge: false,
+    aspectRatio: "9:16",
+  },
 };
 
 export function getPipelineBTemplate(id?: string): PipelineBTemplate {

@@ -4,6 +4,7 @@ import path from "path";
 import { generateMuseImage } from "@/lib/pipeline-b/tools/image-generator";
 import { readModelResponse } from "@/lib/model-response";
 import { withModelRetry } from "@/lib/model-retry";
+import { getMetaApiBaseUrl, getMetaApiKey, getMetaModelId } from "@/lib/meta-api";
 
 export const maxDuration = 180;
 
@@ -130,6 +131,38 @@ const RECREATE_SCENE_SCHEMA = {
   },
 };
 
+function buildFastCameraPacing(editPlan: any, start: number, end: number) {
+  const duration = Math.max(0.5, end - start);
+  const words = (editPlan?.editedTranscript || [])
+    .flatMap((segment: any) => Array.isArray(segment.words) ? segment.words : [])
+    .map((word: any) => ({
+      time: Number(word.editedStart ?? word.start) - start,
+      word: String(word.word || ""),
+    }))
+    .filter((word: any) => Number.isFinite(word.time) && word.time >= 0.18 && word.time < duration - 0.2)
+    .sort((a: any, b: any) => a.time - b.time);
+  const keyframes: Array<{ time: number; zoom: number }> = [{ time: 0, zoom: 1.02 }];
+  const zoomPattern = [1.18, 1.06, 1.23, 1.08, 1.19, 1.04];
+  let lastTime = -1;
+
+  for (const word of words) {
+    if (word.time - lastTime < 0.38) continue;
+    keyframes.push({
+      time: +word.time.toFixed(3),
+      zoom: zoomPattern[(keyframes.length - 1) % zoomPattern.length],
+    });
+    lastTime = word.time;
+  }
+
+  if (keyframes.length === 1) {
+    for (let time = 0.45, index = 0; time < duration - 0.2; time += 0.48, index++) {
+      keyframes.push({ time: +time.toFixed(3), zoom: zoomPattern[index % zoomPattern.length] });
+    }
+  }
+  if (duration > 0.35) keyframes.push({ time: +(duration - 0.08).toFixed(3), zoom: 1.02 });
+  return keyframes;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -148,12 +181,8 @@ export async function POST(req: NextRequest) {
       visualStyle = "auto",
     } = body;
 
-    const apiKey =
-      process.env.MODEL_API_KEY ||
-      process.env.MUSE_API_KEY ||
-      process.env.META_API_KEY ||
-      "LLM_1860443481810017_68xXARFV7vSAirRAltuNyxLM3pQ";
-    const baseUrl = process.env.MODEL_API_BASE_URL || "https://api.meta.ai/v1";
+    const apiKey = getMetaApiKey();
+    const baseUrl = getMetaApiBaseUrl();
 
     const resolvedMode =
       mode !== "auto"
@@ -179,6 +208,8 @@ export async function POST(req: NextRequest) {
     const targetDur = +Math.max(0.5, targetEnd - targetStart).toFixed(2);
     const validStyles = new Set(["auto", "clay_3d", "paper_cut", "paper_card", "procedural", "glass", "black_neon", "anime"]);
     const requestedVisualStyle = validStyles.has(String(visualStyle)) ? String(visualStyle) : "auto";
+    const fastPacedEdit = resolvedMode === "pipeline-b" && /\[FAST_PACED_EDIT\]/i.test(String(userInstruction));
+    const sceneDirectionInstruction = String(userInstruction || "").replace(/\[FAST_PACED_EDIT\]/ig, "").trim();
     const adjacentContext = [
       editPlan?.visualSegments?.[sceneIndex - 1]?.spokenReference || storyboard?.beats?.[sceneIndex - 1]?.script,
       editPlan?.visualSegments?.[sceneIndex + 1]?.spokenReference || storyboard?.beats?.[sceneIndex + 1]?.script,
@@ -214,7 +245,7 @@ export async function POST(req: NextRequest) {
             Accept: "text/event-stream",
           },
           body: JSON.stringify({
-            model: "muse-wonder-1.0",
+            model: getMetaModelId("wonder", "muse-wonder-1.0"),
             input: [{ role: "user", content: prompt }],
             stream: true,
             temperature: 0.8,
@@ -251,8 +282,10 @@ Neighboring dialogue for story continuity: ${JSON.stringify(adjacentContext)}
 Current animation recipe: ${JSON.stringify(editPlan?.visualSegments?.[sceneIndex]?.visualRecipe || {})}
 Required visual style: "${requestedVisualStyle}" ("auto" means choose what best serves the exact dialogue).
 
+${fastPacedEdit ? `FAST-PACED EDIT MODE: Make this selected scene feel like a high-energy creator reel. Use quick visual beats and decisive punch-in/pull-out rhythm. Favor hard zoom changes at spoken-word stresses every roughly 0.4–0.7 seconds, with brief holds and varied framing. Keep graphics tied to this scene and clear of the speaker's face; avoid long, slow continuous movement. The renderer will apply word-timed camera punches to the talking-head footage.` : ""}
+
 USER INSTRUCTION FOR RECREATING SCENE ${sceneIndex + 1}:
-"${userInstruction || "Recreate this scene with stronger character consistency, richer visual storytelling, and more dynamic animation."}"
+"${sceneDirectionInstruction || "Recreate this scene with stronger character consistency, richer visual storytelling, and more dynamic animation."}"
 
 RULES:
 1. Keep the character's exact species, age, facial features, hair/fur, crown/headgear, and outfit 100% consistent with the Character & World Continuity Bible in \`characterAppearanceInScene\` and \`visualPrompt\`.
@@ -277,7 +310,7 @@ RULES:
               Accept: "text/event-stream",
             },
             body: JSON.stringify({
-              model: "muse-wonder-1.0",
+              model: getMetaModelId("wonder", "muse-wonder-1.0"),
               input: [{ role: "user", content: wonderPrompt }],
               stream: true,
               temperature: 0.65,
@@ -500,13 +533,14 @@ RULES:
         technique: "procedural_graphic",
         spokenReference: directedScene.spokenText || currentSpoken,
         headlineText: directedScene.headline || `SCENE ${sceneIndex + 1}`,
-        motionIntent: `${userInstruction ? `[Recreated: ${userInstruction}] ` : ""}${directedScene.motionIntent || directedScene.visualPrompt}`,
+        motionIntent: `${fastPacedEdit ? "[FAST-PACED EDIT: quick visual beats and hard punch zooms] " : ""}${sceneDirectionInstruction ? `[Recreated: ${sceneDirectionInstruction}] ` : ""}${directedScene.motionIntent || directedScene.visualPrompt}`,
         visualRecipe: {
           style: resolvedRecipeStyle,
           metaphor: String(directedScene.visualRecipe?.metaphor || directedScene.motionIntent || currentSpoken).slice(0, 180),
           objects: recreatedObjects,
         },
-        cameraZoom: directedScene.cameraZoom || 1.12,
+        cameraZoom: fastPacedEdit ? 1.12 : (directedScene.cameraZoom || 1.12),
+        cameraPacing: fastPacedEdit ? buildFastCameraPacing(editPlan, targetStart, targetEnd) : undefined,
         transitionDirection: "pop_in",
       };
 

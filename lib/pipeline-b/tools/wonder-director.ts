@@ -10,6 +10,7 @@
 import dns from "dns";
 import { readModelResponse } from "../../model-response.ts";
 import { withModelRetry } from "../../model-retry.ts";
+import { getMetaApiKey, getMetaEndpoint, getMetaModelId } from "../../meta-api.ts";
 
 try {
   dns.setDefaultResultOrder("ipv4first");
@@ -35,14 +36,14 @@ import {
 import { validateApprovedCutsSemantic } from "./cuts-validator.ts";
 
 export const WONDER_STAGE_A_MODEL_ID =
-  process.env.WONDER_STAGE_A_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || "muse-wonder-1.0";
+  process.env.WONDER_STAGE_A_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || getMetaModelId("wonder", "muse-wonder-1.0");
 export const WONDER_STAGE_A_REASONING_EFFORT =
   process.env.WONDER_STAGE_A_REASONING_EFFORT || "xhigh";
 export const WONDER_STAGE_A_MAX_OUTPUT_TOKENS =
   Number(process.env.WONDER_STAGE_A_MAX_OUTPUT_TOKENS) || 32768;
 
 export const WONDER_STAGE_B_MODEL_ID =
-  process.env.WONDER_STAGE_B_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || "muse-wonder-1.0";
+  process.env.WONDER_STAGE_B_MODEL_ID || process.env.MODEL_ID || process.env.WONDER_MODEL_ID || getMetaModelId("wonder", "muse-wonder-1.0");
 export const WONDER_STAGE_B_REASONING_EFFORT =
   process.env.WONDER_STAGE_B_REASONING_EFFORT || "medium";
 export const WONDER_STAGE_B_MAX_OUTPUT_TOKENS =
@@ -329,6 +330,7 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
           },
           cameraZoom: { type: "number" },
           headlineText: { type: "string" },
+          galleryAssetId: { type: ["string", "null"] },
         },
         required: [
           "id",
@@ -344,6 +346,7 @@ export const WONDER_CREATIVE_DIRECTION_SCHEMA = {
           "transitionDirection",
           "cameraZoom",
           "headlineText",
+          "galleryAssetId",
         ],
       },
     },
@@ -407,6 +410,7 @@ export interface WonderCreativeDirectorParams {
   mode?: "wonder-ai" | "rules-only";
   onLogEvent?: (event: string, meta?: any) => void;
   fetchImpl?: typeof fetch;
+  galleryAssets?: Array<{ id: string; name: string; tags: string[]; kind: "video" | "image"; duration?: number; frameDataUrl?: string }>;
 }
 
 export interface WonderCreativeDirectorResult {
@@ -481,10 +485,7 @@ export async function callWonderEditorialCleanup(
     };
   }
 
-  const apiKey =
-    process.env.MODEL_API_KEY ||
-    process.env.MUSE_API_KEY ||
-    process.env.META_API_KEY;
+  const apiKey = getMetaApiKey();
 
   if (!apiKey) {
     const errorMsg =
@@ -572,7 +573,7 @@ export async function callWonderEditorialCleanup(
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 90_000);
         try {
-        const response = await fetchFn("https://api.meta.ai/v1/responses", {
+        const response = await fetchFn(getMetaEndpoint("responses"), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -989,6 +990,7 @@ export async function callWonderCreativeDirector(
     mode = "wonder-ai",
     onLogEvent,
     fetchImpl,
+    galleryAssets = [],
   } = params;
 
   const template = getPipelineBTemplate(templateId);
@@ -1004,10 +1006,7 @@ export async function callWonderCreativeDirector(
     });
   }
 
-  const apiKey =
-    process.env.MODEL_API_KEY ||
-    process.env.MUSE_API_KEY ||
-    process.env.META_API_KEY;
+  const apiKey = getMetaApiKey();
 
   if (!apiKey) {
     const errorMsg =
@@ -1027,6 +1026,13 @@ export async function callWonderCreativeDirector(
       fontFamily: template.fontFamily,
     },
     userScript: userScript || null,
+    availableGalleryBroll: template.id === "gallery" ? galleryAssets.map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      visualTags: asset.tags,
+      mediaType: asset.kind,
+      durationSeconds: asset.duration || null,
+    })) : [],
     editedTranscript: editedTranscript.map((s) => ({
       id: s.id,
       start: s.start,
@@ -1039,15 +1045,25 @@ export async function callWonderCreativeDirector(
       })),
     })),
   instruction:
-      "Analyze this exact script and direct a distinct, executable visual treatment for each beat. For every motionIntent, specify the concrete subject, physical action, visual metaphor, materials/shapes, camera/motion, and deliberate screen position. Do not reuse a motif, object, composition, or placement on adjacent beats. Do not default to phones, feeds, terminals, charts, or generic cards unless the spoken words demand them. Keep every visual grounded in the transcript.",
+      `${template.id === "gallery" ? "This is the connected Gallery B-roll template. Inspect the attached gallery sample frames and availableGalleryBroll inventory. For each cutaway-worthy visual beat, set galleryAssetId to the exact matching asset id; otherwise set it to null. Choose only clips whose actual visible subject supports that beat, using names and visualTags as backup context. Prefer the speaker for personal/emotional beats and never force an unrelated cutaway. Keep each b-roll shot within that scene's spoken time window." : ""} Analyze this exact script and direct a distinct, executable visual treatment for each beat. For every motionIntent, specify the concrete subject, physical action, visual metaphor, materials/shapes, camera/motion, and deliberate screen position. Do not reuse a motif, object, composition, or placement on adjacent beats. Do not default to phones, feeds, terminals, charts, or generic cards unless the spoken words demand them. Keep every visual grounded in the transcript.`,
   };
 
+  const galleryAssetsWithFrames = galleryAssets.filter((asset) => asset.frameDataUrl);
+  const sampledGalleryFrames = galleryAssetsWithFrames.length <= 24
+    ? galleryAssetsWithFrames
+    : Array.from({ length: 24 }, (_, index) => galleryAssetsWithFrames[Math.floor(index * (galleryAssetsWithFrames.length - 1) / 23)]);
+  const galleryFrameContent = template.id === "gallery"
+    ? sampledGalleryFrames.flatMap((asset) => [
+        { type: "input_text", text: `Gallery asset ${asset.id}: ${asset.name}` },
+        { type: "input_image", image_url: asset.frameDataUrl },
+      ])
+    : [];
   const payload = {
     model: WONDER_STAGE_B_MODEL_ID,
     input: [
       {
         role: "user",
-        content: JSON.stringify(creativeInput),
+        content: [{ type: "input_text", text: JSON.stringify(creativeInput) }, ...galleryFrameContent],
       },
     ],
     stream: true,
@@ -1088,7 +1104,7 @@ export async function callWonderCreativeDirector(
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 90_000);
         try {
-        const response = await fetchFn("https://api.meta.ai/v1/responses", {
+        const response = await fetchFn(getMetaEndpoint("responses"), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -1147,37 +1163,69 @@ export async function callWonderCreativeDirector(
     throw new Error("Wonder returned a visual plan without visualSegments.");
   }
 
-  // Check transcript grounding & overlap: detect and discard any LLM hallucination
+  // Ground visual beats against actual word timings. Headlines and metaphors are allowed to
+  // paraphrase the dialogue, so lexical overlap is a diagnostic rather than a hard gate.
   const transcriptWordsSet = new Set(
     allEditedWords
       .map((w) => w.word.toLowerCase().replace(/[^a-z0-9]/g, ""))
       .filter((w) => w.length >= 3)
   );
 
-  let totalSegWords = 0;
-  let matchingSegWords = 0;
+  let totalReferenceWords = 0;
+  let matchingReferenceWords = 0;
 
   for (const seg of parsed.visualSegments) {
-    const segText = `${seg.spokenReference || ""} ${seg.headlineText || ""}`.toLowerCase();
-    const tokens = segText.split(/[^a-z0-9]+/).filter((t: string) => t.length >= 3);
+    // headlineText is intentionally a short summary and often uses different words than the line.
+    const tokens = String(seg.spokenReference || "").toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t: string) => t.length >= 3);
     for (const t of tokens) {
-      totalSegWords++;
+      totalReferenceWords++;
       if (transcriptWordsSet.has(t)) {
-        matchingSegWords++;
+        matchingReferenceWords++;
       }
     }
   }
 
-  const overlapRatio = totalSegWords > 0 ? matchingSegWords / totalSegWords : 0;
-  if (allEditedWords.length >= 10 && overlapRatio < 0.25) {
+  const overlapRatio = totalReferenceWords > 0 ? matchingReferenceWords / totalReferenceWords : 0;
+  const timedSegments = parsed.visualSegments.filter((seg: any) =>
+    Number.isFinite(seg.start) && Number.isFinite(seg.end) && seg.end > seg.start
+  );
+  const wordsCoveredByTimedScenes = allEditedWords.filter((word) =>
+    timedSegments.some((seg: any) => word.editedEnd > seg.start - 0.12 && word.editedStart < seg.end + 0.12)
+  ).length;
+  const timingCoverage = allEditedWords.length > 0 ? wordsCoveredByTimedScenes / allEditedWords.length : 0;
+
+  onLogEvent?.("WONDER_VISUAL_PLAN_GROUNDING_CHECK", {
+    runId,
+    referenceOverlap: +overlapRatio.toFixed(2),
+    matchingReferenceWords,
+    totalReferenceWords,
+    timedSceneCount: timedSegments.length,
+    timingCoverage: +timingCoverage.toFixed(2),
+  });
+
+  // Reject only when Wonder's references have virtually no connection to the words AND its
+  // scene windows do not line up with the spoken timeline. A paraphrased metaphor alone is valid.
+  if (allEditedWords.length >= 10 && overlapRatio < 0.05 && timingCoverage < 0.35) {
     onLogEvent?.("WONDER_CREATIVE_HALLUCINATION_DETECTED", {
       runId,
       overlapRatio: +overlapRatio.toFixed(2),
-      matchingSegWords,
-      totalSegWords,
-      reason: "Visual segments deviate from spoken transcript; falling back to deterministic creative planner",
+      matchingReferenceWords,
+      totalReferenceWords,
+      timingCoverage: +timingCoverage.toFixed(2),
+      reason: "Scene references had negligible transcript overlap and scene windows did not cover the spoken timeline.",
     });
-    throw new Error("Wonder's visual plan did not match the spoken script; generation stopped instead of using a generic template.");
+    throw new Error("Wonder's visual plan did not align with the spoken timeline. No generic template was substituted; please retry the scene direction.");
+  }
+
+  if (allEditedWords.length >= 10 && overlapRatio < 0.15 && timingCoverage >= 0.35) {
+    onLogEvent?.("WONDER_LOW_TEXT_OVERLAP_TIMING_ALIGNED", {
+      runId,
+      referenceOverlap: +overlapRatio.toFixed(2),
+      timingCoverage: +timingCoverage.toFixed(2),
+      note: "Accepted: creative wording differs from the transcript, but scene windows align with speech.",
+    });
   }
 
   // Validate and map visualSegments — support ZAI Cutout & Codebase Story Animation pipeline

@@ -13,7 +13,9 @@ export type PaletteId =
   | "midnight_neon"
   | "cyber_blue"
   | "emerald_growth"
-  | "royal_violet";
+  | "royal_violet"
+  | "emerald_gold"
+  | "titanium_minimal";
 
 export interface VisualPalette {
   id: Exclude<PaletteId, "auto">;
@@ -135,6 +137,46 @@ export const PALETTES: Record<Exclude<PaletteId, "auto">, VisualPalette> = {
     highlight: "#FDE047",
     calloutBg: "rgba(17, 10, 34, 0.92)",
     calloutBorder: "#A855F7",
+    calloutText: "#FFFFFF",
+  },
+  emerald_gold: {
+    id: "emerald_gold",
+    label: "Emerald Gold",
+    swatch: "#FFD700",
+    isDarkCanvas: true,
+    canvasBg: "radial-gradient(circle at 50% 35%, #082119 0%, #030D09 100%)",
+    canvasGradInner: "#082119",
+    canvasGradOuter: "#030D09",
+    cardBg: "#0B261D",
+    cardBorder: "#FFD700",
+    cardShadow: "0 16px 40px -10px rgba(255, 215, 0, 0.35)",
+    primaryText: "#FFFDF5",
+    secondaryText: "#A7F3D0",
+    accent: "#FFD700",
+    accentSoftBg: "rgba(255, 215, 0, 0.16)",
+    highlight: "#10B981",
+    calloutBg: "rgba(6, 25, 19, 0.94)",
+    calloutBorder: "#FFD700",
+    calloutText: "#FFFFFF",
+  },
+  titanium_minimal: {
+    id: "titanium_minimal",
+    label: "Titanium Minimal",
+    swatch: "#F8FAFC",
+    isDarkCanvas: true,
+    canvasBg: "radial-gradient(circle at 50% 35%, #141722 0%, #07090E 100%)",
+    canvasGradInner: "#141722",
+    canvasGradOuter: "#07090E",
+    cardBg: "#11141C",
+    cardBorder: "rgba(255, 255, 255, 0.22)",
+    cardShadow: "0 16px 40px -10px rgba(0, 0, 0, 0.6)",
+    primaryText: "#FFFFFF",
+    secondaryText: "#94A3B8",
+    accent: "#F8FAFC",
+    accentSoftBg: "rgba(255, 255, 255, 0.12)",
+    highlight: "#FACC15",
+    calloutBg: "rgba(10, 12, 18, 0.95)",
+    calloutBorder: "rgba(255, 255, 255, 0.25)",
     calloutText: "#FFFFFF",
   },
 };
@@ -292,16 +334,6 @@ export function matchGalleryClipForScene(
   if (bestClip && bestScore > 0) {
     usedClipIds.add(bestClip.id);
     return bestClip;
-  }
-
-  // If the user connected a personal gallery folder and this scene is a B-roll cutaway, pull from their gallery in rotation
-  if (allowFallbackCutaway && galleryClips.length > 0) {
-    const unused = galleryClips.find((c) => !usedClipIds.has(c.id));
-    const chosen = unused || galleryClips[sceneIdx % galleryClips.length];
-    if (chosen) {
-      usedClipIds.add(chosen.id);
-      return chosen;
-    }
   }
 
   return undefined;
@@ -737,6 +769,8 @@ export interface SceneSegment {
   assetUrl?: string;
   galleryClipName?: string;
   galleryClipKind?: "video" | "image";
+  assetStart?: number;
+  assetDuration?: number;
   cameraZoom: number;
   animationLeadInSec?: number;
   cutoutMode?: string;
@@ -1219,6 +1253,8 @@ export function resolveActivePalette(
     return PALETTES[paletteChoice];
   }
   const combined = `${topic || ""} ${editPlan?.title || ""} ${editPlan?.notes || ""}`.toLowerCase();
+  if (/\b(gold|wealth|rich|luxury|invest|finance)\b/.test(combined)) return PALETTES.emerald_gold;
+  if (/\b(minimal|apple|pro|clean|monochrome|slate)\b/.test(combined)) return PALETTES.titanium_minimal;
   if (/\b(blue|cyber|tech|saas|ocean|sky)\b/.test(combined)) return PALETTES.cyber_blue;
   if (/\b(green|emerald|money|growth|wealth|forest)\b/.test(combined)) return PALETTES.emerald_growth;
   if (/\b(purple|violet|magic|royal|indigo|neon)\b/.test(combined)) return PALETTES.royal_violet;
@@ -1453,17 +1489,19 @@ export function buildExplainerScenes(
       }
 
       // ONLY match gallery clips/images when the Gallery Template is explicitly selected!
-      const matchedGalleryClip = isGalleryTemplate
+      const matchedGalleryClip = s.assetUrl
+        ? { id: s.id, name: s.galleryClipName || "Gallery clip", url: s.assetUrl, kind: s.galleryClipKind || "video", tags: [] }
+        : isGalleryTemplate
         ? matchGalleryClipForScene(
             spokenRef,
             plan.headlineText,
-            effectiveGalleryClips.length > 0 ? effectiveGalleryClips : DEFAULT_CREATIVE_GALLERY_PACK,
+            effectiveGalleryClips,
             usedGalleryClipIds,
             idx,
             !isFirst && resolvedShotType === "fullscreen_animation"
           )
         : undefined;
-      if (isGalleryTemplate && matchedGalleryClip && !isFirst && lastShotType !== "fullscreen_animation") {
+      if (isGalleryTemplate && matchedGalleryClip && !isFirst) {
         resolvedShotType = "fullscreen_animation";
       }
 
@@ -1527,6 +1565,8 @@ export function buildExplainerScenes(
         assetUrl: matchedGalleryClip?.url,
         galleryClipName: matchedGalleryClip?.name,
         galleryClipKind: matchedGalleryClip?.kind,
+        assetStart: s.assetStart,
+        assetDuration: s.assetDuration,
         cameraZoom: visualMode === "A_ROLL_PUNCH" ? (idx % 2 === 0 ? 1.12 : 1.15) : idx % 2 === 0 ? 1.0 : 1.08,
         animationLeadInSec:
           typeof s.animationLeadInSec === "number"
@@ -1579,11 +1619,13 @@ export function buildExplainerScenes(
       ? "fullscreen_animation"
       : "fullscreen_speaker";
 
-    const matchedGalleryClip = isGalleryTemplate
+    const matchedGalleryClip = beats[idx]?.assetUrl
+      ? { id: beats[idx].id || `gallery-${idx}`, name: beats[idx].galleryClipName || "Gallery clip", url: beats[idx].assetUrl, kind: beats[idx].galleryClipKind || "video", tags: [] }
+      : isGalleryTemplate
       ? matchGalleryClipForScene(
           spokenText,
           plan.headlineText,
-          effectiveGalleryClips.length > 0 ? effectiveGalleryClips : DEFAULT_CREATIVE_GALLERY_PACK,
+          effectiveGalleryClips,
           usedGalleryClipIds,
           idx,
           idx > 0 && shotType === "fullscreen_animation"
@@ -1630,6 +1672,8 @@ export function buildExplainerScenes(
       assetUrl: matchedGalleryClip?.url,
       galleryClipName: matchedGalleryClip?.name,
       galleryClipKind: matchedGalleryClip?.kind,
+      assetStart: beats[idx]?.assetStart,
+      assetDuration: beats[idx]?.assetDuration,
       cameraZoom: idx % 2 === 0 ? 1.0 : 1.08,
       animationLeadInSec: shotType === "sam_cutout" ? (idx === 0 ? 0.75 : 0.45) : undefined,
       samCutoutUrl,
@@ -3906,7 +3950,16 @@ export function renderExplainerFrameToCanvas(
 
       ctx.save();
       ctx.globalAlpha = isVideoMedia ? 1.0 : 0.38;
+      if (isVideoMedia) {
+        const sourceDuration = Math.max(0.1, Number(activeScene.assetDuration) || sceneDur);
+        const desiredSourceTime = Math.max(0, Number(activeScene.assetStart) || 0) + Math.min(sceneDt, sourceDuration - 0.04);
+        if (Number.isFinite(desiredSourceTime) && Math.abs(brollMedia.currentTime - desiredSourceTime) > 0.22) {
+          try { brollMedia.currentTime = desiredSourceTime; } catch {}
+        }
+        ctx.filter = "saturate(1.08) contrast(1.04)";
+      }
       ctx.drawImage(brollMedia, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      ctx.filter = "none";
       ctx.restore();
 
       // Cinematic top & bottom vignette
@@ -4671,6 +4724,7 @@ export async function preloadExplainerBrollImages(
             vid.loop = true;
             vid.playsInline = true;
             vid.preload = "auto";
+            vid.playsInline = true;
             let settled = false;
             const finish = () => {
               if (settled) return;
@@ -4682,6 +4736,9 @@ export async function preloadExplainerBrollImages(
             const timer = setTimeout(finish, 1200);
             vid.onloadeddata = () => {
               clearTimeout(timer);
+              if (typeof s.assetStart === "number") {
+                try { vid.currentTime = s.assetStart; } catch {}
+              }
               finish();
             };
             vid.onerror = () => {

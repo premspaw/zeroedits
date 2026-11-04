@@ -214,6 +214,15 @@ export interface VisualPlanSegment {
     | "fade"
     | "none";
   cameraZoom?: number;
+  /** Local-time punch-zoom keyframes for fast-paced scene recreations. */
+  cameraPacing?: Array<{ time: number; zoom: number }>;
+  galleryAssetId?: string | null;
+  /** Selected source media for the connected Gallery template. */
+  assetUrl?: string;
+  galleryClipName?: string;
+  galleryClipKind?: "video" | "image";
+  assetStart?: number;
+  assetDuration?: number;
   headlineText?: string;
   cutoutMode?: ZaiCutoutMode;
   animationLeadInSec?: number; // Seconds the codebase story animation runs BEFORE the talking-head cutout pops in
@@ -306,6 +315,7 @@ export interface PipelineBRunState {
   rawVideoPath: string;
   userScript?: string;
   templateId: string;
+  galleryAssets?: Array<{ id: string; name: string; url: string; kind: "video" | "image"; tags: string[]; duration?: number; thumbnailPath?: string }>;
   mode?: "wonder-ai" | "rules-only";
   pacingProfile?: PacingProfile;
   transcriptionCoverage?: {

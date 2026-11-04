@@ -65,6 +65,9 @@ export interface ScriptBeatCard {
   durationSec: number;
   bRollLabel?: string;
   matchedPhotoUrl?: string;
+  memoryTag?: string;
+  bRollWindow?: string;
+  isLoopBack?: boolean;
 }
 
 export interface CompactMemoryLog {
@@ -478,7 +481,7 @@ export function buildScriptAnglesForMemory(
 ): ScriptAngleOption[] {
   const baseTitle = mem?.title || "My Founder Story";
 
-  // 1. Raw POV (Vulnerable Founder)
+  // 1. ZAI Lived Truth & 3s Authentic Hook (Zero Synthetic Cliches)
   const opt1Beats: ScriptBeatCard[] = [
     {
       id: 1,
@@ -486,13 +489,15 @@ export function buildScriptAnglesForMemory(
       range: "0–3s",
       text:
         mem?.beats?.[0]?.text ||
-        `POV: ${baseTitle.toLowerCase()} — and you realize nobody talks about the messy part.`,
-      visual: "Handheld close-up in studio, warm natural light, torn-paper timestamp badge.",
+        `POV: ${baseTitle.toLowerCase()} — and you realize nobody admits the messy part out loud.`,
+      visual: "A-Roll close-up with ZeroLensAI memory-tag overlay (MG: WhatsApp Voice Note • 11:42 PM). Safe-zone centered.",
       motion: "soft push-in + subtle paper jitter",
-      voice: "raw, vulnerable founder tone",
-      coaching: "Speak softly for the first 3 words so viewers lean in and stop scrolling.",
+      voice: "raw, authentic creator tone",
+      coaching: "A-Roll: Close eye contact, zero artificial hype — speak like confiding in a trusted friend.",
       durationSec: 3,
-      bRollLabel: "RAW FOUNDER POV",
+      bRollLabel: "A-ROLL 3S AUTHENTIC HOOK",
+      memoryTag: "WhatsApp Voice Note • 11:42 PM",
+      bRollWindow: "A-Roll Primary Eye Contact (0s - 3s)",
     },
     {
       id: 2,
@@ -501,12 +506,14 @@ export function buildScriptAnglesForMemory(
       text:
         mem?.beats?.[1]?.text ||
         `For months I was trapped doing this manually until 2 AM, feeling like an autopilot robot.`,
-      visual: "Torn paper split: chaotic screen capture vs clean notebook ink lines.",
+      visual: "Cleanest Gallery B-Roll Window [01.2s -> 04.5s] — steady visual proof (shaky frames discarded).",
       motion: "paper tear transition + speed cut",
       voice: "honest, confiding realization",
-      coaching: "Slight head tilt — let genuine founder transparency show.",
+      coaching: "A-Roll: Natural breath pause on the shift — let the gallery slice carry visual proof.",
       durationSec: 4,
-      bRollLabel: "STRUGGLE VS SHIFT",
+      bRollLabel: "CLEANEST GALLERY B-ROLL",
+      memoryTag: "Personal Archive • Lived Evidence",
+      bRollWindow: "[01.2s -> 04.5s] Cleanest stable slice",
     },
     {
       id: 3,
@@ -515,12 +522,14 @@ export function buildScriptAnglesForMemory(
       text:
         mem?.beats?.[2]?.text ||
         `Then we rebuilt our entire workflow around real voice notes — turning 2-minute thoughts into finished video.`,
-      visual: "Fast-motion timeline cutaway: voice waveform auto-animating into paper-cut scenes.",
+      visual: "Tactile ZeroLensAI memory card + kinetic typography in 9:16 central safe zone.",
       motion: "dolly zoom + sticker pop",
       voice: "clear, energized, builder pride",
-      coaching: "Point towards the screen cutaway — showcase the simplicity.",
+      coaching: "A-Roll: Grounded conviction, drop pitch slightly on key realization.",
       durationSec: 4,
-      bRollLabel: "WORKFLOW IN ACTION",
+      bRollLabel: "ZEROLENS MEMORY CARD",
+      memoryTag: "Founder Log • Breakthrough",
+      bRollWindow: "Gallery B-Roll Window [02.0s -> 05.5s]",
     },
     {
       id: 4,
@@ -528,69 +537,81 @@ export function buildScriptAnglesForMemory(
       range: "11–15s",
       text:
         mem?.beats?.[3]?.text ||
-        `Stop over-editing. Comment REEL and I'll send you our exact prompt + setup for free.`,
-      visual: `${userName} smiling directly at camera, torn paper CTA 'COMMENT REEL' taped to desk.`,
+        `And that is why the real secret to high retention is starting with this:`,
+      visual: "A-Roll natural return + subtle taped CTA in 9:16 safe zone, looping seamlessly to frame 1.",
       motion: "dolly-in + CTA wiggle",
-      voice: "warm, direct CTA",
-      coaching: "Smile as you say 'for free' — authentic generosity converts.",
+      voice: "warm, direct sign-off resolving to opening hook",
+      coaching: "A-Roll: Warm nod, hold eye contact — the closing sentence flows seamlessly back into the opening frame.",
       durationSec: 4,
-      bRollLabel: "DESK CTA + PAPER BADGE",
+      bRollLabel: "SEAMLESS LOOP PAYOFF ↻",
+      memoryTag: "ZeroLensAI • Infinite Loop Payoff",
+      bRollWindow: "A-Roll Loop Return (11s - 15s)",
+      isLoopBack: true,
     },
   ];
 
-  // 2. Contrarian Pattern-Interrupt
+  // 2. ZAI Pattern Interrupt & Cleanest Gallery B-Roll (2-4s Visual Shifts)
   const opt2Beats: ScriptBeatCard[] = [
     {
       id: 1,
       label: "HOOK",
       range: "0–3s",
       text: `Stop editing reels frame-by-frame. Here's why that 3-hour manual edit is actually hurting your reach.`,
-      visual: "Direct eye contact, hand up to camera with bold paper-cut 'STOP' stencil.",
+      visual: "Direct A-Roll eye contact, hand up to camera with minimal ZeroLensAI memory badge.",
       motion: "hard cut + whip punch",
       voice: "direct, authoritative, scroll-stopping",
-      coaching: "Hit 'Stop' with real authority — immediate pattern interrupt in feed.",
+      coaching: "A-Roll: Hit 'Stop' with crisp authority — immediate pattern interrupt in feed.",
       durationSec: 3,
       bRollLabel: "PATTERN INTERRUPT",
+      memoryTag: "Creator Archive • Pattern Shift",
+      bRollWindow: "A-Roll Primary Eye Contact (0s - 3s)",
     },
     {
       id: 2,
       label: "TRANSFORM",
       range: "3–7s",
       text: `Viewers don't connect with sterile 60fps polished ads anymore. They save raw, personal stories like this.`,
-      visual: "Side-by-side metric comparison: high-gloss ad vs raw voice-note reel metrics.",
+      visual: "Cleanest Gallery B-Roll Window [02.1s -> 05.3s] — side-by-side metric comparison.",
       motion: "split-screen slider",
       voice: "grounded, insightful contrast",
-      coaching: "Use your hands to contrast 'sterile' with 'real'.",
+      coaching: "A-Roll: Use natural hands to contrast 'sterile' with 'real'.",
       durationSec: 4,
-      bRollLabel: "RETENTION COMPARISON",
+      bRollLabel: "CLEANEST GALLERY B-ROLL",
+      memoryTag: "Gallery B-Roll • Clean Slice",
+      bRollWindow: "[02.1s -> 05.3s] Stable slice",
     },
     {
       id: 3,
       label: "MAGIC",
       range: "7–11s",
       text: `We feed our raw voice notes into our AI engine, and it builds kinetic paper layers around our exact voice.`,
-      visual: "Paper layers falling into place with tactile shadow depth.",
+      visual: "Paper layers falling into place with tactile shadow depth inside 9:16 safe zone.",
       motion: "layered pop + kinetic bounce",
       voice: "fascinated, quick tempo",
-      coaching: "Keep pace crisp — maintain high viewer velocity.",
+      coaching: "A-Roll: Keep pace crisp — maintain high viewer velocity with WhisperX rhythm.",
       durationSec: 4,
-      bRollLabel: "PAPER ENGINE DEMO",
+      bRollLabel: "SAFE-ZONE PAPER ENGINE",
+      memoryTag: "Engine Demo • Central Safe Zone",
+      bRollWindow: "Paper Animation Layer",
     },
     {
       id: 4,
       label: "PAYOFF",
       range: "11–15s",
-      text: `Save this reel before your next shoot, and drop a comment below if you want the template link.`,
-      visual: "Animated save bookmark icon + torn paper link capsule.",
+      text: `Save this reel before your next shoot, because the biggest mistake creators make is:`,
+      visual: "Animated save bookmark icon + seamless loop transition back to opening hook.",
       motion: "bookmark pulse + camera zoom",
-      voice: "actionable, clear instruction",
-      coaching: "Look straight down lens on 'Save this reel'.",
+      voice: "actionable, clear instruction resolving to hook",
+      coaching: "A-Roll: Look straight down lens on 'Save this reel' — loops cleanly into beat 1.",
       durationSec: 4,
-      bRollLabel: "SAVE BOOKMARK CTA",
+      bRollLabel: "SEAMLESS LOOP PAYOFF ↻",
+      memoryTag: "ZeroLensAI • Infinite Loop Payoff",
+      bRollWindow: "A-Roll Loop Return (11s - 15s)",
+      isLoopBack: true,
     },
   ];
 
-  // 3. 3-Step Rapid Breakdown
+  // 3. ZAI WhisperX Cadence & Infinite Retention Loop
   const opt3Beats: ScriptBeatCard[] = [
     {
       id: 1,
@@ -600,21 +621,25 @@ export function buildScriptAnglesForMemory(
       visual: `${userName} holding up fingers '1-2-3' with 3 torn paper badges popping on screen.`,
       motion: "snap zoom + badge pop",
       voice: "curious, value-driven, educational",
-      coaching: "Crisp hand gesture on '3-step blueprint' to anchor viewer visual attention.",
+      coaching: "A-Roll: Crisp hand gesture on '3-step blueprint' to anchor viewer visual attention.",
       durationSec: 3,
       bRollLabel: "BLUEPRINT PROMISE",
+      memoryTag: "WhatsApp Voice Note • 100K Case Study",
+      bRollWindow: "A-Roll Primary Eye Contact (0s - 3s)",
     },
     {
       id: 2,
       label: "TRANSFORM",
       range: "3–7s",
       text: `Step 1: Record your unfiltered thought the moment it happens. Don't edit it. Keep the raw pauses.`,
-      visual: "Phone lock screen with active voice memo recording timer ticking.",
+      visual: "Cleanest Gallery B-Roll Window [00.8s -> 03.9s]: phone lock screen with active voice memo recording.",
       motion: "paper push-in + audio wave glow",
       voice: "instructive, encouraging",
-      coaching: "Emphasize 'Keep the raw pauses' — counters standard perfectionism.",
+      coaching: "A-Roll: Emphasize 'Keep the raw pauses' — counters standard perfectionism.",
       durationSec: 4,
-      bRollLabel: "STEP 1: RAW VOICE",
+      bRollLabel: "CLEANEST GALLERY B-ROLL",
+      memoryTag: "Mobile Capture • Zero Shaky Frames",
+      bRollWindow: "[00.8s -> 03.9s] Clean mobile slice",
     },
     {
       id: 3,
@@ -624,32 +649,37 @@ export function buildScriptAnglesForMemory(
       visual: "Metaphor animation bursting from paper background: clock, compass, lightbulb.",
       motion: "paper origami unfold",
       voice: "illuminating, crisp breakdown",
-      coaching: "Nod as the origami unfolds — validates the visual payoff.",
+      coaching: "A-Roll: Nod as the origami unfolds — validates the visual payoff in 9:16 safe zone.",
       durationSec: 4,
-      bRollLabel: "STEP 2: METAPHOR BURST",
+      bRollLabel: "METAPHOR BURST",
+      memoryTag: "Tactile Cutout • Safe Zone",
+      bRollWindow: "Origami Unfold Window",
     },
     {
       id: 4,
       label: "PAYOFF",
       range: "11–15s",
-      text: `Step 3: End with one clear lesson. Comment SCRIPT to get our complete automated prompt pack.`,
-      visual: `${userName} in studio smiling, 'SCRIPT' stamped across screen in paper cutout letters.`,
+      text: `Step 3: End with one clear lesson, and loop the closing phrase so viewers rewatch from:`,
+      visual: `${userName} in studio smiling, seamless replay loop connecting back to opening line.`,
       motion: "dolly-in + stamp impact",
       voice: "sharp, confident sign-off",
-      coaching: "Warm nod at the end — makes viewer feel capable of doing this today.",
+      coaching: "A-Roll: Warm nod at the end — makes viewer re-listen from the very first frame.",
       durationSec: 4,
-      bRollLabel: "STEP 3: BLUEPRINT PAYOFF",
+      bRollLabel: "SEAMLESS LOOP PAYOFF ↻",
+      memoryTag: "ZeroLensAI • Infinite Loop Payoff",
+      bRollWindow: "A-Roll Loop Return (11s - 15s)",
+      isLoopBack: true,
     },
   ];
 
   return [
     {
       id: "angle-vulnerable",
-      badge: "High Retention · 92% Hook",
+      badge: "ZAI Lived Truth · 0-3s Authentic Hook",
       subtitle: "YOU ONLY NEED ONE SCRIPT",
       title: "Access your real voice, no filter",
       hook: opt1Beats[0].text,
-      tone: "Vulnerable · Personal Story · High Trust",
+      tone: "Authentic Truth · Memory Gathering · 9:16 Safe Zone",
       targetLength: "15s",
       metrics: { hookRate: "92%", saves: "78%" },
       fullScriptText: opt1Beats.map((b) => b.text).join(" "),
@@ -657,11 +687,11 @@ export function buildScriptAnglesForMemory(
     },
     {
       id: "angle-contrarian",
-      badge: "Scroll Stopper · +188% Saves",
+      badge: "ZAI Pattern Interrupt · Cleanest B-Roll",
       subtitle: "YOU ONLY NEED ONE SCRIPT",
       title: "Quick snap-and-hook process",
       hook: opt2Beats[0].text,
-      tone: "Bold · Pattern Interrupt · Debate Starter",
+      tone: "Pattern Interrupt · 2-4s Visual Shifts · Gallery Clean Slice",
       targetLength: "15s",
       metrics: { hookRate: "88%", saves: "94%" },
       fullScriptText: opt2Beats.map((b) => b.text).join(" "),
@@ -669,11 +699,11 @@ export function buildScriptAnglesForMemory(
     },
     {
       id: "angle-breakdown",
-      badge: "High Saves · 3.2x Bookmarks",
+      badge: "ZAI Infinite Loop · WhisperX Cadence",
       subtitle: "YOU ONLY NEED ONE SCRIPT",
       title: "Secure viral retention always",
       hook: opt3Beats[0].text,
-      tone: "Educational · Framework · High Saves",
+      tone: "WhisperX Timing · Seamless Loop Payoff · High Saves",
       targetLength: "15s",
       metrics: { hookRate: "85%", saves: "96%" },
       fullScriptText: opt3Beats.map((b) => b.text).join(" "),
@@ -906,7 +936,7 @@ export default function StoryBankView({
   >([
     {
       sender: "zee",
-      text: `Hey ${userName}! I took your story "${activeMemory.title}" and shaped 3 complete script angles. Pick an option above, or brainstorm with me below to tune anything!`,
+      text: `Hey ${userName}! I'm Z, your Autonomous Director for ZeroLensAI. I reached into your Memory Gathering vault for "${activeMemory.title}" and crafted 3 authentic 9:16 script angles anchored to your spoken A-Roll. Pick a card above, or brainstorm with me below!`,
       time: "Just now",
     },
   ]);
@@ -920,7 +950,7 @@ export default function StoryBankView({
     setZeeConversation([
       {
         sender: "zee",
-        text: `Hey ${userName}! Loaded your "${activeMemory.title}" story (${activeMemory.time}). I prepared 3 distinct script angles for today's reel. Which vibe fits your mood, or tell me what to rewrite!`,
+        text: `Hey ${userName}! Loaded your "${activeMemory.title}" story (${activeMemory.time}). I prepared 3 distinct 9:16 script angles anchored to your A-Roll with zero synthetic AI cliches. Which vibe fits your mood, or tell me what to rewrite!`,
         time: "Just now",
       },
     ]);
@@ -1223,6 +1253,9 @@ export default function StoryBankView({
           text: apiBeats[i]?.spokenLine || b.text,
           visual: apiBeats[i]?.visualCutaway || b.visual,
           coaching: apiBeats[i]?.deliveryCue || b.coaching,
+          memoryTag: apiBeats[i]?.memoryTag || b.memoryTag,
+          bRollWindow: apiBeats[i]?.bRollWindow || b.bRollWindow,
+          bRollLabel: apiBeats[i]?.bRollWindow || b.bRollLabel,
         }));
 
         setBeatsByMemoryId((prev) => ({
@@ -1232,50 +1265,73 @@ export default function StoryBankView({
         setFullScriptCustomText(newBeats.map((b) => b.text).join(" "));
 
         const zeeReply =
+          json.data.zDirectorNote ||
           json.data.zeeDirectorNote ||
-          `I tweaked the script with "${instruction}". The hook and narrative are updated above!`;
+          `ZAI: I reshaped your script with "${instruction}". A-Roll delivery cues and cleanest Gallery B-Roll windows are updated above!`;
 
         setZeeConversation((prev) => [
           ...prev,
           { sender: "zee", text: zeeReply, time: "Just now" },
         ]);
-        setToastMessage("Zee updated the script ✓");
+        setToastMessage("ZAI updated your script ✓");
       } else {
-        // Smart heuristic fallbacks
+        // Smart heuristic fallbacks grounded in ZAI ZeroLensAI director principles
         const low = instruction.toLowerCase();
         let reply = "";
         let updated = [...activeBeats];
 
-        if (low.includes("punch") || low.includes("hook")) {
+        if (low.includes("punch") || low.includes("hook") || low.includes("3s")) {
           updated[0] = {
             ...updated[0],
             text: `Stop scrolling. ${activeMemory.title} taught me the one thing nobody admits out loud.`,
+            coaching: "A-Roll: Close eye contact, zero artificial hype — speak like a trusted friend.",
+            bRollLabel: "A-ROLL 3S AUTHENTIC HOOK",
+            bRollWindow: "A-Roll Primary Eye Contact (0s - 3s)",
           };
-          reply = `Punched up the hook to hit with raw curiosity in 2 seconds flat!`;
-        } else if (low.includes("casual") || low.includes("raw")) {
+          reply = `ZAI: Tuned your 3-second authentic hook to mine raw vulnerability in 2 seconds flat!`;
+        } else if (low.includes("gallery") || low.includes("b-roll") || low.includes("broll")) {
+          updated[1] = {
+            ...updated[1],
+            bRollLabel: "CLEANEST GALLERY B-ROLL [01.2s -> 04.5s]",
+            bRollWindow: "[01.2s -> 04.5s] Stable gallery slice",
+            visual: "Cleanest Gallery B-Roll Window [01.2s -> 04.5s] — shaky transitions & blurry frames discarded.",
+          };
+          reply = `ZAI: Queried your Gallery and sliced the cleanest, most stable 1.5s–3.5s B-roll window!`;
+        } else if (low.includes("loop")) {
+          updated[3] = {
+            ...updated[3],
+            text: `And that is the exact reason why the whole story starts with:`,
+            coaching: "A-Roll: Warm nod, hold eye contact — the closing sentence flows seamlessly back into the opening frame.",
+            bRollLabel: "SEAMLESS LOOP PAYOFF ↻",
+            isLoopBack: true,
+          };
+          reply = `ZAI: Engineered a seamless infinite loop payoff connecting the closing line back to the opening hook!`;
+        } else if (low.includes("casual") || low.includes("raw") || low.includes("whatsapp")) {
           updated[0] = {
             ...updated[0],
-            text: `So I was sitting with my chai at 6:45 AM, thinking about ${activeMemory.title.toLowerCase()}...`,
+            text: `So I was listening to my late-night voice memo about ${activeMemory.title.toLowerCase()}...`,
+            memoryTag: "WhatsApp Voice Note • 11:42 PM",
           };
-          reply = `Softened the opening into an intimate, conversational creator confession.`;
+          reply = `ZAI: Grounded the opening in your raw WhatsApp voice note reflection.`;
         } else if (low.includes("15s") || low.includes("trim") || low.includes("short")) {
           updated = updated.map((b) => ({
             ...b,
             text: b.text.split(" — ")[0],
           }));
-          reply = `Trimmed the excess words — now tightly paced for high-velocity 15s retention.`;
+          reply = `ZAI: Trimmed the excess words — now tightly paced for 15s high-velocity retention.`;
         } else if (low.includes("cta") || low.includes("comment")) {
           updated[3] = {
             ...updated[3],
             text: `Don't overcomplicate this. Comment SCRIPT below and I'll send you our exact setup for free.`,
+            coaching: "A-Roll: Warm nod, direct CTA in 9:16 safe zone.",
           };
-          reply = `Boosted the payoff with a direct, high-converting keyword CTA!`;
+          reply = `ZAI: Boosted the payoff with an authentic keyword comment CTA!`;
         } else {
           updated[0] = {
             ...updated[0],
             text: `${instruction}: ${activeMemory.title}.`,
           };
-          reply = `Got it! Modified the script with your direction: "${instruction}".`;
+          reply = `ZAI: Directed your script with "${instruction}". A-Roll and Gallery B-roll synced above!`;
         }
 
         setBeatsByMemoryId((prev) => ({
@@ -1287,7 +1343,7 @@ export default function StoryBankView({
           ...prev,
           { sender: "zee", text: reply, time: "Just now" },
         ]);
-        setToastMessage("Zee modified your script ✓");
+        setToastMessage("ZAI modified your script ✓");
       }
     } catch {
       setZeeConversation((prev) => [
@@ -1744,6 +1800,10 @@ export default function StoryBankView({
 
             {/* Headline with Design Selection Box & Corner Handles (matching reference) */}
             <div className="text-center py-2 sm:py-3">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 mb-2 rounded-full bg-emerald-50 border border-emerald-200/80 text-[10.5px] mono font-bold text-emerald-800 shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
+                <span>ZAI (Z) • Autonomous Director for ZeroLensAI</span>
+              </div>
               <h1 className="text-[24px] sm:text-[34px] font-black text-[#141414] tracking-tight leading-[1.2]">
                 Transform{" "}
                 <span className="relative inline-block px-3 py-0.5 mx-1.5 rounded-md bg-[#DCFCE7] text-[#15803D] font-mono font-bold text-[0.88em] border border-[#86EFAC] shadow-2xs">
@@ -1757,7 +1817,7 @@ export default function StoryBankView({
                 into viral scripts.
               </h1>
               <p className="mt-1.5 text-[12px] sm:text-[13px] text-[#6B6A64] max-w-[65ch] mx-auto">
-                AI shaped your voice memo into 3 high-converting script angles below. Pick a card to preview beats, edit lines, or load into studio in 1 click.
+                Z mined your Memory Gathering vault to synthesize 3 authentic 9:16 Reel scripts anchored to your spoken A-Roll, cleanest Gallery B-Roll slices, and seamless infinite loop payoffs.
               </p>
 
               {/* Action Pills Row matching reference photo */}
@@ -2093,17 +2153,29 @@ export default function StoryBankView({
                             : "bg-[#FFFEFB] border-[#EDE8E3] hover:border-[#111]/40"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="px-2 py-0.5 rounded-full bg-[#111] text-white mono text-[9px] font-bold">
                               {beat.id} {beat.label}
                             </span>
                             <span className="px-1.5 py-0.5 rounded-full border border-[#EDE8E3] mono text-[9px]">
                               {beat.range}
                             </span>
-                            <span className="text-[10px] mono text-[#0066FF] flex items-center gap-1">
-                              <Video size={10} /> {beat.motion}
-                            </span>
+                            {(beat.bRollLabel || beat.bRollWindow) && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 mono text-[8.5px] font-bold flex items-center gap-1">
+                                🎞️ {beat.bRollLabel || beat.bRollWindow}
+                              </span>
+                            )}
+                            {beat.memoryTag && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 mono text-[8.5px] font-semibold flex items-center gap-0.5">
+                                🏷️ {beat.memoryTag}
+                              </span>
+                            )}
+                            {(beat.isLoopBack || beat.id === 4) && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 mono text-[8.5px] font-bold flex items-center gap-0.5">
+                                ↻ Seamless Loop
+                              </span>
+                            )}
                           </div>
 
                           <button
@@ -2112,7 +2184,7 @@ export default function StoryBankView({
                               e.stopPropagation();
                               setEditingBeatId(isEditingThis ? null : beat.id);
                             }}
-                            className="text-[10px] mono text-[#888] hover:text-[#111] flex items-center gap-1"
+                            className="text-[10px] mono text-[#888] hover:text-[#111] flex items-center gap-1 ml-auto"
                           >
                             <Edit3 size={10} />
                             <span>{isEditingThis ? "Done" : "Edit"}</span>
@@ -2135,12 +2207,21 @@ export default function StoryBankView({
                           </p>
                         )}
 
-                        <div className="mt-2 pt-2 border-t border-[#F2ECE5] flex items-center justify-between gap-2 text-[10px] mono text-[#666]">
+                        {beat.coaching && (
+                          <div className="mt-1.5 text-[10.5px] text-amber-900 bg-amber-50 border border-amber-200/80 px-2 py-1 rounded-[8px] font-mono leading-tight">
+                            🎯 <strong>A-Roll Delivery Cue:</strong> {beat.coaching}
+                          </div>
+                        )}
+
+                        <div className="mt-2 pt-2 border-t border-[#F2ECE5] flex items-center justify-between gap-2 text-[10px] mono text-[#666] flex-wrap">
                           <span className="flex items-center gap-1">
                             <Mic size={10} /> {beat.voice}
                           </span>
-                          <span className="text-[#FF6B35]">
-                            Visual: {beat.visual.slice(0, 48)}...
+                          <span className="text-emerald-700 font-semibold">
+                            9:16 Central Safe Zone
+                          </span>
+                          <span className="text-[#FF6B35] truncate max-w-[260px]">
+                            Visual: {beat.visual}
                           </span>
                         </div>
                       </div>
@@ -2165,14 +2246,14 @@ export default function StoryBankView({
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-[13px] text-[#111]">
-                      Zee • Creative Co-Director
+                      ZAI (Z) • Autonomous Director for ZeroLensAI
                     </span>
                     <span className="px-2 py-0.2 rounded-full bg-[#111] text-white text-[9px] mono">
-                      LIVE BRAINSTORM
+                      LIVE MEMORY DIRECTOR
                     </span>
                   </div>
                   <p className="text-[11px] text-[#777]">
-                    Two-way creative collaboration — tell Zee what to change and watch the script update
+                    ZeroLensAI Memory Bank Director — mines raw WhatsApp notes & voices, anchors A-Roll & slices cleanest Gallery moments
                   </p>
                 </div>
               </div>
@@ -2224,16 +2305,16 @@ export default function StoryBankView({
             {/* Quick One-Tap Brainstorming Pills */}
             <div className="pt-2 border-t border-[#E8E3DA]">
               <p className="text-[10px] mono text-[#777] mb-1.5 uppercase tracking-wider">
-                Quick Brainstorm Tuning (1-Tap):
+                Quick Director Tuning (1-Tap):
               </p>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {[
-                  { label: "Make Hook Punchier ⚡", prompt: "Make the hook punchier and scroll-stopping" },
-                  { label: "More Casual & Raw ☕", prompt: "Make it more casual, authentic and raw" },
-                  { label: "Trim Down to 15s ⏱️", prompt: "Trim down beats strictly for a 15-second reel" },
-                  { label: "Stronger CTA 🎯", prompt: "Add a high-conversion comment keyword CTA" },
-                  { label: "Contrarian Shock 🤯", prompt: "Inject a contrarian perspective shift in the opening" },
-                  { label: "Gokarna Horizon 🏖️", prompt: "Weave in my Gokarna dawn walk travel reset" },
+                  { label: "3s Authentic Hook ⚡", prompt: "Make the 3-second hook sharper using my authentic memory" },
+                  { label: "Cleanest Gallery B-Roll 🎞️", prompt: "Extract cleanest stable 1.5s–3.5s gallery B-roll windows" },
+                  { label: "WhisperX Timing 🎙️", prompt: "Anchor the timeline to my natural spoken A-Roll rhythm" },
+                  { label: "Seamless Loop Payoff ↻", prompt: "Pace the closing line so it seamlessly loops back into the opening frame" },
+                  { label: "ZeroLens Memory Tags 🏷️", prompt: "Add minimal ZeroLensAI memory tags like WhatsApp Voice Note • 11:42 PM" },
+                  { label: "Vulnerable Confession ☕", prompt: "Make it more vulnerable and deeply human without synthetic cliches" },
                 ].map((pill) => (
                   <button
                     key={pill.label}
