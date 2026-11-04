@@ -4,9 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import type { StudioProject } from "./studio-projects";
 export * from "./zee-brain-core";
 import {
+  createCreatorContextSnapshot,
+  mergeCreatorContextIntoBrain,
+  type CreatorContextSnapshot,
+} from "./creator-context";
+import {
   ZeeBrainState,
   INITIAL_ZEE_BRAIN,
   loadZeeBrain,
+  hasSavedZeeBrain,
   saveZeeBrain,
   BRAIN_EVENT,
   LifeCategory,
@@ -20,15 +26,65 @@ import {
   HeaderTab,
 } from "./zee-brain-core";
 
+let contextHydration: Promise<CreatorContextSnapshot | null> | null = null;
+let contextUploadInProgress = false;
+let pendingContextUpload: string | null = null;
+let lastUploadedContext = "";
+
+function loadServerContextOnce(): Promise<CreatorContextSnapshot | null> {
+  if (!contextHydration) {
+    contextHydration = fetch("/api/context-memory", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const payload = await response.json();
+        return payload?.snapshot && typeof payload.snapshot === "object"
+          ? payload.snapshot as CreatorContextSnapshot
+          : null;
+      })
+      .catch(() => null);
+  }
+  return contextHydration;
+}
+
+async function flushContextUploadQueue(): Promise<void> {
+  if (contextUploadInProgress) return;
+  contextUploadInProgress = true;
+  try {
+    while (pendingContextUpload) {
+      const payload = pendingContextUpload;
+      pendingContextUpload = null;
+      if (payload === lastUploadedContext) continue;
+      try {
+        const response = await fetch("/api/context-memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        });
+        if (!response.ok) throw new Error(`Context sync failed (${response.status}).`);
+        lastUploadedContext = payload;
+      } catch (error) {
+        console.warn("[zee-brain] Shared context sync will retry after the next update:", error);
+        // A newer update may have arrived while this request was in flight.
+        if (!pendingContextUpload) break;
+      }
+    }
+  } finally {
+    contextUploadInProgress = false;
+  }
+}
+
+function queueContextUpload(snapshot: CreatorContextSnapshot): void {
+  const payload = JSON.stringify({ snapshot });
+  if (payload === lastUploadedContext || payload === pendingContextUpload) return;
+  pendingContextUpload = payload;
+  void flushContextUploadQueue();
+}
+
 export function useZeeBrain() {
   const [brain, setBrain] = useState<ZeeBrainState>(INITIAL_ZEE_BRAIN);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const initial = loadZeeBrain();
-    setBrain(initial);
-    setHydrated(true);
-
     const handleSync = (e: Event) => {
       const custom = e as CustomEvent<ZeeBrainState>;
       if (custom.detail) {
@@ -40,11 +96,39 @@ export function useZeeBrain() {
 
     window.addEventListener(BRAIN_EVENT, handleSync);
     window.addEventListener("storage", handleSync);
+
+    let cancelled = false;
+    void (async () => {
+      const remoteSnapshot = await loadServerContextOnce();
+      if (cancelled) return;
+
+      // Re-read after the request: the creator may have edited the brain while
+      // the server snapshot was loading.
+      const latestLocal = loadZeeBrain();
+      const hasLocalSnapshot = hasSavedZeeBrain();
+      if (remoteSnapshot) {
+        lastUploadedContext = JSON.stringify({ snapshot: remoteSnapshot });
+        const merged = mergeCreatorContextIntoBrain(latestLocal, remoteSnapshot, hasLocalSnapshot);
+        const remoteIsNewer = !hasLocalSnapshot ||
+          (Date.parse(remoteSnapshot.updatedAt) || 0) > (Date.parse(latestLocal.lastUpdated) || 0);
+        setBrain(remoteIsNewer ? saveZeeBrain(merged) : latestLocal);
+      } else {
+        setBrain(latestLocal);
+      }
+      setHydrated(true);
+    })();
+
     return () => {
+      cancelled = true;
       window.removeEventListener(BRAIN_EVENT, handleSync);
       window.removeEventListener("storage", handleSync);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hydrated || !hasSavedZeeBrain()) return;
+    queueContextUpload(createCreatorContextSnapshot(brain));
+  }, [brain, hydrated]);
 
   const updateBrain = useCallback(
     (updater: (prev: ZeeBrainState) => ZeeBrainState) => {

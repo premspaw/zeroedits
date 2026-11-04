@@ -25,7 +25,7 @@ interface ZeeViewProps {
 }
 
 const FORMAT_OPTIONS = [
-  ["auto", "Let Z choose"],
+  ["auto", "Let Zee choose"],
   ["cutout", "Talking head + cutouts"],
   ["storyExplainer", "Story explainer"],
   ["paperCut", "Paper cut"],
@@ -66,8 +66,8 @@ export default function ZeeView({
     {
       id: "u",
       step: "01 · UNDERSTAND",
-      title: "Give Z the story",
-      description: "Talk or type. Z saves the moment, reflects it back, and asks what it needs to understand better.",
+      title: "Give Zee the story",
+      description: "Talk or type. Zee saves the moment, reflects it back, and asks what it needs to understand better.",
       action: "Open living memory",
       icon: <Mic size={18} />,
       color: "#A6573D",
@@ -109,14 +109,14 @@ export default function ZeeView({
             <Sparkles size={12} /> Your creative partner
           </p>
           <h1 className="mt-3 max-w-3xl font-serif text-3xl font-semibold leading-tight tracking-tight text-[#25231f] sm:text-5xl">
-            Z helps you turn what matters into something you can share.
+            Zee helps you turn what matters into something you can share.
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#665d53] sm:text-base">
-            Start with your own story or an idea. Z helps you understand it, write it in your voice, shape the video, and prepare the finished piece. You can review and adjust each step.
+            Start with your own story or an idea. Zee helps you understand it, write it in your voice, shape the video, and prepare the finished piece. You can review and adjust each step.
           </p>
           <div className="mt-5 flex flex-wrap gap-2.5">
             <button type="button" onClick={() => onSwitchToTab("u")} className="inline-flex items-center gap-2 rounded-xl bg-[#a6573d] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#87462f]">
-              <Mic size={16} /> Talk to Z <ArrowRight size={15} />
+              <Mic size={16} /> Talk to Zee <ArrowRight size={15} />
             </button>
             <button type="button" onClick={() => onSwitchToTab("script")} className="inline-flex items-center gap-2 rounded-xl border border-[#d9cfc3] bg-white px-4 py-3 text-sm font-semibold text-[#37312b] transition hover:border-[#a6573d]">
               <BookOpen size={16} /> Start a script
@@ -127,7 +127,7 @@ export default function ZeeView({
         <div className="flex items-center gap-4 rounded-2xl border border-white/80 bg-white/80 p-4">
           <Pip mood="happy" size={68} interactive showDialogue={false} />
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a6573d]">Z is ready</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a6573d]">Zee is ready</p>
             <p className="mt-1 font-serif text-xl text-[#292722]">{userName ? `Welcome, ${userName}` : "Your workspace"}</p>
             <p className="mt-1 text-xs leading-5 text-[#776d62]">
               {brain.memories.length} saved {brain.memories.length === 1 ? "story" : "stories"} · {brain.gallery.length} visuals · {totalReelsCount} {totalReelsCount === 1 ? "script" : "scripts"} made
@@ -164,7 +164,7 @@ export default function ZeeView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]"><Sliders size={13} /> Your controls</p>
-            <h2 className="mt-1 font-serif text-2xl text-[#292722]">Adjust how Z works with you</h2>
+            <h2 className="mt-1 font-serif text-2xl text-[#292722]">Adjust how Zee works with you</h2>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-[#746b60]">These saved preferences follow your work into Script and Video Studio. Change them whenever your direction changes.</p>
           </div>
           <button type="button" onClick={() => onSwitchToTab("u")} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e8e1d7] px-3 py-2 text-xs font-semibold text-[#51483e] transition hover:border-[#a6573d]"><User size={14} /> Personal and brand profile</button>
@@ -174,7 +174,7 @@ export default function ZeeView({
           <label className="text-xs font-semibold text-[#4a4138]">Writing voice
             <input value={brain.virtualYou.voiceCadence} onChange={(event) => updatePreference("voiceCadence", event.target.value)} placeholder="Warm, direct, thoughtful, natural..." className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]" />
           </label>
-          <label className="text-xs font-semibold text-[#4a4138]">How Z should shape a story
+          <label className="text-xs font-semibold text-[#4a4138]">How Zee should shape a story
             <input value={brain.virtualYou.thinkingStyle} onChange={(event) => updatePreference("thinkingStyle", event.target.value)} placeholder="Keep it grounded; ask when context is missing..." className="mt-1.5 h-10 w-full rounded-xl border border-[#e8e1d7] bg-[#fffdfa] px-3 text-sm font-normal outline-none focus:border-[#a6573d]" />
           </label>
           <label className="text-xs font-semibold text-[#4a4138]">Default visual direction
@@ -189,7 +189,7 @@ export default function ZeeView({
             </select>
           </label>
           <div className="flex items-end">
-            <p className="flex items-start gap-2 rounded-xl bg-[#faf7f1] px-3 py-2.5 text-[10px] leading-4 text-[#796f64]"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#39816a]" />Z uses your saved stories as evidence and asks before filling gaps.</p>
+            <p className="flex items-start gap-2 rounded-xl bg-[#faf7f1] px-3 py-2.5 text-[10px] leading-4 text-[#796f64]"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#39816a]" />Zee uses your saved stories as evidence and asks before filling gaps.</p>
           </div>
         </div>
       </section>
@@ -198,7 +198,7 @@ export default function ZeeView({
         <div className="flex items-center gap-3">
           <Brain size={20} className="text-[#e6ad82]" />
           <div>
-            <p className="text-sm font-semibold">Z works across one connected workspace</p>
+            <p className="text-sm font-semibold">Zee works across one connected workspace</p>
             <p className="mt-0.5 text-[10px] text-white/60">Your memories, scripts, edits, and publishing steps stay connected.</p>
           </div>
         </div>

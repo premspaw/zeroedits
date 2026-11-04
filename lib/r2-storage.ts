@@ -13,12 +13,20 @@ export const isR2Configured = (): boolean => {
   return Boolean(accountId && accessKeyId && secretAccessKey);
 };
 
+export function getR2Endpoint(): string {
+  const custom = process.env.R2_ENDPOINT;
+  if (custom && !custom.includes("your_account_id") && custom.startsWith("http")) {
+    return custom.replace(/\/+$/, "");
+  }
+  return `https://${accountId}.r2.cloudflarestorage.com`;
+}
+
 export const getR2Client = (): S3Client => {
   if (!isR2Configured()) {
     throw new Error("Cloudflare R2 is not configured. Missing R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, or R2_SECRET_ACCESS_KEY.");
   }
 
-  const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
+  const endpoint = getR2Endpoint();
 
   return new S3Client({
     region: "auto",

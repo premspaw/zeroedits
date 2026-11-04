@@ -105,6 +105,12 @@ const CATEGORY_ICONS: Record<LifeCategory, React.ReactNode> = {
   relationships: <Heart size={14} />,
 };
 
+const STORY_STARTERS: { label: string; prompt: string; category: LifeCategory }[] = [
+  { label: "A moment that changed my mind", prompt: "A moment that changed how I see things was...", category: "insight" },
+  { label: "Someone who shaped me", prompt: "Someone who had a real impact on me was...", category: "relationships" },
+  { label: "Something I learned at work", prompt: "Something I learned through my work was...", category: "work" },
+];
+
 export default function YouView({
   onSwitchToTab,
   onSelectTopicForScript,
@@ -1107,7 +1113,7 @@ export default function YouView({
         setScanReelStep(json.data.referenceRead
           ? "Saved anonymous style cues from the public page preview. Add your own notes for details the page doesn’t expose."
           : isPublicLink
-            ? "The reference page blocked its preview, so Z didn’t guess. Add notes about its tone, pacing, opening, or visuals."
+          ? "The reference page blocked its preview, so Zee didn’t guess. Add notes about its tone, pacing, opening, or visuals."
             : "Saved anonymous style guidance from your notes.");
         setReelScanInput("");
         setPipMood("excited");
@@ -1120,7 +1126,7 @@ export default function YouView({
     scanLikedReel(target);
     setIsScanningReel(false);
     setScanReelStep(isPublicLink
-      ? "The page preview wasn’t available, so Z saved a blank reference rather than guessing. Add a few style notes to make it useful."
+      ? "The page preview wasn’t available, so Zee saved a blank reference rather than guessing. Add a few style notes to make it useful."
       : "Saved a basic style reference from your notes.");
     setReelScanInput("");
     setPipMood("excited");
@@ -1385,12 +1391,13 @@ export default function YouView({
          ===================================================================== */}
       {activeSubTab === "personalize" ? (
         <div className="space-y-7">
-          <section className="grid items-center gap-3 rounded-2xl border border-[#e5ddd1] bg-[#fffdfa] px-3 py-2 shadow-sm sm:px-4 lg:grid-cols-[minmax(280px,0.85fr)_1.5fr]">
+          <div className="overflow-hidden rounded-[28px] border border-[#e5ddd1] bg-[#fffdfa] shadow-[0_18px_55px_rgba(54,42,28,0.06)]">
+          <section className="grid items-center gap-3 border-b border-[#e5ddd1] bg-[#fffdfa] px-4 py-3 sm:px-5 lg:grid-cols-[minmax(280px,0.85fr)_1.5fr]">
             <div className="flex min-w-0 items-center gap-2.5">
               <Pip mood={isListeningMic ? "listening" : "happy"} size={38} interactive={false} showDialogue={false} />
               <div className="min-w-0">
-                <h2 className="text-xs font-semibold text-[#292722]">Tell your story to Z</h2>
-                <p className="text-[10px] leading-4 text-[#786e64]">Talk for up to 2 minutes. Z listens, saves the details, and helps shape them into a story.</p>
+                <h2 className="text-xs font-semibold text-[#292722]">Tell your story to Zee</h2>
+                <p className="text-[10px] leading-4 text-[#786e64]">Talk for up to 2 minutes. Zee listens, saves the details, and helps shape them into a story.</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5">
@@ -1403,7 +1410,6 @@ export default function YouView({
             </div>
           </section>
           {/* 3-COLUMN INTERACTIVE STUDIO CONTAINER */}
-          <div className="overflow-hidden rounded-[28px] border border-[#e5ddd1] bg-[#fffdfa] shadow-[0_18px_55px_rgba(54,42,28,0.06)]">
             <div className="grid min-h-[680px] grid-cols-1 divide-y divide-[#eee7dd] lg:grid-cols-[280px_minmax(300px,1fr)_310px] xl:grid-cols-[320px_minmax(380px,1fr)_360px] 2xl:grid-cols-[330px_minmax(480px,1fr)_380px] lg:divide-x lg:divide-y-0">
               {/* ===============================================================
                   LEFT COLUMN: COLORFUL DIFFERENTIATED LIFE & BUSINESS MEMORY STREAM
@@ -1714,13 +1720,56 @@ export default function YouView({
                 {/* Conversation surface: the user's memories and Zee's replies live in one chat thread. */}
                 <div className="order-2 relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden bg-white/45">
                   <div ref={chatScrollRef} aria-live="polite" className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+                    {!activeStreamItem && activeConversationItems.length === 0 && (
+                      <div className="mx-auto flex min-h-[440px] w-full max-w-lg flex-col justify-center py-6 lg:min-h-full">
+                        <div className="rounded-3xl border border-[#e5ddd1] bg-white/90 p-5 shadow-[0_12px_32px_rgba(54,42,28,0.07)] sm:p-6">
+                          <div className="flex items-start gap-3">
+                            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#f6e6dc]"><Pip mood={isAnalyzingBrain ? "thinking" : "happy"} size={42} interactive={false} showDialogue={false} /></div>
+                            <div>
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#a6573d]">Start anywhere</p>
+                              <h2 className="mt-1 font-serif text-2xl leading-tight text-[#292722]">One real moment is enough.</h2>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-xs leading-5 text-[#746b60]">Speak or type below. Share a detail, a choice, or something that stayed with you. Zee will reflect it back and ask one follow-up before you decide whether to turn it into a script.</p>
+                          <div className="mt-4 rounded-2xl bg-[#faf7f1] p-3">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#8a7e70]">A simple first pass</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-medium text-[#554b41]">
+                              <span className="rounded-full bg-white px-2.5 py-1">1. Share the moment</span>
+                              <ArrowRight size={12} className="text-[#b58d71]" />
+                              <span className="rounded-full bg-white px-2.5 py-1">2. Review Zee&apos;s reflection</span>
+                              <ArrowRight size={12} className="text-[#b58d71]" />
+                              <span className="rounded-full bg-white px-2.5 py-1">3. Choose what comes next</span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <p className="mb-2 text-[10px] font-semibold text-[#665d53]">Need a place to begin?</p>
+                            <div className="flex flex-col gap-1.5">
+                              {STORY_STARTERS.map((starter) => (
+                                <button
+                                  key={starter.label}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedPromptCategory(starter.category);
+                                    setInputChannel("studio_mic");
+                                    setSpokenOrTypedInput(starter.prompt);
+                                  }}
+                                  className="flex items-center justify-between gap-2 rounded-xl border border-[#e8e1d7] bg-white px-3 py-2 text-left text-[10px] font-medium text-[#554b41] transition hover:border-[#a6573d] hover:bg-[#fffdfa]"
+                                >
+                                  <span>{starter.label}</span><ArrowRight size={12} className="shrink-0 text-[#a6573d]" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {activeConversationItems.map((turn) => (
                       <div key={turn.id} className="space-y-2.5">
                         <div className="ml-auto max-w-[86%] rounded-2xl rounded-br-sm bg-[#a6573d] px-3.5 py-2.5 text-xs leading-5 text-white shadow-sm">
                           <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-white/70">You</span>{turn.story}
                         </div>
                         <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-[#e9e0d7] bg-white px-3.5 py-2.5 text-xs leading-5 text-[#37312b] shadow-sm">
-                          <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span>{turn.zeeAnalysis}
+                          <div className="mb-1 flex items-center gap-1.5"><Pip mood={isAnalyzingBrain ? "thinking" : "happy"} size={24} interactive={false} showDialogue={false} /><span className="text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span></div>{turn.zeeAnalysis}
                         </div>
                       </div>
                     ))}
@@ -1731,17 +1780,17 @@ export default function YouView({
                           <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-white/70">You</span>{activeStreamItem.story}
                         </div>
                         <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-[#e9e0d7] bg-white px-3.5 py-2.5 text-xs leading-5 text-[#37312b] shadow-sm">
-                          <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span>
+                          <div className="mb-1 flex items-center gap-1.5"><Pip mood={isAnalyzingBrain ? "thinking" : "happy"} size={24} interactive={false} showDialogue={false} /><span className="text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span></div>
                           <p>{activeStreamItem.zeeAnalysis}</p>
                           <p className="mt-2 border-t border-[#eee7dd] pt-2 font-semibold text-[#554338]">{activeStreamItem.followUpQuestion || activeItemPrompt.followUpQuestion}</p>
                         </div>
                       </div>
-                    ) : (
+                    ) : activeConversationItems.length > 0 ? (
                       <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-[#e9e0d7] bg-white px-3.5 py-2.5 text-xs leading-5 text-[#37312b] shadow-sm">
-                        <span className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span>{dynamicZeePrompt.memoryAwareQuestion}
+                        <div className="mb-1 flex items-center gap-1.5"><Pip mood={isAnalyzingBrain ? "thinking" : "happy"} size={24} interactive={false} showDialogue={false} /><span className="text-[9px] font-semibold uppercase tracking-wide text-[#a6573d]">Zee</span></div>{dynamicZeePrompt.memoryAwareQuestion}
                       </div>
-                    )}
-                    {isAnalyzingBrain && <div className="flex items-center gap-2 text-[10px] text-[#81786c]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#a6573d]" />{analysisStepText || "Zee is listening..."}</div>}
+                    ) : null}
+                    {isAnalyzingBrain && <div className="flex items-center gap-2 text-[10px] text-[#81786c]"><Pip mood="thinking" size={24} interactive={false} showDialogue={false} />{analysisStepText || "Zee is listening..."}</div>}
                   </div>
                 </div>
                 {/* 2-Min WhatsApp Guard Alert if > 120s */}
@@ -1768,22 +1817,25 @@ export default function YouView({
 
               {/* ===============================================================
                   RIGHT COLUMN: ZEE'S LIVE REPLIES, CONVERSATION & STORY ANALYSIS
-                  (Zee responds like a friend, asks follow-ups & breaks down the story)
+                  (A clear reflection, one useful follow-up, and a path forward)
                  =============================================================== */}
               <aside className="flex flex-col bg-gradient-to-b from-[#FAF8F3] to-[#F5F1E8]/60 h-full max-h-[860px]">
                 <div className="px-4 pb-4 pt-1.5 border-b border-[#1E1E1C]/10 flex items-center justify-between">
-                  <div>
-                    <span className="mono text-[10px] font-bold uppercase tracking-widest text-[#E4491B] block">
-                      Human-to-Human Analysis
-                    </span>
-                    <h2 className="serif text-xl font-bold text-[#141414] tracking-tight">
-                      Zee&apos;s Reply & Story Breakdown
-                    </h2>
+                  <div className="flex items-center gap-2">
+                    <Pip mood={isAnalyzingBrain ? "thinking" : "happy"} size={34} interactive={false} showDialogue={false} />
+                    <div>
+                      <span className="mono text-[10px] font-bold uppercase tracking-widest text-[#E4491B] block">
+                        A thoughtful reflection
+                      </span>
+                      <h2 className="serif text-xl font-bold text-[#141414] tracking-tight">
+                        What Zee heard
+                      </h2>
+                    </div>
                   </div>
                   <span className="px-2.5 py-1 rounded-full bg-[#f6e6dc] text-[#925339] mono text-[10px] font-bold">Story partner</span>
                 </div>
 
-                {isAnalyzingBrain && <div aria-live="polite" className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-[#e5ddd1] bg-white/80 px-3 py-2 text-[10px] text-[#776d62]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#a6573d]" />Zee is listening to this story and preparing a thoughtful follow-up...</div>}
+                {isAnalyzingBrain && <div aria-live="polite" className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-[#e5ddd1] bg-white/80 px-3 py-2 text-[10px] text-[#776d62]"><Pip mood="thinking" size={24} interactive={false} showDialogue={false} />Zee is listening and preparing a thoughtful follow-up...</div>}
 
                 {activeStreamItem ? (
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1800,7 +1852,7 @@ export default function YouView({
                         </div>
                         <div>
                           <div className="mono text-[10px] font-bold uppercase text-[#E4491B]">
-                            {brain.virtualYou.userName ? `Zee’s reply to ${brain.virtualYou.userName}` : "Zee’s reply to your story"}
+                            {brain.virtualYou.userName ? `Zee's reflection for ${brain.virtualYou.userName}` : "Zee's reflection on your story"}
                           </div>
                           <div className="serif text-base font-bold text-[#141414]">
                             Here is what I understood
@@ -1931,8 +1983,8 @@ export default function YouView({
                   </div>
                 ) : (
                   <div className="m-4 rounded-2xl border border-[#e5ddd1] bg-white/80 p-4">
-                    <p className="font-serif text-lg text-[#292722]">Zee is ready to learn from you.</p>
-                    <p className="mt-2 text-xs leading-5 text-[#766d63]">Share a real moment. Zee will reflect what happened, ask one useful follow-up, and connect your answer to the same conversation.</p>
+                    <p className="font-serif text-lg text-[#292722]">Your story can start here.</p>
+                    <p className="mt-2 text-xs leading-5 text-[#766d63]">Share a real moment. Zee will reflect what it heard, ask one useful follow-up, and keep your answer connected to the same conversation.</p>
                     <div className="mt-3 flex flex-wrap gap-1.5">{["Turning points", "People and relationships", "Work and craft", "Goals and ideas", "Voice and boundaries", "Visual taste"].map((topic) => <span key={topic} className="rounded-full border border-[#e8e1d7] bg-[#fbf9f5] px-2.5 py-1 text-[9px] text-[#73685d]">{topic}</span>)}</div>
                   </div>
                 )}
@@ -1945,7 +1997,7 @@ export default function YouView({
               <div className="bg-[#20211d] p-5 text-white sm:p-7">
                 <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#e6ad82]">Anonymous style references</p>
                 <h2 className="mt-2 max-w-sm font-serif text-3xl leading-tight">Save the feel. Keep your voice.</h2>
-                <p className="mt-2 max-w-md text-xs leading-5 text-white/65">Paste a public video link or describe a creator’s style. Z saves broad notes about tone, openings, pace, visuals, and captions. Those notes guide your own work without showing creator names or copying their lines.</p>
+                <p className="mt-2 max-w-md text-xs leading-5 text-white/65">Paste a public video link or describe a creator’s style. Zee saves broad notes about tone, openings, pace, visuals, and captions. Those notes guide your own work without showing creator names or copying their lines.</p>
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
                   <input type="text" value={reelScanInput} onChange={(event) => setReelScanInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handleScanLikedReel(); }} placeholder="Paste a public reference video link or describe the style" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs text-white outline-none placeholder:text-white/55 focus:border-[#e6ad82]" />
                   <button type="button" onClick={() => void handleScanLikedReel()} disabled={!reelScanInput.trim() || isScanningReel} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#e6ad82] px-4 py-2.5 text-xs font-semibold text-[#20211d] transition hover:bg-[#f0bf9a] disabled:cursor-not-allowed disabled:opacity-45"><Sparkles size={13} />{isScanningReel ? "Reading reference..." : "Save style reference"}</button>

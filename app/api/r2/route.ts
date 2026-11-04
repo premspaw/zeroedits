@@ -9,9 +9,11 @@ export async function GET() {
     });
   }
 
+  const { getR2Endpoint } = await import("@/lib/r2-storage");
   const result = await testR2Connection();
   return NextResponse.json({
     configured: true,
+    endpoint: getR2Endpoint(),
     ...result,
   });
 }

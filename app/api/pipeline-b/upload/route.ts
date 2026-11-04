@@ -140,10 +140,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("Pipeline B upload/run error:", err);
+    const rawError = err?.message || String(err);
+    const friendlyError = rawError.includes("Meta models are not configured")
+      ? "MODEL_API_KEY is missing or invalid in server environment. Please set MODEL_API_KEY in Railway Variables."
+      : rawError;
+
     return NextResponse.json(
       {
         success: false,
-        error: err.message || "Failed to process video in Pipeline B.",
+        error: friendlyError,
       },
       { status: 500 }
     );

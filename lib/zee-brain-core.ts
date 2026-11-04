@@ -249,6 +249,15 @@ export interface ZeeBrainState {
 const STORAGE_KEY = "muse_zee_overall_brain_prem_v4";
 export const BRAIN_EVENT = "zee-overall-brain-sync";
 
+export function hasSavedZeeBrain(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export const CATEGORY_META: Record<
   LifeCategory,
   {
