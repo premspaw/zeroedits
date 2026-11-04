@@ -21,7 +21,7 @@ export function createSparkPreviewDocument(options: PreviewDocumentOptions) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Problem E Security: Restrictive Content Security Policy boundary -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-eval' 'unsafe-inline' 'self' https://unpkg.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src data: blob: https:; media-src data: blob:; connect-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-eval' 'unsafe-inline' 'self' https://unpkg.com https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src data: blob: https:; media-src data: blob:; connect-src 'none';">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Montserrat:ital,wght@0,700;0,800;0,900;1,900&family=Poppins:wght@800;900&display=swap" rel="stylesheet">
@@ -88,12 +88,12 @@ window.addEventListener('error', function(event) {
 }, true);
 window.addEventListener('unhandledrejection', function(event) { failPreview(event.reason); });
 </script>
-<script data-spark-runtime="React" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script data-spark-runtime="React" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script>window.react = window.React;</script>
-<script data-spark-runtime="React DOM" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script data-spark-runtime="React DOM" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script data-spark-runtime="Framer Motion" src="https://unpkg.com/framer-motion@11.11.17/dist/framer-motion.js"></script>
 <script data-spark-runtime="Lucide icons" src="https://unpkg.com/lucide-react@0.468.0/dist/umd/lucide-react.min.js"></script>
-<script data-spark-runtime="the animation compiler" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js"></script>
+<script data-spark-runtime="the animation compiler" src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 </head><body><div id="stage-container"><div id="root"></div></div>
 <script>
 (function() {

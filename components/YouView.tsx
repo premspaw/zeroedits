@@ -1085,12 +1085,11 @@ export default function YouView({
   const handleScanLikedReel = async (overrideText?: string) => {
     const target = (overrideText ?? reelScanInput).trim();
     if (!target || isScanningReel) return;
+    const isPublicLink = /^https:\/\//i.test(target);
 
     setIsScanningReel(true);
     setPipMood("reading");
-    setScanReelStep(
-      "Meta Muse API decoding reel hook structure, WPM cadence & visual cutaway rhythm..."
-    );
+    setScanReelStep(isPublicLink ? "Reading the public reference preview for style cues..." : "Turning your notes into an anonymous style guide...");
 
     try {
       const res = await fetch("/api/you/voice-brain", {
@@ -1105,7 +1104,11 @@ export default function YouView({
       if (res.ok && json?.success && json?.data) {
         scanLikedReel(target, json.data);
         setIsScanningReel(false);
-        setScanReelStep("");
+        setScanReelStep(json.data.referenceRead
+          ? "Saved anonymous style cues from the public page preview. Add your own notes for details the page doesn’t expose."
+          : isPublicLink
+            ? "The reference page blocked its preview, so Z didn’t guess. Add notes about its tone, pacing, opening, or visuals."
+            : "Saved anonymous style guidance from your notes.");
         setReelScanInput("");
         setPipMood("excited");
         return;
@@ -1116,7 +1119,9 @@ export default function YouView({
 
     scanLikedReel(target);
     setIsScanningReel(false);
-    setScanReelStep("");
+    setScanReelStep(isPublicLink
+      ? "The page preview wasn’t available, so Z saved a blank reference rather than guessing. Add a few style notes to make it useful."
+      : "Saved a basic style reference from your notes.");
     setReelScanInput("");
     setPipMood("excited");
   };
@@ -1350,7 +1355,7 @@ export default function YouView({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] min-h-[calc(100vh-60px)] px-3 pb-16 pt-[5px] sm:px-6 sm:pb-20 sm:pt-[5px] animate-fade-in">
+    <div className="mx-auto w-full max-w-[1600px] min-h-[calc(100vh-60px)] px-1 pb-16 pt-[5px] sm:px-2 sm:pb-20 sm:pt-[5px] animate-fade-in">
       {/* Hidden File Input & Complete Folder Input (webkitdirectory) */}
       <input
         ref={fileInputRef}
@@ -1423,42 +1428,36 @@ export default function YouView({
                     />
                   </div>
 
-                  {/* Colorful Differentiated Category Filter Pills */}
+                  {/* Quiet, consistent life-story filters */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => setMemoryFilter("all")}
-                      className={`px-2.5 py-1 rounded-full text-[10px] mono font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+                      className={`rounded-xl border px-2.5 py-1.5 text-[10px] font-medium transition-all cursor-pointer ${
                         memoryFilter === "all"
-                          ? "bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_#E4491B]"
-                          : "bg-white text-[#4A4842] border-[#141414]/20 hover:border-[#141414]"
+                          ? "bg-[#292722] text-white border-[#292722]"
+                          : "bg-white text-[#62594f] border-[#e8e1d7] hover:border-[#bca997]"
                       }`}
                     >
-                      All ({brain.memories.length})
+                      All <span className="ml-1 opacity-70">{brain.memories.length}</span>
                     </button>
                     {LIFE_CATEGORIES.map((cat) => {
                       const meta = CATEGORY_META[cat];
                       const active = memoryFilter === cat;
-                      const displayLabel =
-                        cat === "work"
-                          ? "Business & Work"
-                          : cat === "personal"
-                          ? "Personal Life"
-                          : meta.shortLabel;
+                      const displayLabel = cat === "work" ? "Work" : cat === "personal" ? "Personal" : cat === "relationships" ? "Relationships" : meta.shortLabel;
                       return (
                         <button
                           key={cat}
                           type="button"
                           onClick={() => setMemoryFilter(cat)}
-                          className="px-2.5 py-1 rounded-full text-[10px] mono font-bold uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-1"
+                          className="rounded-xl border px-2.5 py-1.5 text-[10px] font-medium transition-all cursor-pointer flex items-center gap-1.5"
                           style={{
-                            backgroundColor: active ? meta.color : meta.bg,
-                            color: active ? "#FFFFFF" : meta.color,
-                            borderColor: meta.color,
-                            boxShadow: active ? "2px 2px 0px #141414" : "none",
+                            backgroundColor: active ? `${meta.color}14` : "#fff",
+                            color: active ? meta.color : "#62594f",
+                            borderColor: active ? meta.color : "#e8e1d7",
                           }}
                         >
-                          {CATEGORY_ICONS[cat]}
+                          <span style={{ color: meta.color }}>{CATEGORY_ICONS[cat]}</span>
                           <span>{displayLabel}</span>
                         </button>
                       );
@@ -1650,7 +1649,7 @@ export default function YouView({
                 </div>
 
                 {/* One capture surface for voice, typing, and WhatsApp notes. */}
-                <div className="order-3 relative z-10 mx-0 rounded-none border-x-0 border-b-0 border-t border-[#e5ddd1] bg-white/95 px-3 pb-3 pt-2 shadow-none">
+                <div className="order-3 relative z-10 mx-3 mb-3 rounded-2xl border border-[#e5ddd1] bg-white/95 px-3 pb-3 pt-2 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="flex shrink-0 flex-col items-center gap-1">
                       <button
@@ -1939,13 +1938,14 @@ export default function YouView({
           <section className="overflow-hidden rounded-[26px] border border-[#e5ddd1] bg-[#fffdfa] shadow-[0_16px_48px_rgba(54,42,28,0.06)]">
             <div className="grid gap-0 lg:grid-cols-[0.8fr_1.2fr]">
               <div className="bg-[#20211d] p-5 text-white sm:p-7">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#e6ad82]">Influence, then make it yours</p>
-                <h2 className="mt-2 max-w-sm font-serif text-3xl leading-tight">Borrow the shape. Tell your story.</h2>
-                <p className="mt-2 max-w-md text-xs leading-5 text-white/65">Describe what you like about a format, or add a reference link with your notes. Muse saves broad patterns in hooks, pacing and visual rhythm, then builds a fresh version from your own memories and point of view.</p>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#e6ad82]">Anonymous style references</p>
+                <h2 className="mt-2 max-w-sm font-serif text-3xl leading-tight">Save the feel. Keep your voice.</h2>
+                <p className="mt-2 max-w-md text-xs leading-5 text-white/65">Paste a public video link or describe a creator’s style. Z saves broad notes about tone, openings, pace, visuals, and captions. Those notes guide your own work without showing creator names or copying their lines.</p>
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
-                  <input type="text" value={reelScanInput} onChange={(event) => setReelScanInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handleScanLikedReel(); }} placeholder="Describe the hook, pace or visual rhythm you like" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#e6ad82]" />
-                  <button type="button" onClick={() => void handleScanLikedReel()} disabled={!reelScanInput.trim() || isScanningReel} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#e6ad82] px-4 py-2.5 text-xs font-semibold text-[#20211d] transition hover:bg-[#f0bf9a] disabled:cursor-not-allowed disabled:opacity-45"><Sparkles size={13} />{isScanningReel ? "Reading patterns..." : "Save style notes"}</button>
+                  <input type="text" value={reelScanInput} onChange={(event) => setReelScanInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handleScanLikedReel(); }} placeholder="Paste a public reference video link or describe the style" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs text-white outline-none placeholder:text-white/55 focus:border-[#e6ad82]" />
+                  <button type="button" onClick={() => void handleScanLikedReel()} disabled={!reelScanInput.trim() || isScanningReel} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#e6ad82] px-4 py-2.5 text-xs font-semibold text-[#20211d] transition hover:bg-[#f0bf9a] disabled:cursor-not-allowed disabled:opacity-45"><Sparkles size={13} />{isScanningReel ? "Reading reference..." : "Save style reference"}</button>
                 </div>
+                {scanReelStep && <p aria-live="polite" className="mt-2 text-[10px] leading-4 text-white/70">{scanReelStep}</p>}
                 <p className="mt-2 text-[10px] leading-4 text-white/45">Reference notes are private to this workspace. The generated work keeps your voice and does not name or copy the source creator.</p>
               </div>
               <div className="p-5 sm:p-7">

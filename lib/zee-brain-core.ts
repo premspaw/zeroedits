@@ -155,6 +155,7 @@ export interface ConnectedSource {
 export interface LikedReelDNA {
   id: string;
   inputUrlOrNote: string;
+  referenceRead?: boolean;
   creatorStyle: string;
   detectedFormat: string;
   hookPattern: string;
