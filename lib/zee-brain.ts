@@ -211,47 +211,26 @@ export function useZeeBrain() {
     (inputUrlOrNote: string, metaScan?: Partial<LikedReelDNA>) => {
       const clean = inputUrlOrNote.trim();
       if (!clean) return null;
-      const lower = clean.toLowerCase();
+      const isPublicLink = /^https:\/\//i.test(clean);
+      const analysisUnavailable = !metaScan;
+      const referenceUnavailable = isPublicLink && (!metaScan || metaScan.referenceRead === false);
 
-      let detectedFormat = metaScan?.detectedFormat || "storyExplainer";
-      let creatorStyle =
-        metaScan?.creatorStyle || "High-Retention Speaker + Tactile Cutaways";
+      let detectedFormat = analysisUnavailable || referenceUnavailable ? "auto" : metaScan?.detectedFormat || "storyExplainer";
+      let creatorStyle: string;
       let hookPattern =
-        metaScan?.hookPattern ||
-        "0.0s Unscripted truth + 2.0s full-screen visual proof";
+        analysisUnavailable || referenceUnavailable ? "Add notes about the opening, tone, and story structure" : metaScan?.hookPattern || "A clear opening followed by a grounded story";
       let pacingBpm =
-        metaScan?.pacingBpm || "150 WPM • Crisp jump-cuts with 1.14x punch-in";
+        analysisUnavailable || referenceUnavailable ? "Unknown" : metaScan?.pacingBpm || "Unknown";
       let captionStyle =
-        metaScan?.captionStyle || "Kinetic Pop Capsule + Warm Paper Highlight";
+        analysisUnavailable || referenceUnavailable ? "Unknown" : metaScan?.captionStyle || "Unknown";
 
-      if (!metaScan) {
-        if (/(travel|cinematic|aesthetic|vlog|mountain|sunset|film|story)/i.test(lower)) {
-          detectedFormat = "imageStory";
-          creatorStyle = "Cinematic Horizon Storyteller";
-          hookPattern = "Atmospheric golden-hour establisher + reflective hook";
-          pacingBpm = "134 WPM • Smooth 2.5D motion transitions";
-          captionStyle = "Editorial Serif Center Subtitle";
-        } else if (/(neon|tech|code|ai|dark|cyber|fast|chart)/i.test(lower)) {
-          detectedFormat = "blackNeon";
-          creatorStyle = "High-Contrast Builder Breakdown";
-          hookPattern = "Contrarian builder insight + animated diagram at 1.8s";
-          pacingBpm = "158 WPM • Rapid visual beats";
-          captionStyle = "JetBrains Mono Neon Glow";
-        } else if (/(paper|minimal|note|sketch|warm|beige|book)/i.test(lower)) {
-          detectedFormat = "paperCard";
-          creatorStyle = "Warm Zeroedits Essayist";
-          hookPattern = "Torn paper card reveal + calm conversational truth";
-          pacingBpm = "142 WPM • Thoughtful editorial rhythm";
-          captionStyle = "Instrument Serif + Torn Paper Card (#FAF8F3)";
-        }
-      }
-
-      // Keep the reference about its reusable format, never about its creator.
-      creatorStyle = `Original ${detectedFormat} structure`;
+      // Keep saved guidance about reusable format, never about the source creator.
+      creatorStyle = analysisUnavailable || referenceUnavailable ? "Style reference notes" : `Original ${detectedFormat} structure`;
 
       const scanned: LikedReelDNA = {
         id: `reel-${Date.now()}`,
         inputUrlOrNote: clean,
+        referenceRead: metaScan?.referenceRead,
         creatorStyle,
         detectedFormat,
         hookPattern,
@@ -259,7 +238,7 @@ export function useZeeBrain() {
         captionStyle,
         readingPatternMatch:
           metaScan?.readingPatternMatch ||
-          "Saved as an original format preference",
+          analysisUnavailable ? "Saved as notes only; no style was guessed" : "Saved as an original format preference",
         scannedAt: "Just now",
       };
 

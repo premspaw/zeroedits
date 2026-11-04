@@ -1974,7 +1974,7 @@ export default function YouView({
                     </button>
                   ))}
                 </div>
-                {brain.likedReels.length > 0 && <div className="mt-4 border-t border-[#eee7dd] pt-3"><p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8a7e70]">Saved structure references</p><div className="mt-2 flex flex-wrap gap-2">{brain.likedReels.slice(0, 4).map((reference) => <span key={reference.id} title={`${reference.hookPattern} / ${reference.pacingBpm}`} className="rounded-full border border-[#e8e1d7] bg-white px-3 py-1.5 text-[10px] text-[#675d52]">{reference.detectedFormat} / reusable structure</span>)}</div></div>}
+                {brain.likedReels.length > 0 && <div className="mt-4 border-t border-[#eee7dd] pt-3"><p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8a7e70]">Saved style references</p><div className="mt-2 flex flex-wrap gap-2">{brain.likedReels.slice(0, 4).map((reference) => <span key={reference.id} title={`${reference.hookPattern} / ${reference.pacingBpm}`} className="rounded-full border border-[#e8e1d7] bg-white px-3 py-1.5 text-[10px] text-[#675d52]">{reference.detectedFormat === "auto" ? "Style details needed" : `${reference.detectedFormat} / reusable structure`}</span>)}</div></div>}
               </div>
             </div>
           </section>
